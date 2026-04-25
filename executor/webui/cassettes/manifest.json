@@ -1,0 +1,14 @@
+[
+  {
+    "name": "morning",
+    "title": "Morning routine",
+    "summary": "A typical morning — check today, peek at the shopping list, capture a note.",
+    "duration_estimate_ms": 9300
+  },
+  {
+    "name": "tour",
+    "title": "Quick tour",
+    "summary": "60-second tour: what's today, what's on the list, the menu.",
+    "duration_estimate_ms": 9300
+  }
+]

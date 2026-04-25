@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Aaka — demo</title>
+  <link rel="stylesheet" href="chat.css">
+</head>
+<body>
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" aria-label="back">‹</button>
+      <div class="avatar" id="bot-avatar">🌤️</div>
+      <div class="title">
+        <div class="name" id="bot-name">Aaka</div>
+        <div class="subtitle" id="bot-status">online</div>
+      </div>
+      <button class="more" aria-label="more">⋮</button>
+    </header>
+
+    <main class="scroll" id="chat">
+      <div class="day-sep"><span id="day-label">today</span></div>
+    </main>
+
+    <footer class="composer">
+      <button class="composer-btn" aria-label="emoji">😊</button>
+      <input class="composer-input" placeholder="Message" disabled>
+      <button class="composer-btn" aria-label="attach">📎</button>
+      <button class="composer-send" aria-label="send">➤</button>
+    </footer>
+  </div>
+
+  <div class="caption" id="caption" hidden></div>
+
+  <script src="md.js"></script>
+  <script src="chat.js"></script>
+</body>
+</html>

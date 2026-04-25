@@ -1,0 +1,11 @@
+# Aaka — Mac Executor dependencies
+pyyaml>=6.0
+requests>=2.31
+google-api-python-client>=2.100
+google-auth-httplib2>=0.2
+google-auth-oauthlib>=1.1
+fastapi>=0.110
+uvicorn[standard]>=0.29
+croniter>=1.4
+pymupdf>=1.25
+mcp>=1.0,<2

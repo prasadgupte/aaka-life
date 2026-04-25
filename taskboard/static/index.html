@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aaka Taskboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="shell">
+    <!-- Topbar -->
+    <header class="topbar">
+      <span class="topbar-logo">aaka <span>tasks</span></span>
+      <div class="search-wrap">
+        <span class="icon">⌕</span>
+        <input id="search" type="search" placeholder="Search tasks…" autocomplete="off">
+      </div>
+      <span id="stats"></span>
+      <div id="poll-indicator" title="Live sync"></div>
+      <button class="btn-add" id="btn-add">+ Add task</button>
+    </header>
+
+    <!-- Filter bar -->
+    <div class="filterbar" id="filterbar">
+      <!-- Due date tabs -->
+      <div class="filter-group" id="due-chips"></div>
+      <div class="filter-sep"></div>
+      <!-- Owner chips -->
+      <div class="filter-group" id="owner-chips"></div>
+      <div class="filter-sep" id="sep-agent" style="display:none"></div>
+      <!-- Agent chips -->
+      <div class="filter-group" id="agent-chips"></div>
+      <div class="filter-sep" id="sep-tag" style="display:none"></div>
+      <!-- Tag chips -->
+      <div class="filter-group" id="tag-chips"></div>
+    </div>
+
+    <!-- Task list -->
+    <main class="task-area" id="task-area">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </main>
+  </div>
+
+  <!-- Add task modal -->
+  <div class="modal-overlay" id="modal" style="display:none">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>New task</h2>
+        <button class="modal-close" id="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label class="form-label">Title</label>
+          <input class="form-input" id="f-title" type="text" placeholder="Task title" autofocus>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label class="form-label">Due date</label>
+            <input class="form-input" id="f-due" type="date">
+          </div>
+          <div class="form-field">
+            <label class="form-label">Owner</label>
+            <select class="form-input" id="f-owner">
+              <option value="">— nobody —</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label class="form-label">Priority</label>
+            <select class="form-input" id="f-priority">
+              <option value="normal">Normal</option>
+              <option value="medium">⭐ Medium</option>
+              <option value="high">🔴 High</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Tags <span style="color:var(--text-3);font-weight:400">(comma-separated)</span></label>
+          <input class="form-input" id="f-tags" type="text" placeholder="#work, #admin">
+        </div>
+        <div class="form-field">
+          <label class="form-label">Description</label>
+          <input class="form-input" id="f-desc" type="text" placeholder="Optional notes">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
+          <button class="btn btn-primary" id="modal-save">Add task</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Snooze popover -->
+  <div class="snooze-popover" id="snooze-pop" style="display:none">
+    <button data-days="1">Tomorrow</button>
+    <button data-days="3">In 3 days</button>
+    <button data-days="7">Next week</button>
+    <button data-days="14">2 weeks</button>
+    <button data-days="0">Pick date…</button>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

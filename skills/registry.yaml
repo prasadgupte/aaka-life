@@ -1,0 +1,216 @@
+skills:
+  calendar_add_event:
+    intent: add_event
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: skills/calendar/add_event.py
+  calendar_sync:
+    intent: calendar_sync
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: skills/calendar/sidecar_sync.py
+  task_manager:
+    intent: add_task
+    type: native
+    runs_on: [sensor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: skills/tasks/local_tasks.py
+  task_complete:
+    intent: complete_task
+    type: native
+    runs_on: [sensor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: skills/tasks/local_tasks.py
+  task_snooze:
+    intent: snooze_task
+    type: native
+    runs_on: [sensor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: skills/tasks/local_tasks.py
+  mail:
+    intent: mail
+    type: native
+    runs_on: [executor]
+    enabled: false
+    requires_confirmation: false
+    entrypoint: skills/mail/gmail.py
+  gmail_label_watcher:
+    intent: gmail_label
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null   # handled by _exec_gmail_label in queue_worker._DISPATCHERS
+  gmail_attachment_filer:
+    intent: gmail_attachment_file
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    depends_on: [gmail_label_watcher, drop_file]
+    entrypoint: skills/mail/gmail_attachment_filer.py
+  inbox_router:
+    intent: route_tags
+    type: native
+    runs_on: [executor]
+    reads: [vault/00-Inbox, references]
+    writes: [vault, vault/System/Tasks.md]
+    llm: fallback
+    enabled: true
+    requires_confirmation: false
+    entrypoint: tools/inbox_router.py
+  build_indexes:
+    intent: build_indexes
+    type: native
+    runs_on: [executor]
+    reads: [vault]
+    writes: [vault/System/.indexes]
+    llm: none
+    enabled: true
+    requires_confirmation: false
+    entrypoint: tools/build_indexes.py
+  drop_note:
+    intent: drop_note
+    type: native
+    runs_on: [executor]
+    writes: [vault/00-Inbox]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: skills/drop/drop_note.py
+  drop_file:
+    intent: drop_file
+    type: native
+    runs_on: [executor]
+    writes: [vault/00-Inbox]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: skills/drop/drop_file.py
+    depends_on: [inbox_router]
+  file_sync:
+    intent: file_sync
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null
+  file_upsert:
+    intent: file_upsert
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null
+  add_event_batch:
+    intent: add_event_batch
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null
+  plan_slots:
+    intent: plan_slots
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null
+  day_schedule:
+    intent: day_schedule
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null
+  block_cal:
+    intent: block_cal
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: true
+    entrypoint: null
+  queue_test:
+    intent: queue_test
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null
+  fix_event:
+    intent: fix_event
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null
+  executor_echo:
+    intent: executor_echo
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null
+  write_tag:
+    intent: write_tag
+    type: native
+    runs_on: [executor]
+    writes: [config/references.yaml]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: skills/tags/write_tag.py
+  pay:
+    intent: pay
+    type: native
+    runs_on: [sensor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: tools/epc_qr.py
+  linkedin_post:
+    intent: linkedin_post
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: true
+    entrypoint: null
+  bday_wish:
+    intent: bday_wish
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: true
+    entrypoint: null
+    depends_on: []
+  agent_job:
+    intent: agent_job
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: true
+    entrypoint: null
+  mail_fetch:
+    intent: mail_fetch
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: skills/mail/fetch.py
+  mail_view:
+    intent: mail_view
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: skills/mail/viewer.py
+  pw_manage:
+    intent: pw_manage
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null

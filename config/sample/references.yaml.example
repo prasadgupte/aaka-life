@@ -1,0 +1,24 @@
+# Copy to <vault_path>/System/references.yaml and customise.
+# This file defines entities (people, properties, projects) and actions (verbs).
+# The /route command resolves tags against this file — zero LLM calls.
+
+entities:
+  flo172:
+    type: property
+    label: "Florianstraße 172"
+    vault_path: _shared/properties/flo172
+    ledger: _shared/finances/investments/flo172-ledger.xlsx
+    aliases: [flo, florianstrasse]
+
+actions:
+  expense:
+    skill: log_transaction
+    file_to: "{entity.vault_path}/expenses/"
+  invoice:
+    skill: file_document
+    file_to: "{entity.vault_path}/invoices/"
+    task_template: "Pay {entity.label} invoice"
+    task_due_offset_days: 14
+
+aliases:
+  prop: flo172

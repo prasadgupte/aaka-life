@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Aaka — Queue Worker + VPS Sync launchd agent (Mac Executor)
+
+  Single daemon that:
+    1. Processes confirmed queue items (poll every 3s)
+    2. Syncs rows + files with VPS (every 15s, row-level — no rsync of butler.db)
+
+  Replaces the old com.aaka.dbsync (sync_db.sh). The worker is the single owner
+  of the local butler.db — no external process touches it.
+
+  Sleep strategy: ProcessType=Background opts this into Power Nap (AC + lid closed).
+  caffeinate -i prevents sleep only during active script execution (seconds).
+  Do NOT add -s (prevent system sleep) — that drains battery and fights macOS.
+
+  Install via deploy.sh (uses sed to expand $AAKA_BASE):
+    bash admin/aaka.sh deploy
+
+  Or manually:
+    export AAKA_BASE=/Users/Shared/aaka-repo
+    sed "s|\${AAKA_BASE}|$AAKA_BASE|g" executor/com.aaka.queueworker.plist \
+      > ~/Library/LaunchAgents/com.aaka.queueworker.plist
+    launchctl load ~/Library/LaunchAgents/com.aaka.queueworker.plist
+
+  To check status: launchctl list com.aaka.queueworker  (PID should be non-zero)
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aaka.queueworker</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>${AAKA_BASE}/venv/bin/python3</string>
+    <string>${AAKA_BASE}/executor/queue_worker.py</string>
+    <string>--daemon</string>
+    <string>--poll-interval</string>
+    <string>3</string>
+    <string>--sync-interval</string>
+    <string>15</string>
+  </array>
+
+  <!-- Restart automatically if it exits (crashed or stopped) -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Environment variables read by queue_worker.py -->
+  <!-- $AAKA_BASE is substituted by sed in deploy.sh -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AAKA_BASE</key>
+    <string>${AAKA_BASE}</string>
+    <key>AAKA_CONFIG_DIR</key>
+    <string>/Users/Shared/aaka-repo-config</string>
+    <key>AAKA_CONTEXT</key>
+    <string>family</string>
+    <key>QUEUE_DB</key>
+    <string>/Users/Shared/aaka-repo-config/data/queue/butler.db</string>
+    <!-- VPS sync config (row-level sync, no rsync of butler.db) -->
+    <!-- VPS_HOST is the SSH alias defined by admin/setup.sh; override
+         by setting AAKA_VPS_HOST in $AAKA_CONFIG_DIR/.env. -->
+    <key>VPS_HOST</key>
+    <string>aaka-away</string>
+    <key>VPS_DB_PATH</key>
+    <string>/opt/aaka-config/data/queue/butler.db</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/Shared/aaka-repo-config/logs/queueworker.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/Shared/aaka-repo-config/logs/queueworker.err</string>
+
+  <key>WorkingDirectory</key>
+  <string>${AAKA_BASE}</string>
+
+  <!-- Hint to macOS: eligible to run during Power Nap (AC only) -->
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

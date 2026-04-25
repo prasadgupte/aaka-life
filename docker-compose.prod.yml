@@ -1,0 +1,41 @@
+# Aaka — Production VPS compose file
+#
+# Sensor + OpenClaw — Executor runs on the local Mac.
+# All runtime data (queue, logs, calendar) lives in /opt/aaka-config on the host.
+#
+# Usage (on VPS):
+#   docker compose -f docker-compose.prod.yml up -d sensor
+#
+# Env vars are read from .env (written by vps_setup/setup.sh).
+
+services:
+  sensor:
+    build:
+      context: .
+      dockerfile: sensor/Dockerfile
+    container_name: aaka-sensor
+    env_file: .env
+    environment:
+      AAKA_BASE: /app
+      AAKA_CONFIG_DIR: /config
+      AAKA_CONTEXT: family
+      QUEUE_DB: /config/data/queue/butler.db
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    mem_limit: 768m
+    cpus: "1.0"
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # Entire config dir (rw — logs + queue need write access)
+      - /opt/aaka-config:/config
+      # OpenClaw session/pairing data — persists across container rebuilds
+      # Path changed: container now runs openclaw as non-root aaka user
+      - /opt/aaka-config/openclaw-data:/home/aaka/.openclaw
+    ports:
+      - "18789:18789"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18790/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

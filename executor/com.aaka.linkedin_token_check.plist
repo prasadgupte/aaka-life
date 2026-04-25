@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aaka.linkedin_token_check</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>/Users/Shared/aaka-repo/executor/linkedin_token_check.py</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>AAKA_CONFIG_DIR</key>
+        <string>/Users/Shared/aaka-repo-config</string>
+        <key>AAKA_BASE</key>
+        <string>/Users/Shared/aaka-repo</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/Shared/aaka-repo-config/logs/linkedin_token_check.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Shared/aaka-repo-config/logs/linkedin_token_check.log</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

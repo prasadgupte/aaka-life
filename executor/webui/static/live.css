@@ -1,0 +1,217 @@
+/* SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0 */
+/* Live mode additions to chat.css. */
+
+/* Header sub-row showing mode + active member */
+.subtitle {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.mode-chip, .member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.mode-chip[data-mode="demo"] {
+  background: rgba(255, 200, 80, 0.18);
+  color: #FFD27A;
+}
+.mode-chip[data-mode="live"] {
+  background: rgba(80, 200, 130, 0.18);
+  color: #74D8A0;
+}
+.mode-chip { cursor: default; }
+.member-chip:hover,
+.group-chip:hover { background: rgba(255, 255, 255, 0.15); }
+.group-chip[data-purpose="notes"] { background: rgba(140, 110, 255, 0.22); color: #C8B6FF; }
+.group-chip[data-purpose="files"] { background: rgba(255, 140, 90, 0.22); color: #FFB58A; }
+.group-chip[data-purpose="notifications"] { background: rgba(90, 200, 255, 0.18); color: #8FD3FF; }
+
+/* Header rec/select button */
+.rec-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 0;
+  color: var(--tg-text);
+  font-size: 20px;
+  font-weight: 300;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.rec-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.rec-btn.active {
+  background: var(--tg-accent);
+  color: white;
+  transform: rotate(45deg);
+}
+
+/* Composer enabled */
+.composer-input { cursor: text; }
+.composer-input:disabled { cursor: default; opacity: 0.5; }
+.composer-send { cursor: pointer; }
+.composer-send:hover { transform: scale(1.1); }
+
+/* Selectable bubbles */
+.row.selectable .bubble {
+  cursor: pointer;
+  transition: outline-color 0.1s, box-shadow 0.1s;
+  outline: 2px solid transparent;
+}
+.row.selectable .bubble:hover {
+  outline-color: rgba(46, 166, 255, 0.4);
+}
+.row.selected .bubble {
+  outline: 2px solid var(--tg-accent);
+  box-shadow: 0 0 0 3px rgba(46, 166, 255, 0.18);
+}
+
+/* Selection action bar (above composer) */
+.select-bar {
+  background: rgba(46, 166, 255, 0.12);
+  border-top: 1px solid rgba(46, 166, 255, 0.3);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.select-bar #select-count {
+  flex: 1;
+  font-weight: 600;
+  color: var(--tg-text);
+}
+.select-bar button {
+  background: rgba(255, 255, 255, 0.08);
+  border: 0;
+  color: var(--tg-text);
+  padding: 6px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.select-bar button.primary {
+  background: var(--tg-accent);
+  color: white;
+}
+.select-bar button:hover { opacity: 0.85; }
+
+/* Modal */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+/* `hidden` HTML attribute must beat the .modal display:flex rule. */
+.modal[hidden] { display: none; }
+.modal-card {
+  background: var(--tg-header);
+  border-radius: 14px;
+  padding: 20px;
+  width: 320px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--tg-text);
+}
+.modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.modal-list .member-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--tg-text);
+}
+.modal-list .member-row:hover { background: rgba(255, 255, 255, 0.08); }
+.modal-list .member-row.active { background: rgba(46, 166, 255, 0.18); }
+.modal-list .member-row.disabled { opacity: 0.4; cursor: not-allowed; }
+.modal-list .member-row .name { font-weight: 500; }
+.modal-list .member-row .id { font-size: 12px; color: var(--tg-text-dim); }
+
+.modal-input {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--tg-text);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+}
+.modal-input:focus { border-color: var(--tg-accent); }
+
+.modal-hint {
+  font-size: 12px;
+  color: var(--tg-text-dim);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.modal-close, .modal-actions button {
+  background: rgba(255, 255, 255, 0.08);
+  border: 0;
+  color: var(--tg-text);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.modal-actions .primary {
+  background: var(--tg-accent);
+  color: white;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: white;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  z-index: 200;
+  animation: toast-in 0.2s ease-out;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}

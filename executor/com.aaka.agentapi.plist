@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Aaka — Agent Gateway API launchd agent (Mac)
+
+  Runs FastAPI service on port 18790, localhost only.
+  Allows registered agents to send messages and await replies via aaka's channels.
+
+  Install via deploy.sh (uses sed to expand $AAKA_BASE / $AAKA_CONFIG_DIR):
+    bash admin/aaka.sh deploy
+
+  Or manually:
+    export AAKA_BASE=/Users/Shared/aaka-repo
+    export AAKA_CONFIG_DIR=/Users/Shared/aaka-repo-config
+    sed "s|\${AAKA_BASE}|$AAKA_BASE|g; s|\${AAKA_CONFIG_DIR}|$AAKA_CONFIG_DIR|g" \
+      executor/com.aaka.agentapi.plist \
+      > ~/Library/LaunchAgents/com.aaka.agentapi.plist
+    launchctl load ~/Library/LaunchAgents/com.aaka.agentapi.plist
+
+  To check status: launchctl list com.aaka.agentapi
+  To view logs:    tail -f /Users/Shared/aaka-repo-config/logs/agentapi.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aaka.agentapi</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>${AAKA_BASE}/venv/bin/python3</string>
+    <string>-m</string>
+    <string>uvicorn</string>
+    <string>gateway.agent_api:app</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>18790</string>
+  </array>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AAKA_BASE</key>
+    <string>${AAKA_BASE}</string>
+    <key>AAKA_CONFIG_DIR</key>
+    <string>${AAKA_CONFIG_DIR}</string>
+    <key>AAKA_CONTEXT</key>
+    <string>family</string>
+    <key>QUEUE_DB</key>
+    <string>${AAKA_CONFIG_DIR}/data/queue/butler.db</string>
+    <key>PYTHONPATH</key>
+    <string>${AAKA_BASE}</string>
+    <!-- Include homebrew bin so /v1/llm can locate the claude CLI (haiku/sonnet/opus). -->
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>${AAKA_CONFIG_DIR}/logs/agentapi.log</string>
+  <key>StandardErrorPath</key>
+  <string>${AAKA_CONFIG_DIR}/logs/agentapi.err</string>
+
+  <key>WorkingDirectory</key>
+  <string>${AAKA_BASE}</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

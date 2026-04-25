@@ -1,0 +1,28 @@
+# ZeroClaw agent bindings for the family context.
+# Secrets come from env vars — never hardcode values here.
+
+[agent]
+name      = "aaka"
+workspace = "${AAKA_BASE}"
+
+# Route every message through the sensor router
+input  = "arg"
+script = "python3 sensor/router_sensor.py"
+
+[[bindings]]
+channel          = "telegram"
+type             = "bot"
+token            = "${TELEGRAM_BOT_TOKEN}"
+require_mention  = false
+
+[[bindings]]
+channel          = "whatsapp"
+type             = "group"
+jid              = "${WHATSAPP_GROUP_JID}"
+require_mention  = false
+
+[[bindings]]
+channel          = "whatsapp"
+type             = "dm"
+phone            = "${WHATSAPP_PHONE}"
+require_mention  = false

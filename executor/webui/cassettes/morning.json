@@ -1,0 +1,91 @@
+{
+  "schema": "aaka-cassette/v0",
+  "title": "Morning routine",
+  "summary": "A typical morning — check today, peek at the shopping list, capture a note.",
+  "bot": {
+    "name": "Aaka",
+    "emoji": "🌤️"
+  },
+  "members": {
+    "alex": {
+      "name": "Alex",
+      "telegram": "101010001",
+      "emoji": ""
+    },
+    "tsu": {
+      "name": "Tsu",
+      "telegram": "101010002",
+      "emoji": ""
+    },
+    "ari": {
+      "name": "Ari",
+      "telegram": "",
+      "emoji": ""
+    },
+    "rumi": {
+      "name": "Rumi",
+      "telegram": "",
+      "emoji": ""
+    },
+    "kiran": {
+      "name": "Kiran",
+      "telegram": "",
+      "emoji": ""
+    },
+    "taylor": {
+      "name": "Taylor",
+      "telegram": "101010003",
+      "emoji": ""
+    }
+  },
+  "messages": [
+    {
+      "from": "user",
+      "member_id": "alex",
+      "text": "/today",
+      "ts_offset_ms": 0
+    },
+    {
+      "from": "bot",
+      "text": "📅🚗 You're on Kiran duty today:\n\n🏥**1030** *Rumi* (🤝 Alex) — Pediatrician check-up (1h)\n🍱**1200** Kiran — Lunch at home (1h)\n⚽**1400** *Ari* (🤝 Taylor) — Soccer practice (1h30m)\n🎹**1600** *Ari* (🤝 Taylor) — Piano lesson (1h)\n🍱**1830** Family dinner (1h)\n\n☀️ Amsterdam 14°C · 5 events\n\n🔄 22d ago",
+      "ts_offset_ms": 1050,
+      "typing_ms": 700
+    },
+    {
+      "from": "user",
+      "member_id": "tsu",
+      "text": "/today",
+      "ts_offset_ms": 2250
+    },
+    {
+      "from": "bot",
+      "text": "📅🚗 You're on Kiran duty today:\n\n🏗️**0830** *Tsu* — Site review call @ Work (45m)\n🗳️**0900** *Tsu* — Sprint planning @ Work (45m)\n🏥**1030** *Rumi* (🤝 Alex) — Pediatrician check-up (1h)\n🍱**1200** Kiran — Lunch at home (1h)\n⚽**1400** *Ari* (🤝 Taylor) — Soccer practice (1h30m)\n🍱**1830** Family dinner (1h)\n\n☀️ Amsterdam 14°C · 6 events\n\n🔄 22d ago",
+      "ts_offset_ms": 3300,
+      "typing_ms": 700
+    },
+    {
+      "from": "user",
+      "member_id": "tsu",
+      "text": "/buy grocery",
+      "ts_offset_ms": 4500
+    },
+    {
+      "from": "bot",
+      "text": "📋 *grocery* 👥\n  1. Oat milk\n  2. Eggs (free range)\n  3. Tomatoes\n  4. Rice noodles\n  5. Miso paste\n  6. Sourdough bread\n  ~~(2 done)~~\n↪ numbers to check off, e.g. 1 3",
+      "ts_offset_ms": 5550,
+      "typing_ms": 700
+    },
+    {
+      "from": "user",
+      "member_id": "alex",
+      "text": "/notes home",
+      "ts_offset_ms": 6750
+    },
+    {
+      "from": "bot",
+      "text": "📝 #home — (empty)",
+      "ts_offset_ms": 7800,
+      "typing_ms": 700
+    }
+  ]
+}

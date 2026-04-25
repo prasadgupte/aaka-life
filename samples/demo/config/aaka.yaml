@@ -1,0 +1,146 @@
+# Ash-Kaa demo family — fictional, safe for public demos
+bot_name: "Aaka"
+bot_emoji: "🌤️"
+calendar_id: "demo@ashkaa.aaka.life"
+timezone: "Europe/Amsterdam"
+
+# Public holiday calendars — work email invite suppressed on matching holidays.
+# Each entry: Google Calendar ID + match keywords (ALL must appear; case-insensitive).
+# description: match against event description; title: match against event title.
+holiday_calendars:
+  - id: "en.usa#holiday@group.v.calendar.google.com"
+    match:
+      description: ["Observance", "United States"]
+
+members:
+  - id: alex
+    name: Alex
+    nick: Alex
+    role: adult
+    admin: true
+    email: alex@ashkaa.aaka.life
+    whatsapp: "+31601010001"
+    telegram: "101010001"
+    is_carrier: true
+    needs_carrier: false
+    invite_as_guest: true
+    primary_calendar_id: "alex@ashkaa.aaka.life"
+    conflict_calendars: []
+    default_calendar: "family"
+    calendars:
+      personal:
+        id: "alex@ashkaa.aaka.life"
+        block_conflict: true
+        emoji: 👤
+      work:
+        id: "alex.work@ashkaa.aaka.life"
+        block_conflict: true
+        mark_private: true
+        emoji: 💼
+      family:
+        id: "demo@ashkaa.aaka.life"
+        block_conflict: false
+        emoji: 🏠
+
+  - id: tsu
+    name: Tsu
+    nick: Tsu
+    role: adult
+    admin: true
+    email: tsu@ashkaa.aaka.life
+    whatsapp: "+31601010002"
+    telegram: "101010002"
+    is_carrier: true
+    needs_carrier: false
+    invite_as_guest: true
+    primary_calendar_id: "tsu@ashkaa.aaka.life"
+    conflict_calendars: []
+    default_calendar: "family"
+    calendars:
+      personal:
+        id: "tsu@ashkaa.aaka.life"
+        block_conflict: true
+        emoji: 👤
+      work:
+        id: "tsu.work@ashkaa.aaka.life"
+        block_conflict: true
+        mark_private: true
+        emoji: 🏗️
+      family:
+        id: "demo@ashkaa.aaka.life"
+        block_conflict: false
+        emoji: 🏠
+
+  - id: ari
+    name: Ari
+    role: child
+    email: ""
+    whatsapp: ""
+    is_carrier: false
+    needs_carrier: true
+    invite_as_guest: false
+    primary_calendar_id: ""
+    conflict_calendars: []
+
+  - id: rumi
+    name: Rumi
+    role: child
+    email: ""
+    whatsapp: ""
+    is_carrier: false
+    needs_carrier: true
+    invite_as_guest: false
+    primary_calendar_id: ""
+    conflict_calendars: []
+
+  - id: kiran
+    name: Kiran
+    nick: Grandma
+    role: grandparent
+    email: kiran@ashkaa.aaka.life
+    whatsapp: ""
+    is_carrier: false
+    needs_carrier: true
+    invite_as_guest: true
+    primary_calendar_id: ""
+    conflict_calendars: []
+
+  - id: taylor
+    name: Taylor
+    role: family
+    shared_access: false
+    email: ""
+    whatsapp: "+31601010003"
+    telegram: "101010003"
+    is_carrier: true
+    needs_carrier: false
+    invite_as_guest: false
+    primary_calendar_id: ""
+    conflict_calendars: []
+
+# Purpose-bound chats. When a message arrives on a channel listed here,
+# the sensor applies the group's default_intent if no explicit intent
+# matches the text. Slash commands always escape the default.
+#
+# chat_ids accept either the bare channel_id (e.g. "-1001234567890" for a
+# Telegram group) or a prefixed form ("telegram:-100...", "web:notes").
+groups:
+  notifications:
+    description: "Agent + system notifications"
+    chat_ids: ["web:notifications"]
+    purpose: notifications
+    default_intent: null
+    allow_agent_post: true
+
+  files:
+    description: "Drop files & run commands"
+    chat_ids: ["web:files"]
+    purpose: files
+    default_intent: drop_file
+
+  notes:
+    description: "Notes — bare text → note in default_tag"
+    chat_ids: ["web:notes"]
+    purpose: notes
+    default_intent: drop_note
+    default_tag: inbox

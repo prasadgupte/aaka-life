@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Aaka — Nudge Engine launchd agent (Mac Executor)
+
+  Runs every 15 minutes. Checks engagement state for all members
+  and sends due nudges (morning brief, tips, silence nudge, conflict alerts).
+
+  Install:
+    export AAKA_BASE=/Users/Shared/aaka-repo
+    sed "s|\${AAKA_BASE}|$AAKA_BASE|g" executor/com.aaka.nudgeengine.plist \
+      > ~/Library/LaunchAgents/com.aaka.nudgeengine.plist
+    launchctl load ~/Library/LaunchAgents/com.aaka.nudgeengine.plist
+
+  To check: launchctl list com.aaka.nudgeengine
+  Manual run: launchctl kickstart -k gui/$(id -u)/com.aaka.nudgeengine
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aaka.nudgeengine</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>${AAKA_BASE}/venv/bin/python3</string>
+    <string>${AAKA_BASE}/skills/engagement/nudge_runner.py</string>
+  </array>
+
+  <!-- Run every 15 minutes -->
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AAKA_BASE</key>
+    <string>${AAKA_BASE}</string>
+    <key>AAKA_CONFIG_DIR</key>
+    <string>/Users/Shared/aaka-repo-config</string>
+    <key>AAKA_CONTEXT</key>
+    <string>family</string>
+    <key>QUEUE_DB</key>
+    <string>/Users/Shared/aaka-repo-config/data/queue/butler.db</string>
+    <key>GATEWAY_BACKEND</key>
+    <string>openclaw</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/Shared/aaka-repo-config/logs/nudgeengine.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/Shared/aaka-repo-config/logs/nudgeengine.err</string>
+
+  <key>WorkingDirectory</key>
+  <string>${AAKA_BASE}</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

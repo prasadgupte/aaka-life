@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""
+tools/build_indexes.py — Frontmatter scanner; builds JSON indexes for the vault.
+
+Indexes produced in vault/System/.indexes/:
+  {member_id}-people-index.json  — people index per carrier (IDs from aaka_config.carriers())
+  projects-index.json            — all files with type: project
+  tags-index.json                — cross-area tag mapping {tag: [file_path, ...]}
+
+Usage:
+  python3 tools/build_indexes.py
+  python3 tools/build_indexes.py --vault /path/to/vault
+  python3 tools/build_indexes.py --watch   (poll every 60s)
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+import yaml
+
+BASE = Path(os.environ.get("AAKA_BASE") or Path(__file__).resolve().parent.parent)
+sys.path.insert(0, str(BASE))
+
+# Frontmatter regex: matches --- ... --- at top of file
+_FM_RE = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
+
+
+def parse_frontmatter(path: Path) -> Optional[dict]:
+    """Return parsed YAML frontmatter dict or None."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        m = _FM_RE.match(text)
+        if not m:
+            return None
+        data = yaml.safe_load(m.group(1))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def scan_vault(vault: Path) -> list[dict]:
+    """Walk vault, parse frontmatter from all .md files. Returns list of {path, fm}."""
+    results = []
+    for md_file in sorted(vault.rglob("*.md")):
+        # Skip hidden dirs (e.g. .indexes, .memory)
+        parts = md_file.parts
+        if any(p.startswith(".") for p in parts):
+            continue
+        fm = parse_frontmatter(md_file)
+        if fm:
+            rel = str(md_file.relative_to(vault))
+            results.append({"path": rel, "fm": fm})
+    return results
+
+
+def build_people_index(entries: list[dict], namespace: str) -> list[dict]:
+    """Return people index for a given namespace."""
+    prefix = f"{namespace}/social/people"
+    people = []
+    for e in entries:
+        if not e["path"].startswith(prefix):
+            continue
+        fm = e["fm"]
+        people.append({
+            "path": e["path"],
+            "name": fm.get("title") or fm.get("name") or Path(e["path"]).stem,
+            "relationship": fm.get("relationship", ""),
+            "tags": fm.get("tags") or [],
+            "area": fm.get("area", ""),
+            "date": fm.get("date", ""),
+        })
+    return people
+
+
+def build_projects_index(entries: list[dict]) -> list[dict]:
+    """Return projects index."""
+    projects = []
+    for e in entries:
+        fm = e["fm"]
+        if fm.get("type") in ("project",) or "01-Projects" in e["path"]:
+            projects.append({
+                "path": e["path"],
+                "title": fm.get("title", Path(e["path"]).stem),
+                "status": fm.get("status", ""),
+                "owner": fm.get("owner", ""),
+                "tags": fm.get("tags") or [],
+                "due": fm.get("due", ""),
+                "area": fm.get("area", ""),
+            })
+    return projects
+
+
+def build_tags_index(entries: list[dict]) -> dict:
+    """Return {tag: [path, ...]} cross-area tag index."""
+    tag_map: dict[str, list[str]] = {}
+    for e in entries:
+        for tag in (e["fm"].get("tags") or []):
+            tag_map.setdefault(str(tag), []).append(e["path"])
+    return tag_map
+
+
+def write_index(index_dir: Path, filename: str, data: object) -> None:
+    index_dir.mkdir(parents=True, exist_ok=True)
+    out = index_dir / filename
+    out.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+
+
+def build_all(vault: Path) -> dict:
+    """Build all indexes. Returns summary dict."""
+    import aaka_config as _cfg
+
+    index_dir = vault / "99-System" / ".indexes"
+    entries = scan_vault(vault)
+
+    # Build per-carrier people indexes (IDs come from aaka_config members)
+    people_summary: dict = {}
+    carrier_members = [m for m in _cfg.members() if m.get("is_carrier")]
+    for m in carrier_members:
+        ns = m["id"]
+        people = build_people_index(entries, ns)
+        write_index(index_dir, f"{ns}-people-index.json", people)
+        people_summary[f"{ns}_people"] = len(people)
+
+    projects = build_projects_index(entries)
+    tags = build_tags_index(entries)
+
+    write_index(index_dir, "projects-index.json", projects)
+    write_index(index_dir, "tags-index.json", tags)
+
+    # Also write open-loops.md (overdue/pending tasks placeholder — filled in iter 2)
+    memory_dir = vault / "99-System" / ".memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    open_loops = memory_dir / "open-loops.md"
+    if not open_loops.exists():
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        open_loops.write_text(f"# Open loops\n\n_Generated by build_indexes.py at {ts}_\n\n(No tasks yet — iter 2 will populate this)\n")
+
+    summary = {
+        "scanned_files": len(entries),
+        **people_summary,
+        "projects": len(projects),
+        "unique_tags": len(tags),
+        "built_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return summary
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Aaka vault index builder")
+    parser.add_argument("--vault", help="Path to vault root (default: from aaka_config.VAULT_PATH)")
+    parser.add_argument("--watch", action="store_true", help="Poll every 60s")
+    args = parser.parse_args()
+
+    if args.vault:
+        vault = Path(args.vault)
+    else:
+        from aaka_config import vault_path_for, default_actor
+        vault = vault_path_for(default_actor())
+
+    def run_once():
+        summary = build_all(vault)
+        people_counts = {k: v for k, v in summary.items() if k.endswith("_people")}
+        print(f"[build_indexes] scanned={summary['scanned_files']} "
+              f"projects={summary['projects']} tags={summary['unique_tags']} "
+              + " ".join(f"{k}={v}" for k, v in people_counts.items()))
+
+    if args.watch:
+        print(f"[build_indexes] watching {vault} (60s interval)")
+        while True:
+            run_once()
+            time.sleep(60)
+    else:
+        run_once()

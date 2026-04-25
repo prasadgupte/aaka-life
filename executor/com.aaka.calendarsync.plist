@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Aaka — Calendar Sync launchd agent (Mac Executor)
+
+  Install via deploy.sh (uses envsubst to expand $AAKA_BASE):
+    bash admin/aaka.sh deploy
+
+  Or manually:
+    export AAKA_BASE=/Users/Shared/aaka-repo
+    envsubst '$AAKA_BASE' < executor/com.aaka.calendarsync.plist \
+      > ~/Library/LaunchAgents/com.aaka.calendarsync.plist
+    launchctl load ~/Library/LaunchAgents/com.aaka.calendarsync.plist
+
+  Update (after re-deploying):
+    launchctl unload ~/Library/LaunchAgents/com.aaka.calendarsync.plist
+    launchctl load   ~/Library/LaunchAgents/com.aaka.calendarsync.plist
+
+  Runs every 30 minutes. Runs as the current user (LaunchAgent, not LaunchDaemon),
+  so Google OAuth tokens are accessible.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aaka.calendarsync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${AAKA_BASE}/executor/calendar_sync_and_push.sh</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>1800</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Environment variables read by sidecar_sync.py -->
+  <!-- $AAKA_BASE is substituted by envsubst in deploy.sh -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AAKA_BASE</key>
+    <string>${AAKA_BASE}</string>
+    <key>AAKA_CONFIG_DIR</key>
+    <string>/Users/Shared/aaka-repo-config</string>
+    <key>AAKA_CONTEXT</key>
+    <string>family</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/Shared/aaka-repo-config/logs/calendarsync.log</string>
+
+  <key>WorkingDirectory</key>
+  <string>${AAKA_BASE}</string>
+</dict>
+</plist>

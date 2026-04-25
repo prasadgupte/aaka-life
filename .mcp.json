@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "aaka": {
+      "command": "venv/bin/python3",
+      "args": ["mcp/server.py"],
+      "env": {
+        "AAKA_BASE": "${workspaceFolder}"
+      }
+    }
+  }
+}

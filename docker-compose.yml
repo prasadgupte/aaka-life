@@ -1,0 +1,42 @@
+# Aaka — Development compose file
+#
+# Runs the Sensor + OpenClaw container on the Mac for local testing.
+# The Executor runs natively (no container) so Google OAuth and CSV writes work.
+#
+# Usage:
+#   docker compose up sensor
+#
+# Required env vars (set in .env or shell):
+#   AAKA_CONFIG_DIR_HOST   host path to your config dir (e.g. ~/.aaka or /Users/you/aaka-config)
+#   TELEGRAM_BOT_TOKEN     Telegram bot token
+#   TELEGRAM_USER_ID       Telegram user ID
+#
+# NOTE: WHATSAPP_PHONE is intentionally omitted here. Setting it would cause the
+# dev container to connect to WhatsApp Web and steal the VPS session (error 440).
+
+services:
+  sensor:
+    build:
+      context: .
+      dockerfile: sensor/Dockerfile
+    container_name: aaka-sensor-dev
+    environment:
+      AAKA_BASE: /app
+      AAKA_CONFIG_DIR: /config
+      AAKA_CONTEXT: family
+      QUEUE_DB: /config/data/queue/butler-dev.db
+      GATEWAY_BACKEND: openclaw
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_USER_ID: ${TELEGRAM_USER_ID:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # WHATSAPP_PHONE intentionally absent — dev must not connect WhatsApp Web
+    volumes:
+      # Entire config dir (rw — logs + queue need write access)
+      - "${AAKA_CONFIG_DIR_HOST:?Set AAKA_CONFIG_DIR_HOST to your config dir, e.g. ~/.aaka}:/config"
+      # OpenClaw session/pairing data — persists across container rebuilds
+      - "${AAKA_CONFIG_DIR_HOST}/openclaw-data:/root/.openclaw"
+      # Live repo overlay — keeps container code in sync without a full rebuild
+      - ".:/app:ro"
+    ports:
+      - "19000:18789"
+    restart: unless-stopped

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Aaka — Mail Fetch launchd agent (Mac Executor)
+
+  Fetches new mail from all configured POP3/IMAP accounts every 15 minutes.
+  Keeps POP accounts alive and stores messages locally in Maildir format.
+
+  Account config: /Users/Shared/secrets/mail-fetch/accounts.yaml
+  Mail data:      /Users/Shared/aaka-repo-config/data/mail/
+  Password store: /Users/Shared/secrets/password-store/vault.enc (via Keychain)
+
+  Install:
+    export AAKA_BASE=/Users/Shared/aaka-repo
+    sed "s|\${AAKA_BASE}|$AAKA_BASE|g" executor/com.aaka.mailfetch.plist \
+      > ~/Library/LaunchAgents/com.aaka.mailfetch.plist
+    launchctl load ~/Library/LaunchAgents/com.aaka.mailfetch.plist
+
+  Or via deploy.sh: bash admin/aaka.sh deploy
+
+  Prerequisites:
+    python3 tools/pw_setup.py          — set master password in Keychain
+    python3 tools/pw_import.py export.csv — import LastPass CSV
+    Edit /Users/Shared/secrets/mail-fetch/accounts.yaml with your accounts
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aaka.mailfetch</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>${AAKA_BASE}/venv/bin/python3</string>
+    <string>${AAKA_BASE}/skills/mail/cron_fetch.py</string>
+  </array>
+
+  <!-- Run every 15 minutes (900 seconds) -->
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AAKA_BASE</key>
+    <string>${AAKA_BASE}</string>
+    <key>AAKA_CONFIG_DIR</key>
+    <string>/Users/Shared/aaka-repo-config</string>
+    <key>AAKA_CONTEXT</key>
+    <string>family</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/Shared/aaka-repo-config/logs/mailfetch.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/Shared/aaka-repo-config/logs/mailfetch.err</string>
+
+  <key>WorkingDirectory</key>
+  <string>${AAKA_BASE}</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

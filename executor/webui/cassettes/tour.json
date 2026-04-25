@@ -1,0 +1,91 @@
+{
+  "schema": "aaka-cassette/v0",
+  "title": "Quick tour",
+  "summary": "60-second tour: what's today, what's on the list, the menu.",
+  "bot": {
+    "name": "Aaka",
+    "emoji": "🌤️"
+  },
+  "members": {
+    "alex": {
+      "name": "Alex",
+      "telegram": "101010001",
+      "emoji": ""
+    },
+    "tsu": {
+      "name": "Tsu",
+      "telegram": "101010002",
+      "emoji": ""
+    },
+    "ari": {
+      "name": "Ari",
+      "telegram": "",
+      "emoji": ""
+    },
+    "rumi": {
+      "name": "Rumi",
+      "telegram": "",
+      "emoji": ""
+    },
+    "kiran": {
+      "name": "Kiran",
+      "telegram": "",
+      "emoji": ""
+    },
+    "taylor": {
+      "name": "Taylor",
+      "telegram": "101010003",
+      "emoji": ""
+    }
+  },
+  "messages": [
+    {
+      "from": "user",
+      "member_id": "alex",
+      "text": "/today",
+      "ts_offset_ms": 0
+    },
+    {
+      "from": "bot",
+      "text": "📅🚗 On call for Kiran. Here's the plan:\n\n🏥**1030** *Rumi* (🤝 Alex) — Pediatrician check-up (1h)\n🍱**1200** Kiran — Lunch at home (1h)\n⚽**1400** *Ari* (🤝 Taylor) — Soccer practice (1h30m)\n🎹**1600** *Ari* (🤝 Taylor) — Piano lesson (1h)\n🍱**1830** Family dinner (1h)\n\n☀️ Amsterdam 14°C · 5 events\n\n🔄 22d ago",
+      "ts_offset_ms": 1050,
+      "typing_ms": 700
+    },
+    {
+      "from": "user",
+      "member_id": "alex",
+      "text": "/tasks",
+      "ts_offset_ms": 2250
+    },
+    {
+      "from": "bot",
+      "text": "All done 🌤️ No open tasks.",
+      "ts_offset_ms": 3300,
+      "typing_ms": 700
+    },
+    {
+      "from": "user",
+      "member_id": "alex",
+      "text": "/buy grocery",
+      "ts_offset_ms": 4500
+    },
+    {
+      "from": "bot",
+      "text": "📋 *grocery* 👥\n  1. Oat milk\n  2. Eggs (free range)\n  3. Tomatoes\n  4. Rice noodles\n  5. Miso paste\n  6. Sourdough bread\n  ~~(2 done)~~\n↪ numbers to check off, e.g. 1 3",
+      "ts_offset_ms": 5550,
+      "typing_ms": 700
+    },
+    {
+      "from": "user",
+      "member_id": "alex",
+      "text": "/menu",
+      "ts_offset_ms": 6750
+    },
+    {
+      "from": "bot",
+      "text": "*Commands*\n\n📅  d · /today · /week · /day Mon    +#fix · issues\n     /cal · add event    c fix · all issues\n     c fix N name · assign    c fix N #work · busy\n     /plan · find slots    /block · block time\n\n📋  t · /tasks · list    t text · add task\n     /done N · complete    /done 1 3 · bulk\n     /snooze N 3d · snooze    /snooze all 1d\n     /edit N · update    /del N · remove\n     /tasks #tag · filter    /done today · history\n\n📝  n tag · read    n tag text · write\n     n member tag text · write to member (admin only)\n     n tag !name text · set canonical filename alias\n     f [member] [area] [#tag] [\"name\"]. desc · smart drop\n     e.g. f ari health #ortho \"doc\". checkup\n     /tags · all tags    /tag · manage aliases+routes    f help · drop options\n\n📄  p compress · shrink PDF    p extract · text + meta    p ocr · OCR scanned PDF\n     p split 2s · split    p merge · merge staged\n     p delete 3-5 · remove pages    p delete blank-pages · auto-remove blanks\n     append `ocr` to any command to OCR its output last    p help · all PDF ops\n\n🛒  b list · show    b list item · add    b list ? · ideas (add N N)\n💸  pay NAME IBAN AMOUNT REF · SEPA QR\n💰  x · month    x 45 groceries lidl · log\n🎂  bday · upcoming    bday N · wish link\n↩️  undo #hash · cancel/undo queued action\n     keep #hash · restore uncompressed original of a /drop\n👤  /approve <id> · allow sender    /deny <id> · block\n⚙️  /status · health    q · queue    /llm · ask AI\n     /errors · unacked errors    /errors flush · clear\n📊  /engage · your level & what to try next\n\n📬  m · /mail · accounts    m name · messages\n     m read name N · read    /mail fetch · trigger fetch\n🔑  /pw list [group] · entries    /pw search X · find",
+      "ts_offset_ms": 7800,
+      "typing_ms": 700
+    }
+  ]
+}

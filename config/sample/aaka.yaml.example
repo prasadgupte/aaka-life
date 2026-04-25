@@ -1,0 +1,70 @@
+# Copy to $AAKA_CONFIG_DIR/config/aaka.yaml and fill in your values.
+# Run: bash admin/aaka.sh setup --config /tmp/aaka-setup.json  (auto-generates this file)
+# Or fill in manually — all fields below are required unless marked (optional).
+
+system:
+  timezone: "Asia/Kolkata"        # IANA timezone, e.g. "Europe/Berlin", "America/New_York"
+  bot_name: "Aaka"                # Display name for reply prefix (e.g. "♟️ Aaka:")
+  bot_emoji: "🌤️"                 # Emoji prepended to bot replies
+  vault_path: "/Users/yourname/Obsidian/your-vault"   # Obsidian vault root (Mac only, optional)
+
+members:
+  # One entry per family member who will use the bot.
+  # telegram_id: numeric user ID — message @userinfobot in Telegram to find yours.
+  # whatsapp_phone: E.164 format, e.g. "+491514509..." (optional — omit if WA not used)
+  # role: "admin" gets all commands; "member" gets a filtered set
+  # namespace: short slug used for vault subdirs and log prefixes — lowercase, no spaces
+  # email: used for OAuth token selection and email-based features (optional)
+  #
+  # auth: (optional) — add this block to enable calendar + contacts for this member.
+  #   Without it: tasks, lists, notes, file routing all work. Calendar features don't.
+  #   Run `python3 admin/reauth.py` after adding this block to authorize the account.
+  - id: "alice"
+    name: "Alice"
+    telegram_id: "123456789"
+    whatsapp_phone: "+491514509..."   # (optional)
+    role: admin
+    admin: true
+    namespace: alice
+    email: "alice@example.com"        # (optional, required for auth)
+    # Uncomment to enable Google Calendar + Contacts:
+    # auth:
+    #   token_file: token.json
+    #   scopes:
+    #     - https://www.googleapis.com/auth/calendar
+    #     - https://www.googleapis.com/auth/calendar.events
+    #     - https://www.googleapis.com/auth/contacts.readonly
+    #     - https://www.googleapis.com/auth/tasks
+
+  - id: "bob"
+    name: "Bob"
+    telegram_id: "987654321"
+    whatsapp_phone: "+491751234567"   # (optional)
+    role: member
+    namespace: bob
+
+calendar:
+  # default_id: the calendar used for new events if not otherwise specified
+  # To find a Calendar ID: Google Calendar → Settings → click calendar → "Calendar ID"
+  default_id: "primary"
+  calendars:
+    - id: "primary"
+      label: "Family"
+      emoji: "📅"
+      private: false       # true = hide from group summaries, show in personal DMs only
+
+    # Add more calendars as needed:
+    # - id: "alice@group.calendar.google.com"
+    #   label: "Work"
+    #   emoji: "💼"
+    #   private: true
+
+# Per-role skill toggles (optional).
+# Equivalence: `away` = stateless sensor on a VPS; `home` = executor on your
+# machine that holds OAuth tokens. The legacy keys `sensor`/`executor` are
+# accepted for backwards compat.
+# roles:
+#   away:
+#     skills_disabled: ["calendar_add_event", "calendar_sync"]
+#   home:
+#     skills_disabled: []

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Aaka — live</title>
+  <link rel="stylesheet" href="chat.css">
+  <link rel="stylesheet" href="live.css">
+</head>
+<body>
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" aria-label="back">‹</button>
+      <div class="avatar" id="bot-avatar">🌤️</div>
+      <div class="title">
+        <div class="name" id="bot-name">Aaka</div>
+        <div class="subtitle">
+          <span class="mode-chip" id="mode-chip">…</span>
+          <span class="group-chip" id="group-chip" title="switch group">…</span>
+          <span class="member-chip" id="member-chip" title="switch member">…</span>
+        </div>
+      </div>
+      <button class="rec-btn" id="rec-btn" aria-label="select messages" title="Select messages to save">＋</button>
+    </header>
+
+    <main class="scroll" id="chat">
+      <div class="day-sep"><span id="day-label">today</span></div>
+    </main>
+
+    <div class="select-bar" id="select-bar" hidden>
+      <span id="select-count">0 selected</span>
+      <button id="select-clear">Clear</button>
+      <button id="select-save" class="primary">💾 Save cassette</button>
+    </div>
+
+    <footer class="composer">
+      <button class="composer-btn" aria-label="emoji">😊</button>
+      <input class="composer-input" id="composer-input" placeholder="Message" autocomplete="off">
+      <input type="file" id="file-input" hidden>
+      <button class="composer-btn" id="attach-btn" aria-label="attach" title="Attach a file">📎</button>
+      <button class="composer-send" id="composer-send" aria-label="send">➤</button>
+    </footer>
+  </div>
+
+  <!-- Group picker modal -->
+  <div class="modal" id="group-modal" hidden>
+    <div class="modal-card">
+      <div class="modal-title">Switch to group</div>
+      <div class="modal-list" id="group-list"></div>
+      <button class="modal-close" id="group-close">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Member picker modal -->
+  <div class="modal" id="member-modal" hidden>
+    <div class="modal-card">
+      <div class="modal-title">Send messages as…</div>
+      <div class="modal-list" id="member-list"></div>
+      <button class="modal-close" id="member-close">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Save cassette modal -->
+  <div class="modal" id="save-modal" hidden>
+    <div class="modal-card">
+      <div class="modal-title">Save cassette</div>
+      <input class="modal-input" id="save-title" placeholder="Title (e.g. Morning routine)">
+      <textarea class="modal-input" id="save-summary" placeholder="One-line summary (optional)" rows="2"></textarea>
+      <div class="modal-hint" id="save-hint">…</div>
+      <div class="modal-actions">
+        <button class="modal-close" id="save-cancel">Cancel</button>
+        <button class="primary" id="save-confirm">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="caption" id="caption" hidden></div>
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="md.js"></script>
+  <script src="live.js"></script>
+</body>
+</html>

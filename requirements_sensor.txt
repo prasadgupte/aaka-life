@@ -1,0 +1,13 @@
+# Aaka — Away (sensor) node dependencies
+# Google API libs included for VPS-scoped token (calendar.events + tasks only).
+# The sensor holds token_vps.json which cannot read Gmail or delete calendars —
+# meaningfully safer than the full Mac token.
+
+pyyaml>=6.0
+requests>=2.31
+google-api-python-client>=2.100
+google-auth>=2.23
+google-auth-oauthlib>=1.1
+pymupdf>=1.25
+qrcode[pil]>=7.4
+# LLM wrapper uses openclaw agent --local; no direct API SDK needed at runtime
