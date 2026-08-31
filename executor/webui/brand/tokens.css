@@ -1,0 +1,80 @@
+/* aaka — brand tokens
+ * Source of truth: /Users/Shared/aaka-repo/docs/gtm/06_brand.md
+ * Three words: Warm. Grounded. Capable.
+ */
+
+:root {
+  /* ---------------- Accents (shared light/dark) ---------------- */
+  --aaka-teal:     #00B4A2;  /* Primary. CTAs, links, success, the & mark */
+  --aaka-iris:     #7B68EE;  /* Technical. Labels, code accents, privacy  */
+  --aaka-berry:    #FF6B8A;  /* Warmth. Alerts, emphasis, errors          */
+  --aaka-sunshine: #FFBA49;  /* Attention. Warnings, pending states       */
+
+  /* ---------------- Light mode (Coral-Fresh) ---------------- */
+  --aaka-coral:    #FFF5F0;  /* Default canvas — warm peach undertone */
+  --aaka-white:    #FFFFFF;  /* Cards and surfaces */
+  --aaka-peach:    #FFEDE5;  /* Secondary backgrounds */
+  --aaka-ink:      #1E2030;  /* Headlines, primary text */
+  --aaka-slate:    #556170;  /* Body text */
+  --aaka-sand:     #F0DDD4;  /* Borders, dividers */
+
+  /* ---------------- Dark mode (Dimmed Aurora) — sit unused under :root by default ---------------- */
+  --aaka-night:    #161520;
+  --aaka-dusk:     #1E1D2C;
+  --aaka-elevated: #242338;
+  --aaka-light:    #F0F0F0;
+  --aaka-fog:      #8890A0;
+  --aaka-border-d: #2A2940;
+
+  /* ---------------- Semantic aliases (default = light) ---------------- */
+  --aaka-bg:           var(--aaka-coral);
+  --aaka-surface:      var(--aaka-white);
+  --aaka-surface-2:    var(--aaka-peach);
+  --aaka-text:         var(--aaka-ink);
+  --aaka-text-muted:   var(--aaka-slate);
+  --aaka-border:       var(--aaka-sand);
+
+  --aaka-success: var(--aaka-teal);
+  --aaka-warning: var(--aaka-sunshine);
+  --aaka-error:   var(--aaka-berry);
+
+  /* ---------------- Signature gradient ---------------- */
+  --aaka-gradient: linear-gradient(90deg, #00B4A2, #7B68EE, #FF6B8A, #FFBA49);
+
+  /* ---------------- Shape ---------------- */
+  --aaka-radius-sm: 8px;
+  --aaka-radius:    14px;   /* cards, containers (12-16px range) */
+  --aaka-radius-lg: 22px;   /* pills, buttons (20px+) */
+  --aaka-radius-pill: 999px;
+
+  /* ---------------- Type ---------------- */
+  --aaka-font-display: 'Fraunces', Georgia, serif;
+  --aaka-font-body:    'Plus Jakarta Sans', system-ui, sans-serif;
+  --aaka-font-mono:    'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  /* ---------------- Motion ---------------- */
+  --aaka-ease:  cubic-bezier(.2,.7,.2,1);
+  --aaka-dur:   200ms;
+}
+
+/* ---------------- Dark mode overrides ---------------- */
+:root.dark,
+:root[data-theme="dark"] {
+  --aaka-bg:         var(--aaka-night);
+  --aaka-surface:    var(--aaka-dusk);
+  --aaka-surface-2:  var(--aaka-elevated);
+  --aaka-text:       var(--aaka-light);
+  --aaka-text-muted: var(--aaka-fog);
+  --aaka-border:     var(--aaka-border-d);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not([data-theme="light"]) {
+    --aaka-bg:         var(--aaka-night);
+    --aaka-surface:    var(--aaka-dusk);
+    --aaka-surface-2:  var(--aaka-elevated);
+    --aaka-text:       var(--aaka-light);
+    --aaka-text-muted: var(--aaka-fog);
+    --aaka-border:     var(--aaka-border-d);
+  }
+}
