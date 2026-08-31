@@ -192,6 +192,29 @@ def check_sensor() -> dict:
         "note": "" if up else "Start with the fix command; check logs with: docker logs aaka-sensor-dev --tail 20",
     }
 
+def _native_sensor_running() -> bool:
+    """True if the native Telegram sensor (supervisor or poller) is running."""
+    try:
+        r = subprocess.run(["pgrep", "-f", "telegram_multibot.py|telegram_poller.py"],
+                           capture_output=True, timeout=5)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def check_sensor_native() -> dict:
+    running = _native_sensor_running()
+    return {
+        "id": "sensor_native",
+        "tier": 0,
+        "label": "Listening on Telegram",
+        "ok": running,
+        "value": "your bot is live and listening" if running else "not started yet",
+        "fix": f'AAKA_CONFIG_DIR="{CONFIG_DIR}" {REPO_DIR}/venv/bin/python3 {REPO_DIR}/sensor/telegram_multibot.py &',
+        "note": "" if running else "Runs natively — no Docker needed. Start it with the fix command, then message your bot.",
+    }
+
+
 def check_executor() -> dict:
     log = CONFIG_DIR / "logs" / "queueworker.log"
     ok = log.exists()
@@ -315,18 +338,20 @@ def check_vps() -> dict:
 
 # ── Tier analysis ─────────────────────────────────────────────────────────────
 
+# Feature milestones (kept 0–3 internally; labels are user-facing, not "tiers").
+# Tier 0 runs natively — no Docker. Docker/VPS is only the optional always-on upgrade.
 TIER_REQUIREMENTS = {
-    0: ["config_dir", "dotenv", "aaka_yaml", "venv", "docker", "sensor", "executor"],
+    0: ["config_dir", "dotenv", "aaka_yaml", "venv", "sensor_native", "executor"],
     1: ["google_credentials", "google_token", "calendar_access"],
     2: ["gemini_key"],
     3: ["vps"],
 }
 
 TIER_LABELS = {
-    0: "Tier 0 — Telegram (tasks, lists, notes)",
-    1: "Tier 1 — Google Calendar",
-    2: "Tier 2 — Natural language",
-    3: "Tier 3 — Always-on VPS",
+    0: "Chat on Telegram — tasks, lists, notes",
+    1: "See your calendar",
+    2: "Understand plain language",
+    3: "Answer while your laptop's asleep (optional VPS)",
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -337,8 +362,7 @@ def run_checks(tier_filter: int | None = None) -> list[dict]:
         check_dotenv(),
         check_aaka_yaml(),
         check_venv(),
-        check_docker(),
-        check_sensor(),
+        check_sensor_native(),
         check_executor(),
         check_google_credentials(),
         check_google_token(),

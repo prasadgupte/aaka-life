@@ -98,12 +98,13 @@ Only bring this up after Tiers 0–2 are working and the user is satisfied. See 
 ### 1 — Prerequisites [Claude runs this]
 
 ```bash
-for cmd in docker python3 git; do
+for cmd in python3 git; do
   command -v "$cmd" &>/dev/null && echo "✓ $cmd $(${cmd} --version 2>&1 | head -1)" || echo "✗ $cmd — needs to be installed"
 done
 ```
 
-If Docker is missing: docker.com/get-started. Don't proceed without it.
+Only **Python 3.11+** and **git** are required. **Docker is NOT needed** — Aaka runs
+natively. (Docker/VPS is an optional later step for "answer while your laptop's asleep".)
 
 ### 2 — Config directory [Claude]
 
@@ -129,7 +130,15 @@ AAKA_CONFIG_DIR=<config dir from step 2>
 
 ### 4 — Write aaka.yaml [Claude, after collecting name + timezone]
 
-Ask for: their first name, timezone (e.g. `America/New_York`), email (optional, needed for calendar auth).
+**Auto-detect the timezone from the system — never guess.** Run:
+
+```bash
+readlink /etc/localtime | sed 's#.*/zoneinfo/##'   # e.g. Europe/Berlin
+```
+
+Then confirm, don't ask blind: *"Looks like you're in Europe/Berlin — right?"* Only ask
+if the command returns nothing. Also ask for their first name and (optional) email for
+calendar auth.
 
 Write to `$AAKA_CONFIG_DIR/config/aaka.yaml`:
 
@@ -205,15 +214,25 @@ for c in cals[:5]:
 
 Say: "✓ Aaka can now read your Google Calendar."
 
-### 7 — Start the sensor [Claude]
+### 7 — Start listening on Telegram [Claude] — no Docker
+
+Run the sensor **natively** (background). This is the pure-Python Telegram poller —
+no Docker, no OpenClaw:
 
 ```bash
-AAKA_CONFIG_DIR_HOST="$HOME/.aaka" docker compose up -d sensor
+AAKA_CONFIG_DIR="$HOME/.aaka" venv/bin/python3 sensor/telegram_multibot.py \
+  >> "$HOME/.aaka/logs/telegram_poller.log" 2>&1 &
 sleep 4
-docker logs aaka-sensor-dev --tail 15
+tail -15 "$HOME/.aaka/logs/telegram_poller.log"
 ```
 
-Logs should show OpenClaw starting + Telegram polling. No crash = good.
+Logs should show the poller starting. No crash = good. **Then tell the user:**
+*"Your bot is listening now — say hi to it on Telegram."* (Don't invite them to message
+it before this is running, or the message will sit undelivered.)
+
+If they get an *"almost in — share your Telegram ID"* reply, grab the ID from it, add it
+under `members → telegram_id` in `aaka.yaml`, and restart this poller (kill + rerun the
+command above). No manual YAML editing by the user.
 
 Common problem: "AAKA_CONFIG_DIR_HOST is not set" → the `.env` file needs `AAKA_CONFIG_DIR` set. Re-check step 3.
 

@@ -87,4 +87,29 @@ to feed a full build. **Not implemented yet** — this is the capture + analysis
 
 ---
 
+## Session 2026-08-31 (cont.) — fixes applied + MCP gap
+
+**Q: do we control the jargon?** Yes — the install words come entirely from *our* files
+(`CLAUDE_SETUP.md`, `admin/setup_check.py`, and hard-coded source strings like the
+unknown-sender reply in `sensor/router_sensor.py`). Claude follows the script we write.
+
+**Fixes shipped this session** (branch `feature/openclaw-out`):
+- `setup_check.py`: **Tier 0 is Docker-free** — dropped `docker`/`sensor`(container),
+  added `check_sensor_native` (runs `sensor/telegram_multibot.py` natively). Labels
+  reframed off "Tier N" → "Chat on Telegram", "See your calendar", etc.
+- `CLAUDE_SETUP.md`: prereqs drop Docker (Python+git only); **timezone auto-detect**
+  (`readlink /etc/localtime`, confirm not guess); sensor start is **native, no Docker**;
+  poller-start made explicit ("say hi *now*"); self-auth reframed (grab ID, no user YAML edit).
+- `router_sensor.py`: unknown-sender reply softened — *"you're almost in — share your
+  Telegram ID"*, no "edit aaka.yaml / restart the sensor".
+
+**Still open (bigger, for the full build):**
+- **Capability-board onboarding** (feature-first, MCP-style) — the setup_check reframe is a
+  down-payment; the full "what would you like to turn on?" board is still to design.
+- **Self-authorization without any restart** — currently still needs the native poller to
+  reload config (kill+rerun). Add config hot-reload so adding a member is instant.
+- **MCP server is absent from aaka.life** — the "run it via Claude" half of the Claude-native
+  story (`mcp/server.py`: *"Claude, what's on my calendar this week?"* → aaka's Python).
+  Should become a site section under the Claude-native pillar. *(New site TODO.)*
+
 ## [append future feedback below this line]

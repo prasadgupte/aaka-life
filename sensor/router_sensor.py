@@ -1271,10 +1271,9 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
         # Group messages and WhatsApp silently drop (no way to know intent).
         if source == "telegram" and sender_id == channel_id:
             return (
-                f"👋 Hi! Aaka doesn't recognise this Telegram account yet.\n\n"
-                f"Your Telegram user ID is: `{sender_id}`\n\n"
-                f"Add it to your `aaka.yaml` under `members` → `telegram_id`, "
-                f"then restart the sensor."
+                f"👋 Hi! You're almost in — I just need to know this is you.\n\n"
+                f"Your Telegram ID is `{sender_id}`.\n\n"
+                f"Share this with whoever set me up and they'll add you in a few seconds."
             )
         return ""
 
