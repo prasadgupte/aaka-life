@@ -27,7 +27,16 @@ logging.basicConfig(
 )
 _log = logging.getLogger("poller")
 
-BASE = Path(os.environ.get("AAKA_BASE", "/app"))
+# Default AAKA_BASE to this repo (native run); container sets it to /app explicitly.
+BASE = Path(os.environ.get("AAKA_BASE") or Path(__file__).resolve().parents[1])
+if str(BASE) not in sys.path:
+    sys.path.insert(0, str(BASE))
+# Native runs (direct poller) load .env; via the supervisor the token is already in env.
+try:
+    from tools.load_env import load_env
+    load_env(BASE)
+except Exception:
+    pass
 CONFIG_DIR = Path(os.environ.get("AAKA_CONFIG_DIR", "/config"))
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 # Multi-bot: one poller process per bot, each with its own AAKA_BOT_ID + token.

@@ -27,6 +27,13 @@ BASE = Path(
 )
 sys.path.insert(0, str(BASE))
 
+# Native runs: load .env (GEMINI_API_KEY etc.) before anything reads it.
+try:
+    from tools.load_env import load_env
+    load_env(BASE)
+except Exception:
+    pass
+
 from aaka_queue.queue import (
     read_pending,
     update_status,

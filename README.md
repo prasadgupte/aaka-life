@@ -35,7 +35,8 @@ Two processes, one repo:
    └──────────────────┘           └────────────────────┘
 ```
 
-- **&Away (sensor)** runs on a VPS in Docker. It receives messages, triages
+- **&Away (sensor)** runs natively on your Mac (pure Python — no Docker), or on a
+  VPS in Docker when you want always-on. It receives messages, triages
   intent, and writes to a SQLite queue. No Google API calls, no personal
   credentials. Even if the VPS is compromised, your calendar isn't writable
   from it (token scopes are read-only).
@@ -97,18 +98,22 @@ Claude will run a diagnostic, collect the three things you need (Telegram bot to
 ### Manual short version
 
 ```bash
-git clone https://github.com/prasadgupte/aaka-life.git ~/aaka-repo
-cd ~/aaka-repo
+# Everything lives in ~/aaka: code/ (the app) + config/ (your data). No Docker needed.
+git clone https://github.com/prasadgupte/aaka-life.git ~/aaka/code
+cd ~/aaka/code
+python3 -m venv venv && venv/bin/pip install -r requirements.txt -q
 
-# Create your config dir
-export AAKA_CONFIG_DIR=~/.aaka
-mkdir -p $AAKA_CONFIG_DIR/{config,tokens,data/{queue,calendar},logs,openclaw-data}
+# Your data lives separately (updating the code never touches it):
+export AAKA_CONFIG_DIR=~/aaka/config
+mkdir -p $AAKA_CONFIG_DIR/{config,tokens,data/{queue,calendar},logs}
 
-# Write .env with your tokens (see INSTALL.md for what's needed)
-# Then start locally:
-AAKA_CONFIG_DIR_HOST=~/.aaka docker compose up -d sensor
-python3 executor/queue_worker.py
+# Write .env with your tokens (see INSTALL.md), then start — natively, no Docker:
+venv/bin/python3 sensor/telegram_multibot.py &   # Telegram sensor (poller)
+venv/bin/python3 executor/queue_worker.py &      # processes messages, calendar, etc.
 ```
+
+> **No Docker required** for a local install — the sensor is pure Python and runs natively.
+> Docker is only for the optional always-on VPS.
 
 See [`INSTALL.md`](INSTALL.md) for the full phase-by-phase guide including VPS production setup.
 

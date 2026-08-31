@@ -46,11 +46,11 @@ VPS is optional. Most users run at Tier 2.
 
 ## Requirements
 
-- macOS (Apple Silicon or Intel)
-- Docker Desktop
-- Python 3.11+
+- macOS (Apple Silicon or Intel) — or Linux
+- Python 3.11+ and git
 - Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
 - A Telegram account
+- *(Docker is **not** required — only for the optional always-on VPS)*
 
 Time to Tier 0: ~15 minutes.
 

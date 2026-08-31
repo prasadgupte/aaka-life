@@ -21,7 +21,11 @@ import sys
 import time
 from pathlib import Path
 
-BASE = Path(os.environ.get("AAKA_BASE", "/app"))
+# Default AAKA_BASE to this repo (native run); the container sets it to /app explicitly.
+BASE = Path(os.environ.get("AAKA_BASE") or Path(__file__).resolve().parents[1])
+os.environ.setdefault("AAKA_BASE", str(BASE))  # so spawned pollers inherit it
+if str(BASE) not in sys.path:
+    sys.path.insert(0, str(BASE))
 CONFIG_DIR = Path(os.environ.get("AAKA_CONFIG_DIR", "/config"))
 POLLER = BASE / "sensor" / "telegram_poller.py"
 
@@ -66,6 +70,12 @@ def _spawn(bot_id: str, token: str) -> subprocess.Popen:
 
 
 def main() -> None:
+    # Native runs: pull TELEGRAM_BOT_TOKEN etc. from .env (Docker gets it from compose).
+    try:
+        from tools.load_env import load_env
+        load_env()
+    except Exception:
+        pass
     bots = resolve_bots()
     if not bots:
         print("[multibot] no bots configured (no token) — exiting", file=sys.stderr)

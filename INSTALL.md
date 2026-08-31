@@ -16,10 +16,11 @@ You don't need a VPS to start. Phases 1–4 run entirely on your Mac. The bot wo
 
 **Minimum to get a working bot:**
 1. Telegram bot token + your user ID (from @BotFather and @userinfobot)
-2. Docker Desktop running
+2. Python 3.11+ and git (**no Docker** — the sensor runs natively)
 3. About 10 minutes
 
-**Config directory:** Aaka stores runtime data in `~/.aaka` by default. Set `AAKA_CONFIG_DIR` to a different path if you prefer.
+**Config directory:** Aaka stores runtime data in `~/aaka/config` by default (code lives in
+`~/aaka/code`). Set `AAKA_CONFIG_DIR` to a different path if you prefer.
 
 ---
 
