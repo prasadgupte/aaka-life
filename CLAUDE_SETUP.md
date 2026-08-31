@@ -77,8 +77,15 @@ Two paths. Ask which they prefer.
 ```bash
 venv/bin/python3 admin/reauth.py
 ```
-Google shows "This app is unverified" — click **Advanced → Go to Aaka (unsafe)**.
-This is standard for open-source apps. Their token lives only on their machine.
+Google shows **"This app isn't verified"** — this is expected and safe here. Reassure the
+user *before* they see it, so it doesn't spook them:
+
+> "You'll see a Google 'this app isn't verified' screen — that's normal for open-source
+> apps that haven't paid for Google's review. It's safe: Aaka runs on *your* machine, the
+> sign-in token never leaves it, and it only asks to read your calendar. Click **Advanced →
+> Go to Aaka (unsafe)** — 'unsafe' is just Google's scary default wording."
+
+If the warning is a dealbreaker for them, offer Path B (their own project) instead.
 
 **Path B — Their own GCP project (more control, verified app)**
 
@@ -271,14 +278,17 @@ AAKA_CONFIG_DIR="$HOME/aaka/config" venv/bin/python3 executor/queue_worker.py &
 
 Tell the user:
 
-> Open Telegram. Find the bot you created (the @username from BotFather).
-> Send it: **`/tasks`**
->
-> If you added it to a group, send `/tasks` in the group.
+> Open Telegram, find the bot you made (the @username from BotFather), and say hi.
+> **Add your first task:**  `t buy milk`
+> Then see everything it can do:  `/menu`
+
+Lead with *adding* something — sending `/tasks` first just shows an empty list, an
+anticlimactic first impression. The magic is that one texted line created a task.
 
 Then ask: "What did you see?"
 
-**If it worked:** "Your bot is live. Try `t buy milk` to add a task, then `/done 1` to complete it."
+**If it worked:** "🎉 Your bot is live — you just made a task by texting. Send `/done 1` to
+check it off, or `/menu` to explore."
 
 **If no response after 10 seconds:**
 ```bash
@@ -297,17 +307,22 @@ Surface these one at a time, each time the previous one lands. Don't show the fu
 
 | # | Try this | What clicks |
 |---|---------|------------|
-| 1 | `/tasks` → `t buy milk` → `/done 1` | "My to-do list lives in chat." |
-| 2 | `/today` (after OAuth) | "It reads my Google Calendar." |
-| 3 | `c coffee monday 10am` | "I stopped opening the calendar app." |
+| 1 | `t buy milk` → `/tasks` → `/done 1` | "My to-do list lives in chat." |
+| 2 | `d` (today) and `w` (this week) — after OAuth | "It reads my Google Calendar." |
+| 3 | `c coffee monday 10am` — **needs the free Gemini key** (Tier 2) | "I stopped opening the calendar app." |
 | 4 | `b groceries milk eggs` → later `b groceries ?` | "It remembers what I usually buy." |
 | 5 | Drop a PDF in the chat | "Files have a home now." |
 | 6 | `bday` | "It remembers what I always forget." |
 | 7 | Add a second person | "It works for us, not just me." |
 
-After `/tasks` works:
-> "Milestone 1 done — your bot is receiving messages and storing tasks.
-> Next: try `b groceries milk eggs` to start a shopping list, or add Google OAuth to see your calendar."
+After the first task lands:
+> "That's it — your bot stores tasks by text. Next: `b groceries milk eggs` for a shopping
+> list, or connect your calendar to ask what your week looks like."
+
+**Milestone 2 (calendar):** right after OAuth, *you* run `d`/`w` (or the user texts them) so
+they see it working. A fresh calendar may be empty today — then say: *"Want to add events by
+just typing, like `dentist friday 3pm`? That needs a free Gemini key — takes 2 minutes"* → Tier 2.
+This is the natural bridge to the LLM: adding events needs it; reading the calendar doesn't.
 
 ---
 

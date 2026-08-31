@@ -143,3 +143,21 @@ all `~/.aaka` → `~/aaka/config`; `.env` template dropped `GATEWAY_BACKEND=open
 - **Claude should run verifications, not the user.** It handed PG a calendar-test command to
   paste. CLAUDE_SETUP now says: run every check yourself (setup_check / diagnose.sh / calendar
   list / restart); only ask the user for browser OAuth consent + creating the Telegram bot.
+
+## Session 2026-08-31 (cont.) — post-install "what do I do now" feedback
+
+From PG's working native install (Rosi):
+1. **Lead with adding, not querying.** Setup told the user to send `/tasks` first (empty list —
+   flat first impression). Fixed: first contact is now `t buy milk` (add) then `/menu`. The aha is
+   "one texted line made a task."
+2. **Calendar had no clear use case** after auth. Fixed: milestone 2 now runs `d`/`w` right after
+   OAuth so the user sees it read the calendar; if today's empty, that's the cue to bridge to Tier 2.
+3. **Adding events needs the LLM** → natural bridge to ask for the free Gemini key. Reading the
+   calendar doesn't need it; adding (`dentist friday 3pm`) does. Framed exactly that way now.
+4. **Google "app isn't verified" screen hurts adoption.** Quick win: reassure the user *before*
+   they hit it (it's safe — runs on your machine, token never leaves, read-only calendar). Real fix:
+   **get the app Google-verified** — we already have aaka.life + a privacy-policy page, so it's
+   feasible; limited/sensitive-scope verification is the launch task. Fallback stays Path B (own GCP).
+
+Bigger builds still open: capability-board onboarding, auto-authorize (no "share your ID" wall),
+config-path (`config/config`) cleanup, MCP server on the website.
