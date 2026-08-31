@@ -62,7 +62,7 @@ TAB=$'\t'
 for entry in "${PATTERNS[@]}"; do
   regex="${entry%%${TAB}*}"
   label="${entry#*${TAB}}"
-  hits=$(printf '%s\n' "$DIFF" | grep -nE '^\+[^+]' | grep -iE "$regex" || true)
+  hits=$(printf '%s\n' "$DIFF" | grep -nE '^\+[^+]' | grep -iE -e "$regex" || true)
   if [ -n "$hits" ]; then
     echo "pre-commit: BLOCKED — $label" >&2
     echo "$hits" | head -5 | sed 's/^/  /' >&2
