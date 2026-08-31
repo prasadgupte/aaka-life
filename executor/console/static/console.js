@@ -381,13 +381,19 @@
           text, member_id: activeMember, session_id: sessionId, group: '',
         }),
       });
-      if (!r.ok) throw new Error('http ' + r.status);
+      if (!r.ok) {
+        let detail = '';
+        try { detail = (await r.json()).detail || ''; } catch (_) {}
+        throw new Error('HTTP ' + r.status + (detail ? ': ' + detail : ''));
+      }
       const data = await r.json();
       removeTyping();
       if (data.reply) streamInto(addBubble('bot', ''), data.reply);
     } catch (e) {
       removeTyping();
-      addBubble('bot', 'Something went wrong — try again.', { error: true });
+      const why = (e && e.message) ? e.message : String(e);
+      addBubble('bot', 'Something went wrong — try again.\n(' + why + ')', { error: true });
+      console.error('[console] send failed:', e);
     } finally {
       setSending(false);
       input.focus();
