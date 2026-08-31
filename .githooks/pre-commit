@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Block commits that introduce known leak patterns (secrets, tokens).
+# Scans STAGED additions only — does not look at history or unstaged work.
+#
+# Bypass (rare, last resort): git commit --no-verify
+#
+# To enable in a fresh clone:
+#   git config core.hooksPath .githooks
+#
+# Personal / instance-specific patterns (your own emails, phone, infra IPs) do
+# NOT belong in this shared file. Put them in an untracked .githooks/patterns.local
+# (gitignored) — see .githooks/patterns.local.example. This hook sources it if present.
+
+set -u
+
+# --- 1. Forbidden file names ----------------------------------------------
+
+# A literal single-space filename has been used to smuggle in token blobs.
+if git diff --cached --name-only -z | tr '\0' '\n' | awk 'length==1 && $0==" "{found=1} END{exit !found}'; then
+  echo "pre-commit: refusing to commit a file with a single-space filename" >&2
+  exit 1
+fi
+
+# --- 2. Forbidden content patterns ----------------------------------------
+
+# Each entry: regex<TAB>human-readable label. TAB separator so regex can contain '|'.
+# macOS grep -E does NOT support \b — use [^A-Za-z] style boundaries instead.
+# These are generic SECRET SHAPES only — safe to ship publicly.
+PATTERNS=(
+  $'GOCSPX-\tGoogle OAuth client_secret'
+  $'ya29\\.[A-Za-z0-9_-]{30,}\tGoogle OAuth access_token'
+  $'1//0[A-Za-z0-9_-]{40,}\tGoogle OAuth refresh_token'
+  $'AIza[A-Za-z0-9_-]{30,}\tGoogle API key'
+  $'sk-ant-[A-Za-z0-9_-]{20,}\tAnthropic API key'
+  $'ghp_[A-Za-z0-9]{30,}\tGitHub personal access token'
+  $'xox[baprs]-[A-Za-z0-9-]{20,}\tSlack token'
+  $'-----BEGIN [A-Z ]*PRIVATE KEY-----\tprivate key'
+)
+
+# Append instance-specific patterns from an untracked local file, if present.
+_local="$(git rev-parse --show-toplevel 2>/dev/null)/.githooks/patterns.local"
+# shellcheck disable=SC1090
+[ -f "$_local" ] && source "$_local"
+
+# Get staged diff, additions only. Exclude files where leak-shaped strings
+# legitimately appear (the hook + its example, LICENSE/NOTICE, the community
+# OAuth app credentials which are distributable like rclone's).
+DIFF=$(git diff --cached --diff-filter=AM -U0 -- \
+  ':(exclude).githooks/pre-commit' \
+  ':(exclude).githooks/patterns.local.example' \
+  ':(exclude)LICENSE' \
+  ':(exclude)NOTICE' \
+  ':(exclude)config/credentials.json' \
+  2>/dev/null)
+
+if [ -z "$DIFF" ]; then
+  exit 0
+fi
+
+FAIL=0
+TAB=$'\t'
+for entry in "${PATTERNS[@]}"; do
+  regex="${entry%%${TAB}*}"
+  label="${entry#*${TAB}}"
+  hits=$(printf '%s\n' "$DIFF" | grep -nE '^\+[^+]' | grep -iE "$regex" || true)
+  if [ -n "$hits" ]; then
+    echo "pre-commit: BLOCKED — $label" >&2
+    echo "$hits" | head -5 | sed 's/^/  /' >&2
+    FAIL=1
+  fi
+done
+
+if [ "$FAIL" -ne 0 ]; then
+  echo "" >&2
+  echo "Fix the offending lines, re-stage, and commit again." >&2
+  echo "Last resort bypass: git commit --no-verify  (do NOT use for real leaks)" >&2
+  exit 1
+fi
+
+exit 0

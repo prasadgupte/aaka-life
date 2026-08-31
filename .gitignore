@@ -34,3 +34,5 @@ docs/CONTEXT.md
 docs/plan.md
 docs/260421_vps_hardening.md
 docs/archive/
+# Personal pre-commit block patterns (never commit)
+.githooks/patterns.local

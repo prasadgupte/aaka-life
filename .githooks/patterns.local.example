@@ -1,0 +1,8 @@
+# Copy to .githooks/patterns.local (gitignored) and add your own instance-specific
+# block patterns — your emails, phone numbers, server IPs, names.
+# Format: each entry is  regex<TAB>label  using bash $'...\t...' quoting.
+PATTERNS+=(
+  $'203\\.0\\.113\\.1\tyour server IP (example)'
+  $'you@example\\.com\tyour email (example)'
+  $'\\+10000000000\tyour phone (example)'
+)
