@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>aaka. console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,600;0,700;0,800;1,800&family=Plus+Jakarta+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Brand CSS (vendored from aaka-site/brand) -->
+  <link rel="stylesheet" href="/static/brand/tokens.css">
+  <link rel="stylesheet" href="/static/brand/global.css">
+  <link rel="stylesheet" href="/static/brand/components.css">
+  <!-- Console-scoped CSS -->
+  <link rel="stylesheet" href="/static/console.css">
+</head>
+<body class="bg-aurora">
+  <div class="console-shell">
+    <header class="console-topbar" role="banner">
+      <a href="#console" class="console-nav__brand lockup" style="font-size:20px;text-decoration:none;">
+        <span class="mark">&amp;</span>
+        <span class="wordmark">aaka<span class="wordmark__period">.</span></span>
+      </a>
+      <nav class="console-nav__tabs" role="tablist">
+        <button role="tab" aria-selected="true"  class="console-tab is-active" data-tab="console">Console</button>
+        <button role="tab" aria-selected="false" class="console-tab" data-tab="tasks">Tasks</button>
+        <button role="tab" aria-selected="false" class="console-tab" data-tab="status">Status</button>
+      </nav>
+    </header>
+    <span class="gradient-bar gradient-bar--wide"></span>
+
+    <main class="console-panels">
+      <!-- ═══════════════ CONSOLE TAB ═══════════════ -->
+      <div class="console-panel console-pane" id="panel-console" role="tabpanel">
+        <div class="console-phone">
+          <div class="console-phone-bar">
+            <span class="mark" style="width:32px;height:32px;border-radius:50%;background:var(--aaka-teal);display:inline-flex;align-items:center;justify-content:center;color:var(--aaka-ink);font-size:18px;flex-shrink:0;">&amp;</span>
+            <span style="color:#fff;font-size:14px;font-weight:600;line-height:1.1;">aaka<span style="color:var(--aaka-teal);font-size:11px;font-weight:400;display:block;">online</span></span>
+            <span class="pill pill--ghost pill--dot" id="console-pill" style="font-size:11px;padding:3px 10px;margin-left:auto;">live</span>
+          </div>
+          <div class="console-chat" id="console-chat">
+            <div class="console-empty" id="console-empty">
+              <span class="mark" style="font-size:48px;">&amp;</span>
+              <span class="wordmark" style="font-size:28px;">aaka<span class="wordmark__period">.</span></span>
+              <p class="console-empty-cap">Type a command or tap a chip to get started.</p>
+              <div class="console-chips console-chips--empty">
+                <button class="console-chip" data-cmd="today"><code>today</code></button>
+                <button class="console-chip" data-cmd="tasks"><code>tasks</code></button>
+                <button class="console-chip" data-cmd="buy"><code>buy</code></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="console-composer-wrap">
+          <div class="console-chips" id="console-chips">
+            <button class="console-chip" data-cmd="today"><code>today</code></button>
+            <button class="console-chip" data-tab-jump="tasks"><code>tasks</code></button>
+            <button class="console-chip" data-cmd="buy"><code>buy</code></button>
+            <button class="console-chip" data-cmd="note"><code>note</code></button>
+            <button class="console-chip" data-cmd="week"><code>week</code></button>
+            <button class="console-chip" data-tab-jump="status"><code>status</code></button>
+          </div>
+          <span class="console-error-tip" id="console-error-tip" hidden>Select a member first</span>
+          <div class="console-composer">
+            <select class="select" id="console-member" style="width:120px;flex-shrink:0;">
+              <option value="">— who? —</option>
+            </select>
+            <input class="input" id="console-input" type="text" placeholder="Message aaka…"
+                   autocomplete="off" style="flex:1;font-family:var(--aaka-font-mono);">
+            <input type="file" id="console-file" hidden>
+            <button class="btn btn--ghost" id="console-attach" title="Attach file"
+                    style="padding:8px 12px;border-radius:var(--aaka-radius-sm);">📎</button>
+            <button class="btn btn--primary" id="console-send"
+                    style="padding:9px 16px;border-radius:var(--aaka-radius-lg);">➤</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════ TASKS TAB ═══════════════ -->
+      <div class="console-panel" id="panel-tasks" role="tabpanel" style="display:none">
+        <iframe id="tasks-frame" title="Tasks" src="about:blank"
+                style="border:0;width:100%;height:100%;display:block;background:var(--aaka-night);"></iframe>
+      </div>
+
+      <!-- ═══════════════ STATUS TAB ═══════════════ -->
+      <div class="console-panel" id="panel-status" role="tabpanel" style="display:none">
+        <div class="status-scroll">
+          <div class="status-refresh-bar">
+            <span class="mono-label">Capability check</span>
+            <div style="display:flex;align-items:center;gap:12px;margin-left:auto;">
+              <span class="status-last-checked" id="status-last-checked"></span>
+              <button class="btn btn--ghost" id="status-refresh"
+                      style="padding:6px 14px;font-size:13px;">Refresh</button>
+            </div>
+          </div>
+          <div id="status-cache-banner"></div>
+          <div id="status-body"></div>
+          <div class="status-logs">
+            <div class="card" style="padding:0;overflow:hidden;">
+              <div class="status-log-head">
+                <span class="mono-label">Queue worker</span>
+                <span class="status-log-age" id="log-age-qw"></span>
+              </div>
+              <pre class="status-log-body" id="log-queueworker"></pre>
+            </div>
+            <div class="card" style="padding:0;overflow:hidden;">
+              <div class="status-log-head">
+                <span class="mono-label">Sensor</span>
+                <span class="status-log-age" id="log-age-sensor"></span>
+              </div>
+              <pre class="status-log-body" id="log-sensor"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="console-toast-host" id="console-toast-host"></div>
+  <script src="/static/console.js"></script>
+</body>
+</html>

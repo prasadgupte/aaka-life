@@ -2739,6 +2739,15 @@ check "telegram: multi-bot supervisor resolve + per-bot offset/metadata" \
 check "slack: web-api adapter — postMessage/reactions + workspace token (mocked)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' -m gateway.channels.slack_test"
 
+# ── Aaka Console (unified shell: Console · Tasks · Status, port 8003) ──────────
+header "Console — server routes"
+check "console server: shell, healthz, webui routes, mounted taskboard CRUD" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' executor/console/test_server.py"
+
+header "Console — status routes"
+check "console status: setup_check subprocess (happy/exit/timeout) + log tail" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' executor/console/test_status.py"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}Results: ${GREEN}${PASS} passed${NC}, ${RED}${FAIL} failed${NC}"
