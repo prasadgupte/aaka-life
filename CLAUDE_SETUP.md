@@ -271,11 +271,11 @@ Tell the user:
 
 Then ask: "What did you see?"
 
-**If it worked:** "That's Tier 0 — your bot is live. Try `t buy milk` to add a task, then `/done 1` to complete it."
+**If it worked:** "Your bot is live. Try `t buy milk` to add a task, then `/done 1` to complete it."
 
 **If no response after 10 seconds:**
 ```bash
-docker logs aaka-sensor-dev --tail 30
+tail -30 "$HOME/aaka/config/logs/telegram_poller.log"
 ```
 Common causes:
 - Bot not in the group → user needs to add the bot as a member
@@ -308,11 +308,11 @@ After `/tasks` works:
 
 | Symptom | Check | Fix |
 |---------|-------|-----|
-| No response | `docker logs aaka-sensor-dev --tail 30` | Check token; for groups, add bot as member |
+| No response | `tail -30 "$HOME/aaka/config/logs/telegram_poller.log"` | Check token; for groups, add bot as member |
 | "Unknown sender" in logs | `TELEGRAM_USER_ID` in `.env` | Must match the ID from @userinfobot |
 | Calendar shows empty | Re-run `admin/reauth.py` | Token missing or wrong scopes |
 | `/today` empty after OAuth | Run `bash admin/diagnose.sh` section 11 | Calendar sync may need to run once |
-| Sensor crash | `docker logs aaka-sensor-dev \| head -20` | Usually a missing env var |
+| Sensor crash | `head -20 "$HOME/aaka/config/logs/telegram_poller.log"` | Usually a missing env var |
 | executor `--once` exits with error | Check logs; run `bash admin/diagnose.sh` | Import error or missing config |
 
 ---
