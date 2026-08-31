@@ -55,4 +55,36 @@ to feed a full build. **Not implemented yet** — this is the capture + analysis
 
 ---
 
+## Session 2026-08-31 (cont.) — timezone guess + self-authorization
+
+### Feedback (PG)
+1. Setup said *"using Asia/Kolkata as the timezone"* — **how did it guess that?** Should read the actual
+   system timezone via a local command, not guess.
+2. Messaged the fresh bot: **delivery delay** (message sat undelivered, then delivered, **no read mark**),
+   then got the unknown-sender reply: *"Your Telegram user ID is: 123456789. Add it to your aaka.yaml under
+   members → telegram_id, then restart the sensor."*
+
+### Analysis (Claude)
+- **Timezone — detect, don't guess.** The right value comes from the OS in one line:
+  `readlink /etc/localtime | sed 's#.*/zoneinfo/##'` → e.g. `Europe/Berlin` (confirmed on this machine).
+  Python fallback: `os.readlink('/etc/localtime').split('zoneinfo/')[-1]`, else `time.tzname`. Setup should
+  auto-detect and **confirm** ("Looks like you're in Europe/Berlin — right?"), never hardcode Asia/Kolkata.
+- **Self-authorization is far too technical.** *"Edit aaka.yaml → members → telegram_id, then restart the
+  sensor"* asks a non-technical user to hand-edit YAML and restart a service. The onboarding (Claude)
+  already knows who's installing, and the unknown-sender reply **even prints the user's ID** — it should
+  **capture that ID and authorize the installer automatically**, then **hot-reload** (no manual restart).
+  Ideal flow: *"Message your bot now and I'll grab your ID and add you."* → round-trip works, done.
+- **Delivery / read marks.** Telegram **bots don't show read receipts** (the blue double-check), so "no read
+  mark" is normal-but-confusing. The initial delay suggests the **poller wasn't running yet** when they first
+  messaged (Telegram held the backlog until polling started). Onboarding should **confirm the poller is live
+  before** inviting the user to message it ("your bot is listening now — say hi").
+
+### Build implications (to plan)
+- **Auto-detect timezone** via local command; present as a confirm, not a guess.
+- **Auto-capture + authorize** the installer's Telegram ID; **hot-reload** config — kill "restart the sensor".
+- Make **poller-start explicit** so there's no dead-air before the first reply.
+- The "Chat on Telegram" capability (from the board) must end in a **working round-trip**, never a YAML edit.
+
+---
+
 ## [append future feedback below this line]
