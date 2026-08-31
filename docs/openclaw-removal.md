@@ -165,3 +165,37 @@ tests). A focused follow-up gets multi-bot + delete + Slack.
 - Multi-bot: the sharp edge is **reply routing** — every queue/reply row must carry `bot_id`. Test #3 covers it.
 - Keep the `gateway/egress.py` + `channels/*` abstraction — it's what keeps all of this contained.
 - Slack Socket Mode keeps us local-first (no public webhook). Don't fall back to the Events API webhook.
+
+---
+
+## 9. Progress log
+
+**Session 2026-08-31** — branch `feature/openclaw-out`. Python layer done + tested (mock-first,
+no network; live-validated on Gemini). Live executor never restarted.
+
+Done + tested:
+- ✅ **Phase 1** — LLM off OpenClaw. `gateway/llm_providers.py` (gemini default · anthropic ·
+  claude-cli), `LLM_PROVIDER`, adapter delegates, `_gemini_only` shim kept. The old path already
+  used Claude-CLI→Gemini (no `openclaw agent`). *Mock: `gateway.llm_providers_test`. Live: Gemini.*
+- ✅ **Phase 2** — Telegram outbound native (egress, no CLI); WhatsApp stays on CLI; dry_run no-ops.
+- ✅ **Multi-bot Telegram** — outbound: `OutboundMessage.bot_id` → per-bot token in `channels/telegram.py`
+  (env `TELEGRAM_BOT_TOKEN_<ID>` → `tokens/telegram_bots.json` → default). Inbound: `telegram_poller`
+  keyed by `AAKA_BOT_ID` (per-bot offset + `bot_id` in Format-A metadata); `sensor/telegram_multibot.py`
+  supervisor runs one poller per bot. *Mocks: `gateway.channels.telegram_test`, `sensor.telegram_multibot_test`.*
+- ✅ **Slack channel** (outbound) — `gateway/channels/slack.py` (Web API, per-workspace token, registered
+  in egress). *Mock: `gateway.channels.slack_test`.*
+- ✅ **Phase 3 flag** — `config.ENABLED_CHANNELS` (default `telegram` → OpenClaw-free by default).
+
+Remaining (needs a container/live loop — do in the remote session):
+- ⏳ **Multi-bot reply threading** — carry `bot_id` from the queued item through the executor's async
+  reply into `OutboundMessage.bot_id`. Outbound + inbound plumbing is in place; this is the last hop.
+- ⏳ **Phase 4** — de-OpenClaw `sensor/entrypoint.sh` (start `telegram_multibot.py`; only start the
+  OpenClaw daemon when `whatsapp` ∈ ENABLED_CHANNELS) + `Dockerfile` (openclaw/node behind a build arg).
+  *Not done here — the container can't be built/tested in this session; blind edits are unsafe.*
+- ⏳ **Slack inbound** — Socket Mode poller (mirrors `telegram_poller`).
+- ⏳ **Phase 5** — strip OpenClaw from `admin/*` + README/CLAUDE.md once Phase 4 lands.
+- ⏳ **WhatsApp Baileys sidecar** (§5) — optional, later.
+
+Test-harness note: `admin/test.sh` has ~22 checks using bare `python3` (Xcode 3.9 on this host,
+fails on modern syntax); the new checks use `$PYTHON` (venv). Standardizing the rest on `$PYTHON`
+is a recommended small follow-up for reliable CI.
