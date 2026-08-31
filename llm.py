@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Shared LLM helper — all calls routed through gateway/adapter.py.
+Shared LLM helper — all calls routed through gateway/adapter.py → gateway/llm_providers.py.
 
-GATEWAY_BACKEND controls which backend is active:
-  zeroclaw  → Gemini via ZeroClaw (default)
-  openclaw  → openclaw agent 'llm'
+LLM_PROVIDER selects the (direct API / local) provider — no OpenClaw:
+  gemini      Google Gemini API      (default; easy free on-ramp)
+  anthropic   Anthropic Messages API (first-class Claude)
+  claude-cli  local `claude` binary  (optional, subscription)
 """
 import sys
 from gateway.adapter import GatewayAdapter

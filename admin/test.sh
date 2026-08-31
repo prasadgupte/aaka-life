@@ -2725,6 +2725,10 @@ assert sender_id in reply, 'reply does not include the sender ID'
 print('OK — unknown sender gets friendly reply with their ID')
 "
 
+# ── LLM providers (OpenClaw removal, Phase 1) ─────────────────────────────────
+check "llm: provider layer — gemini+anthropic dispatch (mocked, no network)" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' -m gateway.llm_providers_test"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}Results: ${GREEN}${PASS} passed${NC}, ${RED}${FAIL} failed${NC}"

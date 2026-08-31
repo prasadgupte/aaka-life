@@ -19,37 +19,8 @@ import urllib.error
 import urllib.request
 from gateway.config import BACKEND, CLAW_BIN
 
-_GEMINI_FALLBACK_MODELS = ["gemini-flash-latest", "gemini-2.5-flash-lite"]
-
-# Default Claude alias for extraction-class prompts. Cheap + fast + good enough.
-_CLAUDE_MODEL = os.environ.get("AAKA_CLAUDE_MODEL", "claude-haiku-4-5")
-
-
-def _try_claude_cli(prompt: str, timeout: int = 60) -> str:
-    """Run the local Claude CLI (subscription, zero per-call cost).
-
-    Returns the text response. Raises RuntimeError if the CLI isn't on PATH,
-    exits non-zero, or times out — callers should fall back to Gemini.
-    """
-    claude_bin = shutil.which("claude")
-    if not claude_bin:
-        raise RuntimeError("claude not on PATH")
-    result = subprocess.run(
-        [claude_bin, "-p", prompt,
-         "--model", _CLAUDE_MODEL,
-         "--output-format", "json"],
-        capture_output=True, text=True, timeout=timeout,
-        stdin=subprocess.DEVNULL,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"claude exited {result.returncode}: {result.stderr[:300]}"
-        )
-    try:
-        data = json.loads(result.stdout)
-        return (data.get("result") or result.stdout).strip()
-    except (json.JSONDecodeError, TypeError):
-        return result.stdout.strip()
+# LLM providers now live in gateway/llm_providers.py (gemini · anthropic · claude-cli),
+# selected by LLM_PROVIDER. call_llm() below delegates there.
 
 
 class GatewayAdapter:
@@ -158,76 +129,30 @@ class GatewayAdapter:
 
     # ── LLM calls ─────────────────────────────────────────────────────────────
 
-    def call_llm(self, prompt: str, timeout: int = 60) -> str:
+    def call_llm(self, prompt: str, timeout: int = 60,
+                 provider: "str | None" = None) -> str:
         """
-        One-shot LLM call via the configured backend.
+        One-shot LLM call via the selected provider (LLM_PROVIDER, default: gemini).
 
-        Returns the text response string.
-        Raises RuntimeError on failure.
+        Providers are direct API / local — no OpenClaw. See gateway/llm_providers.py.
+        Returns the text response. Raises RuntimeError on failure.
         """
-        return self._call_llm_openclaw(prompt, timeout)
+        from gateway import llm_providers
+        name = llm_providers.provider_name(provider)
+        try:
+            text = llm_providers.complete(prompt, timeout, provider=name)
+            self._log_llm_usage(name, "ok")
+            return text
+        except Exception as exc:
+            self._log_llm_usage(name, "error", error=str(exc)[:200])
+            raise
 
     def _call_llm_openclaw(self, prompt: str, timeout: int,
                            _gemini_only: bool = False) -> str:
-        # Prefer the local Claude CLI (subscription, zero per-call cost) over
-        # the Gemini API. Falls through to Gemini on any Claude failure.
-        # _gemini_only=True is used by gateway.agent_api's /v1/llm fallback
-        # to avoid re-entering Claude when Claude is what just failed.
-        if not _gemini_only:
-            try:
-                text = _try_claude_cli(prompt, timeout=timeout)
-                self._log_llm_usage(_CLAUDE_MODEL, "ok")
-                return text
-            except (RuntimeError, subprocess.TimeoutExpired) as exc:
-                self._log_llm_usage(_CLAUDE_MODEL, "claude_fallback",
-                                    error=str(exc)[:200])
-                # Fall through to Gemini
-
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-        if not api_key:
-            raise RuntimeError(
-                "LLM unavailable: Claude CLI not on PATH and GEMINI_API_KEY not set"
-            )
-        primary_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-        models_to_try = [primary_model] + [m for m in _GEMINI_FALLBACK_MODELS if m != primary_model]
-
-        last_exc: Exception = RuntimeError("No models to try")
-        for model in models_to_try:
-            url = (
-                f"https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{model}:generateContent?key={api_key}"
-            )
-            body = json.dumps({
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0},
-            }).encode()
-            req = urllib.request.Request(
-                url, data=body,
-                headers={"Content-Type": "application/json"}, method="POST",
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
-                    data = json.loads(resp.read())
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                usage = data.get("usageMetadata", {})
-                self._log_llm_usage(model, "ok",
-                                    prompt_tokens=usage.get("promptTokenCount"),
-                                    response_tokens=usage.get("candidatesTokenCount"))
-                return text
-            except urllib.error.HTTPError as exc:
-                self._log_llm_usage(model, "error", error=str(exc))
-                if exc.code in (503, 429):
-                    last_exc = RuntimeError(
-                        f"Gemini overloaded (HTTP {exc.code}) — tried {model}"
-                        + (f", retrying with {models_to_try[models_to_try.index(model)+1]}" if model != models_to_try[-1] else ", all models failed. Try again in a moment.")
-                    )
-                    continue  # try next model
-                raise RuntimeError(f"Gemini error (HTTP {exc.code}): {exc.reason}") from exc
-            except Exception as exc:
-                self._log_llm_usage(model, "error", error=str(exc))
-                raise
-
-        raise last_exc
+        # Back-compat shim. gateway.agent_api's /v1/llm fallback passes
+        # _gemini_only=True to force the Gemini provider.
+        return self.call_llm(prompt, timeout,
+                             provider="gemini" if _gemini_only else None)
 
     def _log_llm_usage(self, model: str, status: str, *,
                        prompt_tokens: "int | None" = None,
