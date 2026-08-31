@@ -2729,6 +2729,10 @@ print('OK — unknown sender gets friendly reply with their ID')
 check "llm: provider layer — gemini+anthropic dispatch (mocked, no network)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' -m gateway.llm_providers_test"
 
+# ── Telegram channel + multi-bot routing (Phase 2 / multi-bot) ────────────────
+check "telegram: native egress routing + multi-bot token selection (mocked)" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' -m gateway.channels.telegram_test"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}Results: ${GREEN}${PASS} passed${NC}, ${RED}${FAIL} failed${NC}"

@@ -54,6 +54,20 @@ class GatewayAdapter:
 
         Raises RuntimeError on non-zero exit.
         """
+        if dry_run:
+            print(f"[dry-run] {channel} → {target}: {message[:80]}")
+            return
+
+        # Telegram goes through the native egress path — no OpenClaw CLI.
+        if channel == "telegram":
+            self.send_message_direct_tg(
+                target, message, silent=silent,
+                reply_to_message_id=reply_to_message_id,
+            )
+            return
+
+        # WhatsApp (and any other channel) still via the claw CLI until its
+        # own native transport lands (see docs/openclaw-removal.md Phase 3/5).
         cmd = [
             self.claw_bin, "message", "send",
             "--channel", channel,
@@ -91,11 +105,14 @@ class GatewayAdapter:
         target: str,
         message: str,
         *,
+        silent: bool = False,
         reply_to_message_id: str | None = None,
+        bot_id: str | None = None,
     ) -> None:
         """Send a Telegram message via the egress gateway (audited, rate-limited).
 
-        Preferred over send_message() for Telegram — avoids spawning the openclaw CLI.
+        Native path — no OpenClaw CLI. `bot_id` selects which bot token to use
+        for multi-bot deployments (see gateway/channels/telegram.py).
         """
         from gateway.egress import send, OutboundMessage, MessageKind
         send(OutboundMessage(
@@ -104,7 +121,9 @@ class GatewayAdapter:
             channel="telegram",
             text=message,
             source="gateway_adapter",
+            silent=silent,
             reply_to_message_id=reply_to_message_id,
+            bot_id=bot_id,
         ))
 
     def react_message(

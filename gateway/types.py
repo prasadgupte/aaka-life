@@ -31,6 +31,9 @@ class OutboundMessage:
     silent: bool = False
     reply_markup: Optional[dict] = None  # Telegram InlineKeyboardMarkup
 
+    # Multi-bot: which bot sends/receives this. None → default/single bot.
+    bot_id: Optional[str] = None
+
     # PHOTO
     photo_bytes: Optional[bytes] = None
     photo_caption: str = ""

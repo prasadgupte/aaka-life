@@ -27,15 +27,50 @@ _token_cache: str = ""
 _token_mtime: float = 0.0
 _TOKEN_TTL = 60.0
 
+_bots_cache: "dict[str, str]" = {}
+_bots_mtime: float = 0.0
 
-def bot_token() -> str:
-    """Return the Telegram bot token.
 
-    Priority: TELEGRAM_BOT_TOKEN env var → message_send.json.
-    Cached for 60 seconds to avoid repeated disk reads.
-    Raises RuntimeError if no token is available.
+def _load_bots() -> "dict[str, str]":
+    """Load the multi-bot token map from tokens/telegram_bots.json (cached).
+
+    Shape: {"<bot_id>": "<token>", ...}. Used for multi-bot deployments.
+    """
+    global _bots_cache, _bots_mtime
+    now = time.monotonic()
+    if _bots_cache and now - _bots_mtime < _TOKEN_TTL:
+        return _bots_cache
+    config_dir = Path(os.environ.get("AAKA_CONFIG_DIR", "/config"))
+    path = config_dir / "tokens" / "telegram_bots.json"
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+            if isinstance(data, dict):
+                _bots_cache = {k: str(v) for k, v in data.items() if v}
+                _bots_mtime = now
+        except Exception:
+            pass
+    return _bots_cache
+
+
+def bot_token(bot_id: "str | None" = None) -> str:
+    """Return the Telegram bot token, optionally for a specific bot.
+
+    Multi-bot (bot_id given): env TELEGRAM_BOT_TOKEN_<BOTID> → tokens/telegram_bots.json.
+    Falls back to the default single-bot token if the bot_id isn't configured.
+    Default: TELEGRAM_BOT_TOKEN env → tokens/message_send.json. TTL-cached.
     """
     global _token_cache, _token_mtime
+
+    if bot_id:
+        env_key = "TELEGRAM_BOT_TOKEN_" + bot_id.upper().replace("-", "_")
+        env_tok = os.environ.get(env_key, "")
+        if env_tok:
+            return env_tok
+        tok = _load_bots().get(bot_id, "")
+        if tok:
+            return tok
+        # fall through to the default token (single-bot back-compat)
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     if token:
@@ -62,9 +97,10 @@ def bot_token() -> str:
 _TG_BASE = "https://api.telegram.org/bot"
 
 
-def _post(method: str, payload: dict, timeout: int = 15) -> dict:
+def _post(method: str, payload: dict, timeout: int = 15,
+          bot_id: "str | None" = None) -> dict:
     """POST to Telegram Bot API. Returns parsed JSON or raises RuntimeError."""
-    token = bot_token()
+    token = bot_token(bot_id)
     if not token:
         raise RuntimeError("No Telegram bot token available")
     url = f"{_TG_BASE}{token}/{method}"
@@ -80,9 +116,9 @@ def _post(method: str, payload: dict, timeout: int = 15) -> dict:
 
 
 def _post_multipart(method: str, parts: list[bytes], boundary: str,
-                    timeout: int = 60) -> dict:
+                    timeout: int = 60, bot_id: "str | None" = None) -> dict:
     """POST multipart/form-data to Telegram Bot API."""
-    token = bot_token()
+    token = bot_token(bot_id)
     if not token:
         raise RuntimeError("No Telegram bot token available")
     url = f"{_TG_BASE}{token}/{method}"
@@ -160,14 +196,14 @@ def send_text(msg: OutboundMessage) -> None:
 
         # First attempt: Markdown parse mode
         try:
-            resp = _post("sendMessage", {**params, "parse_mode": "Markdown"})
+            resp = _post("sendMessage", {**params, "parse_mode": "Markdown"}, bot_id=msg.bot_id)
             if resp.get("ok"):
                 continue
         except RuntimeError as exc:
             if "400" not in str(exc):
                 raise
         # Fallback: plain text (no parse_mode)
-        _post("sendMessage", params)
+        _post("sendMessage", params, bot_id=msg.bot_id)
 
 
 # ── Photo ─────────────────────────────────────────────────────────────────────
@@ -189,7 +225,7 @@ def send_photo(msg: OutboundMessage) -> None:
         + b"\r\n"
     )
     parts.append(f"--{boundary}--\r\n".encode())
-    _post_multipart("sendPhoto", parts, boundary, timeout=30)
+    _post_multipart("sendPhoto", parts, boundary, timeout=30, bot_id=msg.bot_id)
 
 
 # ── Document ──────────────────────────────────────────────────────────────────
@@ -216,7 +252,7 @@ def send_document(msg: OutboundMessage) -> None:
         + b"\r\n"
     )
     parts.append(f"--{boundary}--\r\n".encode())
-    _post_multipart("sendDocument", parts, boundary, timeout=60)
+    _post_multipart("sendDocument", parts, boundary, timeout=60, bot_id=msg.bot_id)
 
 
 # ── Reaction ──────────────────────────────────────────────────────────────────
@@ -226,4 +262,4 @@ def send_reaction(msg: OutboundMessage) -> None:
         "chat_id": msg.recipient,
         "message_id": int(msg.reaction_message_id),
         "reaction": [{"type": "emoji", "emoji": msg.emoji}],
-    }, timeout=5)
+    }, timeout=5, bot_id=msg.bot_id)
