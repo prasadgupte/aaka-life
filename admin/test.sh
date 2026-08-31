@@ -2735,6 +2735,10 @@ check "telegram: native egress routing + multi-bot token selection (mocked)" \
 check "telegram: multi-bot supervisor resolve + per-bot offset/metadata" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' -m sensor.telegram_multibot_test"
 
+# ── Slack channel (new channel) ───────────────────────────────────────────────
+check "slack: web-api adapter — postMessage/reactions + workspace token (mocked)" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' -m gateway.channels.slack_test"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}Results: ${GREEN}${PASS} passed${NC}, ${RED}${FAIL} failed${NC}"

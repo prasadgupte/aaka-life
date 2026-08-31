@@ -17,3 +17,11 @@ GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
 
 # LLM provider — direct API / local, no OpenClaw. See gateway/llm_providers.py.
 LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "gemini")  # gemini | anthropic | claude-cli
+
+# Enabled channels (comma list). Default is Telegram-only → OpenClaw-free out of
+# the box. Add "whatsapp" to enable the (OpenClaw/Baileys) WhatsApp transport,
+# "slack" for Slack. e.g. ENABLED_CHANNELS=telegram,whatsapp,slack
+ENABLED_CHANNELS: list = [
+    c.strip() for c in os.environ.get("ENABLED_CHANNELS", "telegram").split(",") if c.strip()
+]
+

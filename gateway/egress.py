@@ -55,9 +55,14 @@ def _get_whatsapp():
     from gateway.channels import whatsapp
     return whatsapp
 
+def _get_slack():
+    from gateway.channels import slack
+    return slack
+
 _CHANNEL_DISPATCH = {
     "telegram": _get_telegram,
     "whatsapp": _get_whatsapp,
+    "slack": _get_slack,
 }
 
 _KIND_METHOD = {
