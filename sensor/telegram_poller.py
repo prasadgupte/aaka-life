@@ -30,12 +30,17 @@ _log = logging.getLogger("poller")
 BASE = Path(os.environ.get("AAKA_BASE", "/app"))
 CONFIG_DIR = Path(os.environ.get("AAKA_CONFIG_DIR", "/config"))
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+# Multi-bot: one poller process per bot, each with its own AAKA_BOT_ID + token.
+# Empty = the default/single bot (back-compat).
+BOT_ID = os.environ.get("AAKA_BOT_ID", "")
 
 if str(BASE) not in sys.path:
     sys.path.insert(0, str(BASE))
 
-# Offset persistence — our own file takes precedence; bootstrap from openclaw's on first run.
-_OUR_OFFSET_FILE = CONFIG_DIR / "data" / "telegram_offset.json"
+# Offset persistence — per-bot when AAKA_BOT_ID is set; our file takes precedence,
+# bootstrapping from openclaw's on first run for the default bot.
+_OFFSET_NAME = f"telegram_offset_{BOT_ID}.json" if BOT_ID else "telegram_offset.json"
+_OUR_OFFSET_FILE = CONFIG_DIR / "data" / _OFFSET_NAME
 _OPENCLAW_OFFSET_FILE = Path("/home/aaka/.openclaw/telegram/update-offset-default.json")
 
 POLL_TIMEOUT = 30  # seconds for Telegram long-poll
@@ -173,6 +178,8 @@ def _build_format_a(sender_id: str, chat_id: str, message_id: int, text: str,
         "sender_id": str(sender_id),
         "conversation_label": f"id:{chat_id}",
     }
+    if BOT_ID:
+        meta["bot_id"] = BOT_ID  # so replies route back via the same bot
     parts = [
         "Conversation info (untrusted metadata):\n"
         "```json\n"

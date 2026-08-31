@@ -2732,6 +2732,8 @@ check "llm: provider layer — gemini+anthropic dispatch (mocked, no network)" \
 # ── Telegram channel + multi-bot routing (Phase 2 / multi-bot) ────────────────
 check "telegram: native egress routing + multi-bot token selection (mocked)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' -m gateway.channels.telegram_test"
+check "telegram: multi-bot supervisor resolve + per-bot offset/metadata" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' -m sensor.telegram_multibot_test"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
