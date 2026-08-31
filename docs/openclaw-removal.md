@@ -185,15 +185,24 @@ Done + tested:
 - ✅ **Slack channel** (outbound) — `gateway/channels/slack.py` (Web API, per-workspace token, registered
   in egress). *Mock: `gateway.channels.slack_test`.*
 - ✅ **Phase 3 flag** — `config.ENABLED_CHANNELS` (default `telegram` → OpenClaw-free by default).
+- 🟡 **Phase 4 (written, needs a container build)** — `sensor/entrypoint.sh` gates all OpenClaw setup
+  behind `whatsapp ∈ ENABLED_CHANNELS` and runs `telegram_multibot.py` as the foreground process by
+  default (OpenClaw daemon only when WhatsApp is on). `Dockerfile` puts Node+OpenClaw+Baileys behind
+  `ARG WITH_WHATSAPP=false` (default image is lean/OpenClaw-free); `ENV ENABLED_CHANNELS=telegram`.
+  Compose: dev telegram-only, prod builds `WITH_WHATSAPP=true` + `ENABLED_CHANNELS=telegram,whatsapp`.
+  **Validated:** `bash -n` entrypoint, YAML valid. **NOT validated:** an actual `docker build` / boot —
+  Docker wasn't available in this session. *First remote-session step: build both images and boot the
+  default (telegram-only) one; confirm no `openclaw` binary and the supervisor is PID 1.*
 
 Remaining (needs a container/live loop — do in the remote session):
+- ⏳ **Container build test** — build default + `WITH_WHATSAPP=true` images; boot both (Phase 4 above).
 - ⏳ **Multi-bot reply threading** — carry `bot_id` from the queued item through the executor's async
   reply into `OutboundMessage.bot_id`. Outbound + inbound plumbing is in place; this is the last hop.
-- ⏳ **Phase 4** — de-OpenClaw `sensor/entrypoint.sh` (start `telegram_multibot.py`; only start the
-  OpenClaw daemon when `whatsapp` ∈ ENABLED_CHANNELS) + `Dockerfile` (openclaw/node behind a build arg).
-  *Not done here — the container can't be built/tested in this session; blind edits are unsafe.*
-- ⏳ **Slack inbound** — Socket Mode poller (mirrors `telegram_poller`).
-- ⏳ **Phase 5** — strip OpenClaw from `admin/*` + README/CLAUDE.md once Phase 4 lands.
+- ⏳ **Slack — LIVE test + inbound** — mock tests are green, but Slack has **not** been tested against a
+  real workspace. Need: a Slack app + bot token (`SLACK_BOT_TOKEN`), a live `chat.postMessage` send, then
+  build the Socket Mode inbound poller (mirrors `telegram_poller`). *(PG: this is the "remind me to test
+  Slack" item.)*
+- ⏳ **Phase 5** — strip OpenClaw from `admin/*` + README/CLAUDE.md once the container build is confirmed.
 - ⏳ **WhatsApp Baileys sidecar** (§5) — optional, later.
 
 Test-harness note: `admin/test.sh` has ~22 checks using bare `python3` (Xcode 3.9 on this host,

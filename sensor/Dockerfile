@@ -7,13 +7,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
-# Node.js 22 (OpenClaw requires ≥22.12)
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install OpenClaw globally + Baileys (WhatsApp transport, not bundled by openclaw)
-RUN npm install -g openclaw @whiskeysockets/baileys
+# WhatsApp support is opt-in at build time. The default image is Telegram-only:
+# no Node, no OpenClaw, no Baileys → much smaller, and OpenClaw-free.
+#   docker build --build-arg WITH_WHATSAPP=true ...   # to include WhatsApp
+ARG WITH_WHATSAPP=false
+RUN if [ "$WITH_WHATSAPP" = "true" ]; then \
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+      && apt-get install -y --no-install-recommends nodejs \
+      && npm install -g openclaw @whiskeysockets/baileys \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Non-root user for openclaw process + gosu for privilege drop in entrypoint
 RUN groupadd -r aaka && useradd -r -g aaka -d /home/aaka -m aaka
@@ -37,6 +40,8 @@ ENV QUEUE_DB=/data/butler.db
 ENV AAKA_BASE=/app
 ENV AAKA_CONFIG_DIR=/config
 ENV GATEWAY_BACKEND=openclaw
+# Default channel set — Telegram only (OpenClaw-free). Add whatsapp/slack to opt in.
+ENV ENABLED_CHANNELS=telegram
 
 EXPOSE 18789 18790
 

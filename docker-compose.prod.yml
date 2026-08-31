@@ -13,6 +13,9 @@ services:
     build:
       context: .
       dockerfile: sensor/Dockerfile
+      args:
+        # Prod keeps WhatsApp → build with Node + OpenClaw + Baileys.
+        WITH_WHATSAPP: "true"
     container_name: aaka-sensor
     env_file: .env
     environment:
@@ -20,6 +23,9 @@ services:
       AAKA_CONFIG_DIR: /config
       AAKA_CONTEXT: family
       QUEUE_DB: /config/data/queue/butler.db
+      # Prod runs Telegram + WhatsApp (override in .env to change).
+      ENABLED_CHANNELS: ${ENABLED_CHANNELS:-telegram,whatsapp}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
     mem_limit: 768m
     cpus: "1.0"

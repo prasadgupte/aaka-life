@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Channel set — default Telegram-only (OpenClaw-free). WhatsApp (OpenClaw/Baileys)
+# is enabled only when "whatsapp" is in ENABLED_CHANNELS.
+ENABLED_CHANNELS="${ENABLED_CHANNELS:-telegram}"
+case ",${ENABLED_CHANNELS}," in
+    *,whatsapp,*) WHATSAPP_ON=1 ;;
+    *)            WHATSAPP_ON=0 ;;
+esac
+echo "[entrypoint] ENABLED_CHANNELS=${ENABLED_CHANNELS} (whatsapp=${WHATSAPP_ON})"
+
+# ── OpenClaw setup (WhatsApp only) ────────────────────────────────────────────
+if [ "$WHATSAPP_ON" = "1" ]; then
+
 # Ensure openclaw config dir exists (may be a mounted volume)
 mkdir -p /home/aaka/.openclaw
 
@@ -88,6 +100,8 @@ defaults['model'] = {'primary': 'router/router', 'fallbacks': []}
 with open(cfg_path, 'w') as f: json.dump(cfg, f, indent=2)
 "
 
+fi  # end WhatsApp/OpenClaw setup
+
 # Write sensor version info for /status code
 mkdir -p /config/data
 {
@@ -125,8 +139,8 @@ for _d in /config/data/staging /config/data/telegram_media; do
     [ -d "$_d" ] && chmod a+w "$_d" 2>/dev/null || true
 done
 
-# Ensure openclaw dir is owned by aaka (in case volume was mounted before user existed)
-chown -R aaka:aaka /home/aaka/.openclaw
+# Ensure openclaw dir is owned by aaka (harmless if unused)
+[ -d /home/aaka/.openclaw ] && chown -R aaka:aaka /home/aaka/.openclaw 2>/dev/null || true
 
 # Ensure contacts write dirs exist with correct ownership (bday_lists created by cron as root otherwise)
 mkdir -p /config/data/contacts/bday_lists
@@ -144,8 +158,11 @@ export AAKA_BASE=/app
 export AAKA_ROLE=sensor
 export AAKA_CONTEXT=${AAKA_CONTEXT:-family}
 export GATEWAY_BACKEND=${GATEWAY_BACKEND:-openclaw}
+export LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+export ENABLED_CHANNELS=${ENABLED_CHANNELS}
 export QUEUE_DB=${QUEUE_DB:-/config/data/queue/butler.db}
 export GEMINI_API_KEY=${GEMINI_API_KEY:-}
+export ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 export TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
 export TELEGRAM_GROUP_ID=${TELEGRAM_GROUP_ID:-}
 export TELEGRAM_USER_ID=${TELEGRAM_USER_ID:-}
@@ -168,17 +185,20 @@ service cron start
 # Start sensor HTTP server in background for health checks
 python3 sensor/router_sensor.py --serve --port 18790 &
 
-# Start Telegram long-poller in background with auto-restart.
-# This replaces openclaw's Telegram connector (disabled above) with a
-# reliable direct poll loop. Runs as aaka user; restarts on any exit.
-(while true; do
-    gosu aaka python3 -u /app/sensor/telegram_poller.py >> /config/logs/telegram_poller.log 2>&1
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [entrypoint] telegram_poller exited (code $?), restarting in 5s" \
-        >> /config/logs/telegram_poller.log
-    sleep 5
-done) &
-
-# Drop to non-root user for openclaw daemon (WhatsApp + gateway UI).
-# Cap Node heap to 400 MB — openclaw loads large plugin deps (playwright, pdfjs, etc.)
-# and will OOM-crash the container without a ceiling.
-exec gosu aaka env NODE_OPTIONS="--max-old-space-size=400" openclaw gateway run --bind lan --allow-unconfigured
+# ── Foreground process ────────────────────────────────────────────────────────
+# Telegram runs via the multi-bot supervisor (one native poller per bot).
+if [ "$WHATSAPP_ON" = "1" ]; then
+    # WhatsApp needs the OpenClaw daemon in the foreground; run Telegram alongside it.
+    (while true; do
+        gosu aaka env ENABLED_CHANNELS="$ENABLED_CHANNELS" python3 -u /app/sensor/telegram_multibot.py \
+            >> /config/logs/telegram_poller.log 2>&1
+        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [entrypoint] telegram supervisor exited (code $?), restarting in 5s" \
+            >> /config/logs/telegram_poller.log
+        sleep 5
+    done) &
+    # Cap Node heap to 400 MB — openclaw loads large plugin deps (playwright, pdfjs, etc.).
+    exec gosu aaka env NODE_OPTIONS="--max-old-space-size=400" openclaw gateway run --bind lan --allow-unconfigured
+else
+    # Telegram-only (default): the supervisor is the foreground process. No OpenClaw.
+    exec gosu aaka env ENABLED_CHANNELS="$ENABLED_CHANNELS" python3 -u /app/sensor/telegram_multibot.py
+fi

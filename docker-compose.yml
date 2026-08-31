@@ -26,9 +26,13 @@ services:
       AAKA_CONTEXT: family
       QUEUE_DB: /config/data/queue/butler-dev.db
       GATEWAY_BACKEND: openclaw
+      # Telegram-only by default → OpenClaw-free lean image (see sensor/Dockerfile ARG).
+      ENABLED_CHANNELS: ${ENABLED_CHANNELS:-telegram}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_USER_ID: ${TELEGRAM_USER_ID:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # WHATSAPP_PHONE intentionally absent — dev must not connect WhatsApp Web
     volumes:
       # Entire config dir (rw — logs + queue need write access)
