@@ -96,13 +96,24 @@ def main():
     check("GET /webui/state registered", _has_route("/webui/state", "GET"))
     check("POST /webui/upload registered", _has_route("/webui/upload", "POST"))
 
+    # Markdown renderer wired into the console (change 1)
+    check("md.js loaded in shell", "/static/md.js" in CONSOLE_HTML)
+    check("md.js vendored into console static",
+          (Path(__file__).resolve().parent / "static" / "md.js").exists())
+    CONSOLE_JS = (Path(__file__).resolve().parent / "static" / "console.js").read_text(encoding="utf-8")
+    check("console.js calls renderMd for bot bubbles",
+          "renderMd" in CONSOLE_JS and "renderBubbleText" in CONSOLE_JS)
+    MD_JS = (Path(__file__).resolve().parent / "static" / "md.js").read_text(encoding="utf-8")
+    check("md.js sanitizes URLs (no javascript:/data:)", "_mdSafeUrl" in MD_JS)
+    check("md.js opens links in a new tab", 'target="_blank"' in MD_JS)
+    check("md.js renders images", "md-img" in MD_JS)
+
     check("console chips present in HTML", "console-chip" in CONSOLE_HTML)
     for label in ("today", "tasks", "buy"):
         check(f'chip label "{label}" present', f">{label}<" in CONSOLE_HTML or f'"{label}"' in CONSOLE_HTML)
     check("member picker in HTML", 'id="console-member"' in CONSOLE_HTML)
 
     # ── Status tab HTML / JS presence ──────────────────────────────────────
-    CONSOLE_JS = (Path(__file__).resolve().parent / "static" / "console.js").read_text(encoding="utf-8")
     check("renderCard function present in console.js", "renderCard" in CONSOLE_JS)
     check("status-fix class referenced in HTML/JS", "status-fix" in CONSOLE_HTML or "status-fix" in CONSOLE_JS)
 

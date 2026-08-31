@@ -65,6 +65,16 @@
     return new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
   }
 
+  // Render bot text as markdown via the shared md.js renderer (links open in a
+  // new tab, images render inline). Falls back to plain text if md.js is absent.
+  function renderBubbleText(span, text) {
+    if (typeof window.renderMd === 'function') {
+      span.innerHTML = window.renderMd(text);
+    } else {
+      span.textContent = text || '';
+    }
+  }
+
   function hideEmpty() {
     if (emptyState) emptyState.style.display = 'none';
   }
@@ -81,7 +91,13 @@
     }
     const span = document.createElement('span');
     span.className = 'console-bubble-text';
-    span.textContent = text || '';
+    // Bot replies render markdown (links → new-tab anchors, images inline);
+    // user/echo/error messages stay plain text to avoid any injection surface.
+    if (role === 'bot' && !opts.error && text) {
+      renderBubbleText(span, text);
+    } else {
+      span.textContent = text || '';
+    }
     bubble.appendChild(span);
     const meta = document.createElement('span');
     meta.className = 'console-bubble-meta';
@@ -164,10 +180,16 @@
   }
 
   function streamInto(span, text) {
+    // Stream plain text char-by-char (markdown can't be parsed mid-token), then
+    // swap in the rendered markdown on the last frame so links/images appear.
     const chars = Array.from(text);
     let i = 0;
     function tick() {
-      if (i >= chars.length) return;
+      if (i >= chars.length) {
+        renderBubbleText(span, text);
+        chat.scrollTop = chat.scrollHeight;
+        return;
+      }
       const step = Math.max(1, Math.round(chars.length / 60));
       span.textContent += chars.slice(i, i + step).join('');
       i += step;

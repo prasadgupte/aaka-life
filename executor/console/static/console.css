@@ -142,6 +142,31 @@
   color: var(--aaka-berry);
 }
 
+/* Markdown inside bot bubbles */
+.console-msg--bot .console-bubble-text a {
+  color: var(--aaka-teal);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+.console-msg--bot .console-bubble-text a:hover { color: #fff; }
+.console-bubble-text .md-img {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  width: auto;
+  height: auto;
+  border-radius: var(--aaka-radius-sm);
+  margin: 6px 0 2px;
+}
+.console-bubble-text code {
+  font-family: var(--aaka-font-mono);
+  font-size: 11.5px;
+  background: rgba(0,0,0,0.28);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
 .console-bubble-meta {
   display: block;
   margin-top: 4px;

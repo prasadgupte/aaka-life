@@ -24,6 +24,9 @@ if [ "${1:-}" = "--sync-brand" ]; then
   else
     echo "WARN: $BRAND_SRC not found — skipping brand sync" >&2
   fi
+  # Re-vendor the shared markdown renderer into the console static dir.
+  cp "$REPO_DIR/executor/webui/static/md.js" "$REPO_DIR/executor/console/static/md.js" \
+    && echo "md.js synced from executor/webui/static"
   shift || true
 fi
 
