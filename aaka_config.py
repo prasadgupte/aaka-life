@@ -365,7 +365,10 @@ def member_by_sender(sender: str) -> dict | None:
             return m
         if s == (m.get("email") or "").strip().lower():
             return m
-        if s == str(m.get("telegram") or "").strip().lower():
+        # Accept both field names: `telegram_id` (what setup writes) and `telegram`
+        # (legacy/samples). str() so an unquoted YAML int still matches a string ID.
+        tg = m.get("telegram_id") or m.get("telegram") or ""
+        if s == str(tg).strip().lower():
             return m
     return None
 

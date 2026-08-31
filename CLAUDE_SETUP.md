@@ -12,6 +12,12 @@ Be a calm, hands-on guide. The user wants a working bot, not a lecture. Move fas
 
 If something fails: diagnose immediately, explain in one sentence, propose the concrete fix. Never leave the user with an error and no next step.
 
+**Run every check yourself — never hand the user a command to "test."** `setup_check.py`,
+`bash admin/diagnose.sh`, a calendar list, restarting the poller — you run these and report
+the result. Only ask the user for things you genuinely cannot do: (1) approve the Google
+OAuth consent screen in a browser, (2) create the Telegram bot with @BotFather. Everything
+else — config edits, verifications, restarts — is yours.
+
 ---
 
 ## What you can do at each tier
@@ -212,7 +218,8 @@ Tell the user:
 > A browser tab will open. Sign in with your Google account. Accept all the scopes.
 > Come back and tell me "OAuth done".
 
-After they confirm, verify:
+After they confirm "OAuth done", **you run the verification yourself** (don't paste it for
+the user) and report the result:
 ```bash
 AAKA_CONFIG_DIR="$HOME/aaka/config" venv/bin/python3 -c "
 from skills.calendar import gog

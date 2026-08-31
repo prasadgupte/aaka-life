@@ -130,3 +130,16 @@ all `~/.aaka` → `~/aaka/config`; `.env` template dropped `GATEWAY_BACKEND=open
 `LLM_PROVIDER=gemini` + `ENABLED_CHANNELS=telegram`. `setup_check.py` default is now `~/aaka/config`.
 
 ## [append future feedback below this line]
+
+## Session 2026-08-31 (cont.) — real bugs from PG's native install
+
+- **Auth wall was a field-name bug**, not int/string or restart: setup writes the member
+  field `telegram_id`, but `aaka_config.member_by_sender` matched on `telegram`. So the ID
+  never matched → "you're almost in". Fix: match on `telegram_id` OR `telegram` (str-coerced,
+  so unquoted YAML ints also match).
+- **Config path is confusing**: `AAKA_CONFIG_DIR=~/aaka/config` → aaka.yaml at
+  `~/aaka/config/config/aaka.yaml` (double `config`). Didn't cause this failure but is a smell;
+  make `_load` tolerate `$AAKA_CONFIG_DIR/aaka.yaml` too, or rethink the layout.
+- **Claude should run verifications, not the user.** It handed PG a calendar-test command to
+  paste. CLAUDE_SETUP now says: run every check yourself (setup_check / diagnose.sh / calendar
+  list / restart); only ask the user for browser OAuth consent + creating the Telegram bot.
