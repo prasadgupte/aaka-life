@@ -195,6 +195,9 @@ def main():
     check("tasks.css remaps to --aaka-teal", "var(--aaka-teal)" in TASKS_CSS)
     check("tasks.css remaps to --aaka-iris", "var(--aaka-iris)" in TASKS_CSS)
     check("tasks.css remaps to --aaka-berry", "var(--aaka-berry)" in TASKS_CSS)
+    # Change 5: left accent bar on task cards is cancelled in tasks.css.
+    check("tasks.css cancels task-row left border",
+          ".task-row.overdue" in TASKS_CSS and "border-left: 1px solid transparent" in TASKS_CSS)
 
     # ── Launcher + plist ───────────────────────────────────────────────────
     check("plist references console module path", "executor.console.server:app" in PLIST)
