@@ -44,30 +44,30 @@
               <span class="wordmark" style="font-size:28px;">aaka<span class="wordmark__period">.</span></span>
               <p class="console-empty-cap">Type a command or tap a chip to get started.</p>
               <div class="console-chips console-chips--empty">
-                <button class="console-chip" data-cmd="today"><code>today</code></button>
-                <button class="console-chip" data-cmd="tasks"><code>tasks</code></button>
-                <button class="console-chip" data-cmd="buy"><code>buy</code></button>
+                <button class="console-chip" data-cmd="/today"><code>/today</code></button>
+                <button class="console-chip" data-cmd="/tasks"><code>/tasks</code></button>
+                <button class="console-chip" data-cmd="/buy"><code>/buy</code></button>
               </div>
             </div>
           </div>
         </div>
 
         <div class="console-composer-wrap">
-          <div class="console-chips" id="console-chips">
-            <button class="console-chip" data-cmd="today"><code>today</code></button>
-            <button class="console-chip" data-tab-jump="tasks"><code>tasks</code></button>
-            <button class="console-chip" data-cmd="buy"><code>buy</code></button>
-            <button class="console-chip" data-cmd="note"><code>note</code></button>
-            <button class="console-chip" data-cmd="week"><code>week</code></button>
-            <button class="console-chip" data-tab-jump="status"><code>status</code></button>
+          <div class="console-roster" id="console-roster" role="radiogroup" aria-label="Send as">
+            <!-- avatar chips injected by loadState() -->
           </div>
-          <span class="console-error-tip" id="console-error-tip" hidden>Select a member first</span>
+          <span class="console-error-tip" id="console-error-tip" hidden>Pick who's sending first</span>
           <div class="console-composer">
-            <select class="select" id="console-member" style="width:120px;flex-shrink:0;">
-              <option value="">— who? —</option>
-            </select>
-            <input class="input" id="console-input" type="text" placeholder="Message aaka…"
-                   autocomplete="off" style="flex:1;font-family:var(--aaka-font-mono);">
+            <div class="console-input-wrap">
+              <button class="console-cmd-toggle" id="console-cmd-toggle" type="button"
+                      title="Commands" aria-label="Commands" aria-haspopup="true" aria-expanded="false">+</button>
+              <input class="input" id="console-input" type="text" placeholder="Message aaka…"
+                     autocomplete="off" role="combobox" aria-expanded="false"
+                     aria-controls="console-cmd-menu" aria-autocomplete="list"
+                     style="font-family:var(--aaka-font-mono);">
+              <div class="console-cmd-menu" id="console-cmd-menu" role="listbox"
+                   aria-label="Commands" hidden></div>
+            </div>
             <input type="file" id="console-file" hidden>
             <button class="btn btn--ghost" id="console-attach" title="Attach file"
                     style="padding:8px 12px;border-radius:var(--aaka-radius-sm);">📎</button>

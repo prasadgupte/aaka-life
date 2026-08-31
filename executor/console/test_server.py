@@ -28,9 +28,15 @@ _TMP_CONFIG = Path(tempfile.mkdtemp(prefix="aaka-console-test-"))
 (_TMP_CONFIG / "config" / "aaka.yaml").write_text(
     "timezone: Europe/Berlin\n"
     "members:\n"
+    "  - id: kid\n"
+    "    name: Kid One\n"
+    "    role: child\n"
+    "    telegram: '111'\n"
     "  - id: alex\n"
-    "    name: Alex\n"
-    "    telegram: '111'\n",
+    "    name: Alex Admin\n"
+    "    role: adult\n"
+    "    admin: true\n"
+    "    telegram: '222'\n",
     encoding="utf-8",
 )
 os.environ["AAKA_CONFIG_DIR"] = str(_TMP_CONFIG)
@@ -43,6 +49,9 @@ from executor.console import server as console  # noqa: E402
 
 # Ensure the server's State points at the throwaway config for status/logs.
 console.State.config_dir = _TMP_CONFIG
+# The startup event (which calls _reload_identity) only fires under a `with`
+# TestClient; load identity explicitly so /webui/state returns our members.
+console.webui._reload_identity()
 
 client = TestClient(console.app)
 
@@ -108,10 +117,26 @@ def main():
     check("md.js opens links in a new tab", 'target="_blank"' in MD_JS)
     check("md.js renders images", "md-img" in MD_JS)
 
-    check("console chips present in HTML", "console-chip" in CONSOLE_HTML)
-    for label in ("today", "tasks", "buy"):
-        check(f'chip label "{label}" present', f">{label}<" in CONSOLE_HTML or f'"{label}"' in CONSOLE_HTML)
-    check("member picker in HTML", 'id="console-member"' in CONSOLE_HTML)
+    # ── Sender: default-admin + avatar chips (changes 2 & 3) ───────────────
+    r = client.get("/webui/state")
+    members = r.json().get("members", {})
+    check("state exposes member role", "role" in members.get("alex", {}))
+    check("state exposes member admin flag", members.get("alex", {}).get("admin") is True)
+    check("non-admin member has admin:false", members.get("kid", {}).get("admin") is False)
+    check("old <select> member picker removed", 'id="console-member"' not in CONSOLE_HTML)
+    check("avatar roster container present", 'id="console-roster"' in CONSOLE_HTML)
+    check("console.js builds avatar chips", "console-ava-chip" in CONSOLE_JS)
+    check("console.js pre-selects admin sender",
+          ".admin" in CONSOLE_JS and "activeMember" in CONSOLE_JS)
+
+    # ── Command menu replaces always-on pills (change 4) ───────────────────
+    check("old always-on chips row removed", 'id="console-chips"' not in CONSOLE_HTML)
+    check("(+) command toggle present", 'id="console-cmd-toggle"' in CONSOLE_HTML)
+    check("command menu container present", 'id="console-cmd-menu"' in CONSOLE_HTML)
+    check("console.js has command list", "COMMANDS" in CONSOLE_JS and "/today" in CONSOLE_JS)
+    check("slash typing opens menu", "startsWith('/')" in CONSOLE_JS)
+    check("command menu is keyboard-navigable",
+          "ArrowDown" in CONSOLE_JS and "moveCmdSel" in CONSOLE_JS)
 
     # ── Status tab HTML / JS presence ──────────────────────────────────────
     check("renderCard function present in console.js", "renderCard" in CONSOLE_JS)

@@ -43,17 +43,34 @@
   // ════════════════════════ CONSOLE TAB ════════════════════════
   const chat = document.getElementById('console-chat');
   const emptyState = document.getElementById('console-empty');
-  const memberSel = document.getElementById('console-member');
+  const roster = document.getElementById('console-roster');
   const input = document.getElementById('console-input');
   const sendBtn = document.getElementById('console-send');
   const attachBtn = document.getElementById('console-attach');
   const fileInput = document.getElementById('console-file');
   const errorTip = document.getElementById('console-error-tip');
   const pill = document.getElementById('console-pill');
+  const cmdToggle = document.getElementById('console-cmd-toggle');
+  const cmdMenu = document.getElementById('console-cmd-menu');
 
   let sessionId = null;
   let messageCount = 0;
   let eventSource = null;
+  let activeMember = '';   // id of the selected sender (avatar chip)
+
+  // Deterministic avatar tint per member id — mirrors aaka.life's roster look.
+  const AVA_COLORS = ['#00B4A2', '#7B68EE', '#FF6B8A', '#FFBA49', '#4C9BE8', '#E86FC9'];
+  function avaColor(id) {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+    return AVA_COLORS[h % AVA_COLORS.length];
+  }
+  function initials(name) {
+    const parts = String(name).trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
 
   function esc(s) {
     return String(s)
@@ -149,20 +166,150 @@
     pill.style.color = off ? 'var(--aaka-berry)' : '';
   }
 
+  function buildRoster(members) {
+    const ids = Object.keys(members);
+    // Default sender: the admin-role member, else the first member.
+    const adminId = ids.find((id) => members[id].admin || members[id].role === 'admin');
+    activeMember = adminId || ids[0] || '';
+
+    roster.innerHTML = ids.map((id) => {
+      const m = members[id];
+      const name = m.name || id;
+      const role = m.role || '';
+      const sel = id === activeMember;
+      return (
+        `<button type="button" class="console-ava-chip${sel ? ' is-active' : ''}" ` +
+        `role="radio" aria-checked="${sel}" data-member="${esc(id)}" ` +
+        `title="Send as ${esc(name)}">` +
+          `<span class="console-ava" style="background:${avaColor(id)}">${esc(initials(name))}</span>` +
+          `<span class="console-ava-name">${esc(name)}</span>` +
+          (role ? `<span class="console-ava-role">${esc(role)}</span>` : '') +
+        `</button>`
+      );
+    }).join('');
+  }
+
+  function setActiveMember(id) {
+    activeMember = id;
+    roster.querySelectorAll('.console-ava-chip').forEach((chip) => {
+      const on = chip.dataset.member === id;
+      chip.classList.toggle('is-active', on);
+      chip.setAttribute('aria-checked', String(on));
+    });
+    errorTip.hidden = true;
+    roster.classList.remove('console-roster--error');
+  }
+
   async function loadState() {
     try {
       const r = await fetch('/webui/state');
       const data = await r.json();
       sessionId = data.session_id;
-      const members = data.members || {};
-      memberSel.innerHTML = '<option value="">— who? —</option>' +
-        Object.keys(members).map((id) =>
-          `<option value="${esc(id)}">${esc(members[id].name || id)}</option>`).join('');
+      buildRoster(data.members || {});
       openStream();
     } catch (e) {
       setPillOffline(true);
     }
   }
+
+  // Avatar chip click → set active sender.
+  roster?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.console-ava-chip');
+    if (chip && chip.dataset.member) setActiveMember(chip.dataset.member);
+  });
+
+  // ── Command menu (real aaka commands, mirrors aaka.life's set) ──────────
+  const COMMANDS = [
+    { cmd: '/today',  short: 'd', desc: "Today's schedule" },
+    { cmd: '/week',   short: 'w', desc: "This week's schedule" },
+    { cmd: '/add',    short: '',  desc: 'Add a calendar event' },
+    { cmd: '/tasks',  short: 't', desc: 'List open tasks' },
+    { cmd: '/note',   short: 'n', desc: 'Drop a note to a topic' },
+    { cmd: '/buy',    short: 'b', desc: 'Shopping list' },
+    { cmd: 'status',  short: 's', desc: 'Capability + health check' },
+    { cmd: '/menu',   short: '',  desc: 'All commands' },
+  ];
+  let cmdOpen = false;
+  let cmdIndex = -1;   // highlighted row for keyboard nav
+
+  function renderCmdMenu(filter) {
+    const f = (filter || '').toLowerCase();
+    const items = COMMANDS.filter((c) =>
+      !f || c.cmd.toLowerCase().includes(f) || c.desc.toLowerCase().includes(f));
+    if (!items.length) { closeCmdMenu(); return; }
+    cmdMenu.innerHTML = items.map((c, i) =>
+      `<button type="button" class="console-cmd-item${i === 0 ? ' is-active' : ''}" ` +
+      `role="option" data-cmd="${esc(c.cmd)}" tabindex="-1">` +
+        `<code>${esc(c.cmd)}</code>` +
+        (c.short ? `<span class="console-cmd-key">${esc(c.short)}</span>` : '') +
+        `<span class="console-cmd-desc">${esc(c.desc)}</span>` +
+      `</button>`).join('');
+    cmdIndex = 0;
+    openCmdMenu();
+  }
+
+  function openCmdMenu() {
+    cmdMenu.hidden = false;
+    cmdOpen = true;
+    cmdToggle?.setAttribute('aria-expanded', 'true');
+    input?.setAttribute('aria-expanded', 'true');
+  }
+  function closeCmdMenu() {
+    cmdMenu.hidden = true;
+    cmdOpen = false;
+    cmdIndex = -1;
+    cmdToggle?.setAttribute('aria-expanded', 'false');
+    input?.setAttribute('aria-expanded', 'false');
+  }
+  function toggleCmdMenu() {
+    if (cmdOpen) { closeCmdMenu(); return; }
+    renderCmdMenu('');
+    input?.focus();
+  }
+
+  function moveCmdSel(delta) {
+    const rows = cmdMenu.querySelectorAll('.console-cmd-item');
+    if (!rows.length) return;
+    cmdIndex = (cmdIndex + delta + rows.length) % rows.length;
+    rows.forEach((r, i) => r.classList.toggle('is-active', i === cmdIndex));
+    rows[cmdIndex].scrollIntoView({ block: 'nearest' });
+  }
+
+  function chooseCmd(cmd) {
+    input.value = cmd.endsWith(' ') ? cmd : cmd + ' ';
+    closeCmdMenu();
+    input.focus();
+  }
+
+  function applyHighlightedCmd() {
+    const active = cmdMenu.querySelector('.console-cmd-item.is-active') ||
+                   cmdMenu.querySelector('.console-cmd-item');
+    if (active && active.dataset.cmd) { chooseCmd(active.dataset.cmd); return true; }
+    return false;
+  }
+
+  cmdToggle?.addEventListener('click', toggleCmdMenu);
+  cmdMenu?.addEventListener('click', (e) => {
+    const item = e.target.closest('.console-cmd-item');
+    if (item && item.dataset.cmd) chooseCmd(item.dataset.cmd);
+  });
+
+  // Typing "/" as the first char opens the menu; keeps filtering as you type.
+  input?.addEventListener('input', () => {
+    const v = input.value;
+    if (v.startsWith('/')) {
+      renderCmdMenu(v.trim());
+    } else if (cmdOpen) {
+      closeCmdMenu();
+    }
+  });
+
+  // Close on outside click.
+  document.addEventListener('click', (e) => {
+    if (!cmdOpen) return;
+    if (e.target.closest('.console-input-wrap')) return;
+    closeCmdMenu();
+  });
 
   function openStream() {
     if (!sessionId) return;
@@ -202,10 +349,10 @@
   function showMemberError() {
     if (!errorTip) return;
     errorTip.hidden = false;
-    memberSel.classList.add('console-member--error');
+    roster.classList.add('console-roster--error');
     setTimeout(() => {
       errorTip.hidden = true;
-      memberSel.classList.remove('console-member--error');
+      roster.classList.remove('console-roster--error');
     }, 3000);
   }
 
@@ -218,7 +365,8 @@
   async function sendMessage() {
     const text = input.value.trim();
     if (!text) return;
-    if (!memberSel.value) { showMemberError(); return; }
+    if (!activeMember) { showMemberError(); return; }
+    closeCmdMenu();
 
     addBubble('you', text);
     input.value = '';
@@ -230,7 +378,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text, member_id: memberSel.value, session_id: sessionId, group: '',
+          text, member_id: activeMember, session_id: sessionId, group: '',
         }),
       });
       if (!r.ok) throw new Error('http ' + r.status);
@@ -247,13 +395,13 @@
   }
 
   async function uploadFile(file) {
-    if (!memberSel.value) { showMemberError(); return; }
+    if (!activeMember) { showMemberError(); return; }
     addBubble('you', '', { attachment: { name: file.name, size: humanSize(file.size), uploading: true } });
     setSending(true);
     addTyping();
     const fd = new FormData();
     fd.append('file', file);
-    fd.append('member_id', memberSel.value);
+    fd.append('member_id', activeMember);
     fd.append('session_id', sessionId);
     fd.append('text', input.value.trim());
     input.value = '';
@@ -290,6 +438,17 @@
 
   sendBtn?.addEventListener('click', sendMessage);
   input?.addEventListener('keydown', (e) => {
+    if (cmdOpen) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveCmdSel(1); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); moveCmdSel(-1); return; }
+      if (e.key === 'Escape')    { e.preventDefault(); closeCmdMenu(); return; }
+      if (e.key === 'Tab')       { e.preventDefault(); applyHighlightedCmd(); return; }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter inserts the highlighted command instead of sending a bare "/".
+        e.preventDefault();
+        if (applyHighlightedCmd()) return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   });
   attachBtn?.addEventListener('click', () => fileInput.click());
