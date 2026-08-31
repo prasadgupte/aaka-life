@@ -106,26 +106,37 @@ done
 Only **Python 3.11+** and **git** are required. **Docker is NOT needed** — Aaka runs
 natively. (Docker/VPS is an optional later step for "answer while your laptop's asleep".)
 
-### 2 — Config directory [Claude]
+### 2 — Set up the two folders [Claude] — do this first, and explain it
 
-Suggest `~/.aaka` for new users. Set it permanently:
+**Tell the user upfront, in plain words:** *"Everything lives in one folder, `~/aaka`, with two
+parts: `code` (the app — safe to delete or update anytime) and `config` (your settings and data —
+this is the precious one). To remove Aaka completely, you just delete `~/aaka`."*
+
+Establish it — move the clone into `~/aaka/code` if it was cloned elsewhere:
 
 ```bash
-export AAKA_CONFIG_DIR="$HOME/.aaka"
-mkdir -p "$AAKA_CONFIG_DIR"/{config,tokens,data/{queue,calendar},logs,openclaw-data}
-echo 'export AAKA_CONFIG_DIR="$HOME/.aaka"' >> ~/.zshrc
+mkdir -p ~/aaka/config/{config,tokens,data/{queue,calendar},logs}
+# Move the cloned repo into place (skip if it's already at ~/aaka/code):
+[ -d ~/aaka/code ] || mv "$(git rev-parse --show-toplevel)" ~/aaka/code
+cd ~/aaka/code
+export AAKA_CONFIG_DIR="$HOME/aaka/config"
+echo 'export AAKA_CONFIG_DIR="$HOME/aaka/config"' >> ~/.zshrc
 ```
+
+From here on, code lives in `~/aaka/code` and all data in `~/aaka/config` (never nested — updating
+the code never touches the data).
 
 ### 3 — Write .env [Claude, after collecting Telegram token + user ID]
 
 Write to the repo root as `.env` (gitignored):
 
 ```
-GATEWAY_BACKEND=openclaw
 TELEGRAM_BOT_TOKEN=<token>
 TELEGRAM_USER_ID=<numeric id>
 GEMINI_API_KEY=<key if they have it, otherwise omit>
-AAKA_CONFIG_DIR=<config dir from step 2>
+LLM_PROVIDER=gemini
+ENABLED_CHANNELS=telegram
+AAKA_CONFIG_DIR=$HOME/aaka/config
 ```
 
 ### 4 — Write aaka.yaml [Claude, after collecting name + timezone]
@@ -196,14 +207,14 @@ Tell the user:
 
 > Run this in the repo directory:
 > ```bash
-> AAKA_CONFIG_DIR="$HOME/.aaka" venv/bin/python3 admin/reauth.py
+> AAKA_CONFIG_DIR="$HOME/aaka/config" venv/bin/python3 admin/reauth.py
 > ```
 > A browser tab will open. Sign in with your Google account. Accept all the scopes.
 > Come back and tell me "OAuth done".
 
 After they confirm, verify:
 ```bash
-AAKA_CONFIG_DIR="$HOME/.aaka" venv/bin/python3 -c "
+AAKA_CONFIG_DIR="$HOME/aaka/config" venv/bin/python3 -c "
 from skills.calendar import gog
 cals = gog.list_calendars()
 print(f'✓ Calendar access: {len(cals)} calendar(s)')
@@ -220,10 +231,10 @@ Run the sensor **natively** (background). This is the pure-Python Telegram polle
 no Docker, no OpenClaw:
 
 ```bash
-AAKA_CONFIG_DIR="$HOME/.aaka" venv/bin/python3 sensor/telegram_multibot.py \
-  >> "$HOME/.aaka/logs/telegram_poller.log" 2>&1 &
+AAKA_CONFIG_DIR="$HOME/aaka/config" venv/bin/python3 sensor/telegram_multibot.py \
+  >> "$HOME/aaka/config/logs/telegram_poller.log" 2>&1 &
 sleep 4
-tail -15 "$HOME/.aaka/logs/telegram_poller.log"
+tail -15 "$HOME/aaka/config/logs/telegram_poller.log"
 ```
 
 Logs should show the poller starting. No crash = good. **Then tell the user:**
@@ -239,14 +250,14 @@ Common problem: "AAKA_CONFIG_DIR_HOST is not set" → the `.env` file needs `AAK
 ### 8 — Test the executor once [Claude]
 
 ```bash
-AAKA_CONFIG_DIR="$HOME/.aaka" venv/bin/python3 executor/queue_worker.py --once
+AAKA_CONFIG_DIR="$HOME/aaka/config" venv/bin/python3 executor/queue_worker.py --once
 ```
 
 Should exit cleanly ("nothing in queue" is fine — it just means no messages have come in yet).
 
 For background operation (leave running in a terminal or use launchd):
 ```bash
-AAKA_CONFIG_DIR="$HOME/.aaka" venv/bin/python3 executor/queue_worker.py &
+AAKA_CONFIG_DIR="$HOME/aaka/config" venv/bin/python3 executor/queue_worker.py &
 ```
 
 ### 9 — First contact [Human step]

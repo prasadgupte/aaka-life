@@ -112,4 +112,21 @@ unknown-sender reply in `sensor/router_sensor.py`). Claude follows the script we
   story (`mcp/server.py`: *"Claude, what's on my calendar this week?"* → aaka's Python).
   Should become a site section under the Claude-native pillar. *(New site TODO.)*
 
+## Session 2026-08-31 (cont.) — install layout decided
+
+**Decision (PG):** one **visible root** with sibling folders, and Step 1 explains it upfront:
+```
+~/aaka/
+  ├── code/     ← the git clone (disposable — delete/update anytime)
+  └── config/   ← aaka.yaml, tokens, data (precious)
+```
+- Code/config stay **separate** (siblings, never nested) — updating code never touches data.
+- One folder the user owns: backup = copy `~/aaka/config`; **uninstall = `rm -rf ~/aaka`** (fixes the
+  earlier "delete = two paths, one hidden" confusion).
+- Repo folder is named **`code`** (not `repo`).
+
+**Shipped:** `CLAUDE_SETUP.md` Step 2 establishes `~/aaka/{code,config}` and explains it in plain words;
+all `~/.aaka` → `~/aaka/config`; `.env` template dropped `GATEWAY_BACKEND=openclaw`, added
+`LLM_PROVIDER=gemini` + `ENABLED_CHANNELS=telegram`. `setup_check.py` default is now `~/aaka/config`.
+
 ## [append future feedback below this line]

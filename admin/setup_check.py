@@ -21,7 +21,7 @@ from pathlib import Path
 # ── Resolve paths (no aaka_config import — this runs before config exists) ────
 
 REPO_DIR = Path(__file__).resolve().parent.parent
-CONFIG_DIR = Path(os.environ.get("AAKA_CONFIG_DIR") or Path.home() / ".aaka")
+CONFIG_DIR = Path(os.environ.get("AAKA_CONFIG_DIR") or Path.home() / "aaka" / "config")
 
 # ── Check helpers ─────────────────────────────────────────────────────────────
 
