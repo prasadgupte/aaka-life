@@ -564,6 +564,60 @@
 .status-log-warn { color: var(--aaka-sunshine); }
 .status-log-empty { color: var(--aaka-fog); font-style: italic; }
 
+/* ══════════════════════ MOBILE (~375px phones) ══════════════════════ */
+@media (max-width: 560px) {
+  /* Console tab: tighter widget + composer margins, no rounded phone frame
+     eating width. */
+  .console-panels { padding: 0; }
+  .console-phone {
+    margin: 8px 8px 0;
+    width: auto;
+    max-width: none;
+    border-radius: 18px;
+    padding: 6px;
+  }
+  .console-composer-wrap {
+    margin: 8px 0 0;
+    max-width: none;
+    border-radius: 0;
+  }
+  .console-composer { padding: 8px 10px; flex-wrap: wrap; }
+
+  /* Sender roster: horizontal scroll strip so chips don't blow up height. */
+  .console-roster {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 8px 10px 2px;
+  }
+  .console-roster::-webkit-scrollbar { display: none; }
+  .console-ava-chip { flex-shrink: 0; }
+  /* Hide the role line on phones to keep chips compact; name stays. */
+  .console-ava-role { display: none; }
+
+  /* Input row: keep it usable — input wrap takes the full first line, the
+     attach + send buttons sit inline and stay ≥40px touch targets. */
+  .console-input-wrap { flex: 1 1 100%; }
+  .console-composer .btn { min-height: 40px; min-width: 44px; }
+  #console-attach, #console-send { flex: 0 0 auto; }
+
+  /* Command menu spans the composer width, comfortable rows. */
+  .console-cmd-menu { max-height: 50vh; }
+  .console-cmd-desc { display: none; }   /* code + key are enough on a phone */
+
+  /* Status tab: single-column cards, tighter gutters. */
+  .status-scroll { padding: 16px 12px 48px; }
+  .status-grid { grid-template-columns: 1fr; }
+  .status-logs { grid-template-columns: 1fr; }
+}
+
+/* Very narrow: shrink the empty-state lockup a touch. */
+@media (max-width: 380px) {
+  .console-empty .mark { font-size: 40px; }
+  .console-empty .wordmark { font-size: 24px; }
+  .console-ava-name { max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

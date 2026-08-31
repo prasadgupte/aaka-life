@@ -199,6 +199,13 @@ def main():
     check("tasks.css cancels task-row left border",
           ".task-row.overdue" in TASKS_CSS and "border-left: 1px solid transparent" in TASKS_CSS)
 
+    # Change 6: mobile media query covers shell/console/status at phone widths.
+    CONSOLE_CSS = (Path(__file__).resolve().parent / "static" / "console.css").read_text(encoding="utf-8")
+    check("mobile breakpoint present", "@media (max-width: 560px)" in CONSOLE_CSS)
+    check("mobile: roster scrolls, status single-column",
+          ".console-roster" in CONSOLE_CSS and "grid-template-columns: 1fr" in CONSOLE_CSS)
+    check("mobile: touch targets >=40px", "min-height: 40px" in CONSOLE_CSS)
+
     # ── Launcher + plist ───────────────────────────────────────────────────
     check("plist references console module path", "executor.console.server:app" in PLIST)
     check("launch_console.sh exists", LAUNCHER.exists())
