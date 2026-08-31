@@ -230,7 +230,7 @@ the user) and report the result:
 ```bash
 AAKA_CONFIG_DIR="$HOME/aaka/config" venv/bin/python3 -c "
 from skills.calendar import gog
-cals = gog.list_calendars()
+cals = gog.get_service().calendarList().list(maxResults=10).execute().get('items', [])
 print(f'✓ Calendar access: {len(cals)} calendar(s)')
 for c in cals[:5]:
     print(f'  - {c[\"summary\"]}')

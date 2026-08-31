@@ -116,16 +116,15 @@ def check_dotenv() -> dict:
     detail = []
     if not ok:
         detail.append("missing")
-    else:
-        if not has_token:
-            detail.append("TELEGRAM_BOT_TOKEN missing")
-        if not has_uid:
-            detail.append("TELEGRAM_USER_ID missing")
+    elif not has_token:
+        detail.append("TELEGRAM_BOT_TOKEN missing")
+    # TELEGRAM_USER_ID is legacy/optional — members are identified by telegram_id
+    # in aaka.yaml now, so it is NOT required for the .env to be complete.
     return {
         "id": "dotenv",
         "tier": 0,
         "label": ".env file",
-        "ok": ok and has_token and has_uid,
+        "ok": ok and has_token,
         "value": str(env_file) if ok else "not found",
         "fix": f'Create {REPO_DIR}/.env with TELEGRAM_BOT_TOKEN and TELEGRAM_USER_ID',
         "note": ", ".join(detail) or "ok",
@@ -281,8 +280,9 @@ def check_calendar_access() -> dict:
     r = subprocess.run(
         [py, "-c",
          "import sys; sys.path.insert(0, ''); "
-         "from skills.calendar import gog; cals = gog.list_calendars(); "
-         f"print(len(cals))"],
+         "from skills.calendar import gog; "
+         "svc = gog.get_service(); "
+         "print(len(svc.calendarList().list(maxResults=10).execute().get('items', [])))"],
         capture_output=True, text=True, timeout=15,
         env={**os.environ, "AAKA_CONFIG_DIR": str(CONFIG_DIR), "AAKA_BASE": str(REPO_DIR)},
         cwd=str(REPO_DIR),
@@ -298,14 +298,18 @@ def check_calendar_access() -> dict:
             "fix": "",
             "note": "ok",
         }
+    # Surface a friendly summary, never a raw traceback. The last non-empty line
+    # of stderr is usually the real error (e.g. "FileNotFoundError: token.json").
+    err = (r.stderr or r.stdout or "").strip()
+    last = next((ln.strip() for ln in reversed(err.splitlines()) if ln.strip()), "unknown error")
     return {
         "id": "calendar_access",
         "tier": 1,
         "label": "Google Calendar access",
         "ok": False,
-        "value": "failed",
+        "value": "not connected",
         "fix": f'AAKA_CONFIG_DIR="{CONFIG_DIR}" venv/bin/python3 admin/reauth.py',
-        "note": (r.stderr or r.stdout or "unknown error").strip()[:200],
+        "note": f"Reconnect your Google account to enable calendar. ({last[:120]})",
     }
 
 def check_gemini_key() -> dict:
@@ -334,6 +338,20 @@ def check_vps() -> dict:
         "value": vps_ip if ok else "not configured",
         "fix": "See INSTALL.md Phase 3 — VPS is optional. Bot runs locally without it.",
         "note": "" if ok else "VPS enables always-on (bot responds when Mac is asleep) and WhatsApp support.",
+    }
+
+def check_whatsapp() -> dict:
+    enabled = "whatsapp" in [c.strip() for c in os.environ.get("ENABLED_CHANNELS", "telegram").split(",")]
+    phone = _env_from_dotenv().get("WHATSAPP_PHONE") or os.environ.get("WHATSAPP_PHONE", "")
+    connected = enabled and bool(phone)
+    return {
+        "id": "whatsapp",
+        "tier": 3,
+        "label": "WhatsApp",
+        "ok": connected,
+        "value": phone if connected else "not connected",
+        "fix": "Add 'whatsapp' to ENABLED_CHANNELS and set WHATSAPP_PHONE, then link a session (see docs/openclaw-removal.md §5).",
+        "note": "" if connected else "Optional — Aaka is Telegram-first. WhatsApp is available as an add-on channel.",
     }
 
 # ── Tier analysis ─────────────────────────────────────────────────────────────
@@ -369,6 +387,7 @@ def run_checks(tier_filter: int | None = None) -> list[dict]:
         check_calendar_access(),
         check_gemini_key(),
         check_vps(),
+        check_whatsapp(),
     ]
     if tier_filter is not None:
         return [c for c in all_checks if c["tier"] == tier_filter]
