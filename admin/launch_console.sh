@@ -40,6 +40,13 @@ fi
 
 echo "Aaka Console starting on http://localhost:$PORT (config=$CONFIG_DIR)"
 cd "$REPO_DIR"
+
+# Open the browser once the server is up. Backgrounded so it fires after the
+# exec below has replaced this shell with uvicorn (which never returns).
+if [ "${AAKA_CONSOLE_NO_OPEN:-}" != "1" ] && command -v open &>/dev/null; then
+  ( sleep 2; open "http://localhost:$PORT" ) &
+fi
+
 exec "$REPO_DIR/venv/bin/python3" executor/console/server.py \
   --config "$CONFIG_DIR" \
   --host 127.0.0.1 \
