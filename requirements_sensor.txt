@@ -10,4 +10,5 @@ google-auth>=2.23
 google-auth-oauthlib>=1.1
 pymupdf>=1.25
 qrcode[pil]>=7.4
-# LLM wrapper uses openclaw agent --local; no direct API SDK needed at runtime
+# LLM calls go direct via gateway/llm_providers.py using stdlib urllib (Gemini/
+# Anthropic REST) or the claude CLI — no LLM SDK dependency at runtime.

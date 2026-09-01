@@ -1,6 +1,6 @@
 # Aaka — Development compose file
 #
-# Runs the Sensor + OpenClaw container on the Mac for local testing.
+# Runs the Sensor container (Telegram-only, OpenClaw-free) on the Mac for local testing.
 # The Executor runs natively (no container) so Google OAuth and CSV writes work.
 #
 # Usage:
@@ -25,20 +25,16 @@ services:
       AAKA_CONFIG_DIR: /config
       AAKA_CONTEXT: family
       QUEUE_DB: /config/data/queue/butler-dev.db
-      GATEWAY_BACKEND: openclaw
-      # Telegram-only by default → OpenClaw-free lean image (see sensor/Dockerfile ARG).
+      # Telegram-only, OpenClaw-free. WhatsApp runs on the Mac via the wa-sidecar.
       ENABLED_CHANNELS: ${ENABLED_CHANNELS:-telegram}
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_USER_ID: ${TELEGRAM_USER_ID:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      # WHATSAPP_PHONE intentionally absent — dev must not connect WhatsApp Web
     volumes:
       # Entire config dir (rw — logs + queue need write access)
       - "${AAKA_CONFIG_DIR_HOST:?Set AAKA_CONFIG_DIR_HOST to your config dir, e.g. ~/.aaka}:/config"
-      # OpenClaw session/pairing data — persists across container rebuilds
-      - "${AAKA_CONFIG_DIR_HOST}/openclaw-data:/root/.openclaw"
       # Live repo overlay — keeps container code in sync without a full rebuild
       - ".:/app:ro"
     ports:

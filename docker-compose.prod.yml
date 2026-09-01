@@ -1,6 +1,6 @@
 # Aaka — Production VPS compose file
 #
-# Sensor + OpenClaw — Executor runs on the local Mac.
+# Sensor (Telegram-only, OpenClaw-free) — Executor runs on the local Mac.
 # All runtime data (queue, logs, calendar) lives in /opt/aaka-config on the host.
 #
 # Usage (on VPS):
@@ -13,9 +13,6 @@ services:
     build:
       context: .
       dockerfile: sensor/Dockerfile
-      args:
-        # Prod keeps WhatsApp → build with Node + OpenClaw + Baileys.
-        WITH_WHATSAPP: "true"
     container_name: aaka-sensor
     env_file: .env
     environment:
@@ -23,8 +20,8 @@ services:
       AAKA_CONFIG_DIR: /config
       AAKA_CONTEXT: family
       QUEUE_DB: /config/data/queue/butler.db
-      # Prod runs Telegram + WhatsApp (override in .env to change).
-      ENABLED_CHANNELS: ${ENABLED_CHANNELS:-telegram,whatsapp}
+      # Sensor is Telegram-only + OpenClaw-free. WhatsApp runs on the Mac sidecar.
+      ENABLED_CHANNELS: ${ENABLED_CHANNELS:-telegram}
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
     mem_limit: 768m
@@ -34,9 +31,6 @@ services:
     volumes:
       # Entire config dir (rw — logs + queue need write access)
       - /opt/aaka-config:/config
-      # OpenClaw session/pairing data — persists across container rebuilds
-      # Path changed: container now runs openclaw as non-root aaka user
-      - /opt/aaka-config/openclaw-data:/home/aaka/.openclaw
     ports:
       - "18789:18789"
     restart: unless-stopped
