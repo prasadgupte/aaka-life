@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aaka.wasidecar_receiver</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/Shared/aaka-repo/venv/bin/python3</string>
+    <string>-m</string>
+    <string>uvicorn</string>
+    <string>sensor.wa_inbound:app</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>18793</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/Shared/aaka-repo</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AAKA_CONFIG_DIR</key>
+    <string>/Users/Shared/aaka-repo-config</string>
+    <key>AAKA_BASE</key>
+    <string>/Users/Shared/aaka-repo</string>
+    <key>ENABLED_CHANNELS</key>
+    <string>telegram,whatsapp</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/Shared/aaka-repo-config/logs/wa_inbound.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/Shared/aaka-repo-config/logs/wa_inbound.log</string>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>
