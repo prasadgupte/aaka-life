@@ -7,7 +7,7 @@
  * @whiskeysockets/baileys + qrcode (no express, no pino, no sqlite).
  *
  * Responsibilities:
- *   • Pair via QR (printed to stdout + served as a data-URI at GET /qr)
+ *   • Pair via QR (GET /qr) OR pairing code (set WA_PAIRING_NUMBER → GET /pair)
  *   • Persist auth to $WA_AUTH_DIR via useMultiFileAuthState (survives restart)
  *   • Forward inbound WA messages → POST to the Python receiver (WA_RECEIVER_URL)
  *   • Accept outbound sends: POST /send (text), POST /send-media (image/document)
@@ -18,6 +18,7 @@
  *   WA_SIDECAR_PORT  HTTP API port   (default: 18792)
  *   WA_RECEIVER_URL  inbound forward  (default: http://127.0.0.1:18793/inbound)
  *   WA_MEDIA_DIR     inbound media    (default: <auth-parent>/wa-media)
+ *   WA_PAIRING_NUMBER  E.164 digits to link by pairing code instead of QR (optional)
  *
  * Baileys patterns lifted from /Users/Shared/tools/wa-backup/server.js
  * (makeWASocket + useMultiFileAuthState + connection.update + reconnect),
@@ -47,6 +48,11 @@ const WA_AUTH_DIR =
 const WA_SIDECAR_PORT = parseInt(process.env.WA_SIDECAR_PORT || '18792', 10);
 const WA_RECEIVER_URL =
   process.env.WA_RECEIVER_URL || 'http://127.0.0.1:18793/inbound';
+// Optional: link by pairing code instead of QR. Set to the E.164 digits of the
+// WhatsApp number being linked (country code + number, NO '+', spaces stripped).
+// When set (and not yet registered), the sidecar requests an 8-char pairing code
+// the user types into WhatsApp → Linked Devices → Link with phone number.
+const WA_PAIRING_NUMBER = (process.env.WA_PAIRING_NUMBER || '').replace(/[^0-9]/g, '');
 // Inbound media is saved next to the auth dir (sibling), never inside it.
 const WA_MEDIA_DIR =
   process.env.WA_MEDIA_DIR || path.join(path.dirname(WA_AUTH_DIR), 'wa-media');
@@ -54,7 +60,8 @@ const WA_MEDIA_DIR =
 // ── Session state ──────────────────────────────────────────────────────────
 let sock = null;
 let currentQrDataUri = null;
-let connectionStatus = 'connecting'; // "connecting" | "qr" | "connected"
+let pairingCode = null;
+let connectionStatus = 'connecting'; // "connecting" | "qr" | "pairing" | "connected"
 let connectedJid = null;
 let reconnectAttempt = 0;
 
@@ -84,6 +91,25 @@ async function startSession() {
   sock.ev.on('creds.update', saveCreds);
   sock.ev.on('connection.update', handleConnectionUpdate);
   sock.ev.on('messages.upsert', handleMessagesUpsert);
+
+  // Pairing-code path: if a target number is configured and we're not yet
+  // registered, ask WhatsApp for an 8-char code instead of a QR. Requested a
+  // few seconds after socket creation so the noise handshake can open first.
+  if (WA_PAIRING_NUMBER && !sock.authState.creds.registered) {
+    setTimeout(async () => {
+      try {
+        if (sock && !sock.authState.creds.registered && !pairingCode) {
+          const code = await sock.requestPairingCode(WA_PAIRING_NUMBER);
+          pairingCode = code;
+          connectionStatus = 'pairing';
+          console.log(`wa-sidecar: PAIRING CODE = ${code}`);
+          console.log('  → WhatsApp → Settings → Linked Devices → Link a device → Link with phone number → enter this code.');
+        }
+      } catch (e) {
+        console.error('wa-sidecar: requestPairingCode failed:', e && e.message);
+      }
+    }, 3000);
+  }
 }
 
 function makeSilentLogger() {
@@ -99,7 +125,9 @@ function makeSilentLogger() {
 async function handleConnectionUpdate(update) {
   const { connection, lastDisconnect, qr } = update;
 
-  if (qr) {
+  // In pairing-code mode WhatsApp still emits a `qr` field — ignore it so the
+  // code-based flow (status "pairing") isn't clobbered by "qr".
+  if (qr && !WA_PAIRING_NUMBER) {
     try {
       currentQrDataUri = await QRCode.toDataURL(qr);
     } catch (e) {
@@ -115,6 +143,7 @@ async function handleConnectionUpdate(update) {
     connectionStatus = 'connected';
     connectedJid = sock && sock.user ? normalizeJid(sock.user.id) : null;
     currentQrDataUri = null;
+    pairingCode = null;
     reconnectAttempt = 0;
     console.log(`wa-sidecar: connected as ${connectedJid}`);
   }
@@ -350,6 +379,12 @@ const server = http.createServer(async (req, res) => {
       }
       return sendJson(res, 200, { qr: currentQrDataUri });
     }
+    if (req.method === 'GET' && req.url === '/pair') {
+      if (connectionStatus === 'connected') {
+        return sendJson(res, 409, { error: 'already connected' });
+      }
+      return sendJson(res, 200, { code: pairingCode, status: connectionStatus });
+    }
     if (req.method === 'GET' && req.url === '/health') {
       return sendJson(res, 200, { ok: true });
     }
@@ -369,6 +404,10 @@ server.listen(WA_SIDECAR_PORT, '127.0.0.1', () => {
   console.log(`wa-sidecar listening on 127.0.0.1:${WA_SIDECAR_PORT}`);
   console.log(`wa-sidecar auth dir: ${WA_AUTH_DIR}`);
   console.log(`wa-sidecar receiver: ${WA_RECEIVER_URL}`);
+  if (WA_PAIRING_NUMBER) {
+    const masked = WA_PAIRING_NUMBER.slice(0, 4) + '****' + WA_PAIRING_NUMBER.slice(-2);
+    console.log(`wa-sidecar: pairing-code mode for ${masked} (GET /pair)`);
+  }
 });
 
 startSession().catch((e) =>
