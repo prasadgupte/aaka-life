@@ -2816,6 +2816,14 @@ else
     ok "deploy.sh Step 6: \$VAULT resolved before use (no unbound crash)"
     PASS=$((PASS + 1))
 fi
+if grep -q 'ENABLED_CHANNELS=' "$REPO_DIR/admin/deploy.sh" 2>/dev/null && \
+   grep -q '"\$AAKA_CONFIG_DIR/.env"' "$REPO_DIR/admin/deploy.sh" 2>/dev/null; then
+    ok "deploy.sh reads ENABLED_CHANNELS from .env (not just shell env)"
+    PASS=$((PASS + 1))
+else
+    fail "deploy.sh WA gate ignores .env ENABLED_CHANNELS → skips sidecar despite whatsapp enabled"
+    FAIL=$((FAIL + 1))
+fi
 
 # Node boot smoke test — only if node is available and WA_TEST_BOOT=1.
 # Uses a free test port + throwaway auth dir; never touches the live session.

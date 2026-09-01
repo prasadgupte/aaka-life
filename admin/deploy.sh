@@ -245,7 +245,14 @@ SSHBLOCK
 
     # WhatsApp sidecar + inbound receiver — only when whatsapp is enabled. Makes
     # WhatsApp always-on like Telegram: no manual `node`/`uvicorn` to keep running.
-    if echo "${ENABLED_CHANNELS:-telegram}" | grep -q "whatsapp"; then
+    # Read ENABLED_CHANNELS from the canonical .env (not just the shell env) — the
+    # value the user set in .env is the source of truth for a fresh deploy.
+    _EC="${ENABLED_CHANNELS:-}"
+    if [ -z "$_EC" ] && [ -f "$AAKA_CONFIG_DIR/.env" ]; then
+        _EC="$(grep -E '^ENABLED_CHANNELS=' "$AAKA_CONFIG_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'\'' ')"
+    fi
+    _EC="${_EC:-telegram}"
+    if echo "$_EC" | grep -q "whatsapp"; then
         NODE_BIN="$(command -v node || true)"
         PYTHON_BIN="$REPO_DIR/venv/bin/python3"
         if [ -z "$NODE_BIN" ]; then
