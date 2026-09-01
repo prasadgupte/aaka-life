@@ -141,6 +141,11 @@ automatically via `.mcp.json` when you run `claude` in this directory.
 | `set_contact(member, handle, channel)` | Bind a handle (@lid/+E.164/telegram id) → member (dynamic allowlist) |
 | `invite(name)` | Mint a one-time code + wa.me link to onboard someone (creates member if new) |
 | `remove_member(member_id)` | Remove a dynamic member + unbind handles (yaml members protected) |
+| `list_tools()` | Registered aaka Tools + schedule/placement/last-run (see `docs/aaka-tools.md`) |
+| `register_tool(name, run, ...)` | Register/update a Tool (script, cron, placement, secrets) → `config/tools.yaml` |
+| `run_tool(name, args)` | Run a Tool now and report back; returns its structured result |
+| `set_tool_enabled(name, enabled)` | Enable/disable a Tool |
+| `tool_logs(name, n)` | Recent run records for a Tool |
 
 **Why Python-native, not HTTP:** MCP runs in the repo process on the same Mac that holds OAuth tokens — direct imports are faster and avoid the gateway overhead. The HTTP gateway exists for *other agent processes* that can't import aaka's Python.
 
@@ -274,6 +279,7 @@ Register an agent: `python3 admin/register_agent.py <id> "<Display Name>"`
 | `pdf_tool` | /pdf, p \<cmd\> | `p` | compress/extract/split/merge/delete pages on PDFs; `delete blank-pages` auto-removes blanks (`dont-return` to skip companion); `ocr` runs Tesseract → .txt (trailing `ocr` chains after any command); returns files via sendDocument (0 tokens, sensor-side) |
 | `pay` | /pay, pay | — | generate EPC/GiroCode QR for SEPA transfer → sendPhoto PNG (0 tokens, sensor-side). Format: `pay NAME IBAN AMOUNT REFERENCE` |
 | `invite` | /invite \<name\> | — | admin-only: mint a one-time code + wa.me deep link to onboard a member; invitee taps → sends → auto-registered (handle bound in `data/wa_allowlist.json`, no aaka.yaml edit). Solves @lid opacity. See `sensor/wa_onboard.py` (0 tokens) |
+| `tools_list` | /tools, /tools run \<name\> | — | admin-only: list registered aaka Tools (state/schedule/placement/last-run); `/tools run <name>` runs on-demand + reports. See `docs/aaka-tools.md` + `sensor/tool_runner.py` (0 tokens) |
 | `menu` | /menu, commands | — | lists commands (0 tokens) |
 | `errors_report` | /errors, /errors flush | — | show/acknowledge unacked sensor errors (admin only, 0 tokens) |
 | `mail_view` | /mail, m | `m` | list accounts, messages, read message body (executor-side, Maildir) |

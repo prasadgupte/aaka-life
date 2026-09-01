@@ -2760,6 +2760,9 @@ check "wa_inbound: receive() called with channel=whatsapp; reply via egress" \
 check "wa_onboard: invite mint → signup binds handle → recognized (one-time)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_wa_onboard.py"
 
+check "tool_runner: manifest → run → structured result → log → cron/placement" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_tool_runner.py"
+
 check "config getters survive empty/minimal config (no KeyError; read system.*)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"
 import aaka_config as c
