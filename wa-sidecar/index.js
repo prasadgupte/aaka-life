@@ -89,6 +89,16 @@ function markSent(id) {
   sentIds.add(id);
   if (sentIds.size > SENT_IDS_CAP) sentIds.delete(sentIds.values().next().value);
 }
+// Numeric identity of a jid, ignoring device suffix (:12) and @domain — so a
+// privacy @lid, a phone @s.whatsapp.net, and device variants compare equal.
+function baseId(jid) { return String(jid || '').split('@')[0].split(':')[0]; }
+// Is this jid our own account (self-chat)? Match against both our phone (me.id)
+// and our privacy lid (me.lid).
+function isOwnAccount(jid, me) {
+  if (!me || !jid) return false;
+  const b = baseId(jid);
+  return (me.id && b === baseId(me.id)) || (me.lid && b === baseId(me.lid));
+}
 // A fromMe message is a live self-chat command (forward it) only if it's recent —
 // this ignores the history backfill that also arrives as fromMe on (re)connect.
 const SELF_CHAT_MAX_AGE_MS = 120000; // 2 min
@@ -172,7 +182,9 @@ async function handleConnectionUpdate(update) {
     statusMessage = null;
     reconnectAttempt = 0;
     pairAttempt = 0;
-    console.log(`wa-sidecar: connected as ${connectedJid}`);
+    const _me = sock && sock.authState && sock.authState.creds && sock.authState.creds.me;
+    console.log(`wa-sidecar: connected as ${connectedJid}` +
+      (_me ? ` (id=${_me.id || '?'} lid=${_me.lid || 'none'})` : ''));
   }
 
   if (connection === 'close') {
@@ -298,22 +310,20 @@ async function handleMessagesUpsert({ messages, type }) {
         continue;
       }
 
-      // Self-chat = a fromMe message in OUR OWN chat (aaka linked to the user's
-      // own number). WhatsApp may address us by a privacy @lid, so match either
-      // our real number (me.id) or our lid (me.lid). A fromMe message to anyone
-      // ELSE is the user chatting normally — NOT a command — so it's dropped.
+      // Self-chat = a message in OUR OWN chat (aaka linked to the user's own
+      // number). WhatsApp may address us by a privacy @lid; match our phone or
+      // our lid, regardless of fromMe (self-chat can arrive either way).
       const me = sock && sock.authState && sock.authState.creds && sock.authState.creds.me;
       const rjid = msg.key.remoteJid;
-      const isSelfChat = fromMe && me && (rjid === me.id || rjid === me.lid ||
-        (me.lid && rjid.split(':')[0] === me.lid.split(':')[0]) ||
-        (me.id && rjid.split(':')[0].split('@')[0] === me.id.split(':')[0].split('@')[0]));
+      const isSelfChat = isOwnAccount(rjid, me);
+      // A fromMe message to someone ELSE is the user chatting normally — drop it.
       if (fromMe && !isSelfChat) {
         console.log(`${logHead} → skip (fromMe to someone else — not a command)`);
         continue;
       }
-      // Forward: live incoming ("notify"), OR a recent self-chat command.
+      // Forward: live incoming ("notify") OR a recent self-chat command.
       // Drop history backfill / stale appends.
-      const isLive = (type === 'notify' && !fromMe) ||
+      const isLive = (type === 'notify') ||
         (isSelfChat && ageMs >= 0 && ageMs < SELF_CHAT_MAX_AGE_MS);
       if (!isLive) {
         console.log(`${logHead} → skip (not live: type/history)`);
@@ -329,7 +339,7 @@ async function handleMessagesUpsert({ messages, type }) {
       // and the reply lands back in the "Message Yourself" chat.
       let senderJid = rjid;
       if (isSelfChat && me && me.id) senderJid = me.id;
-      console.log(`${logHead} resolved=${senderJid.split('@')[0]} text="${short}" → forward`);
+      console.log(`${logHead} self=${isSelfChat} resolved=${baseId(senderJid)} text="${short}" → forward`);
 
       const body = {
         sender_id: senderJid,
