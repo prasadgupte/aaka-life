@@ -5,6 +5,14 @@ Telegram — i.e. even when the Mac executor is asleep — by moving the Baileys
 `wa-sidecar` from the Mac into the always-on VPS sensor. Baileys `6.17.16`, no
 OpenClaw.
 
+## Non-goal: this does NOT remove the local option
+
+Mac-local WhatsApp (sidecar + receiver on the same machine, all localhost) stays
+the **default and fully-supported** path — many users have no VPS. The VPS
+placement is **opt-in** (`WITH_WHATSAPP` build arg + `WA_SIDECAR_LOCATION=vps`).
+"Local sensor, no VPS" continues to work exactly as today; everything below only
+adds a second deployment topology.
+
 ## Why this is now viable
 
 - The session-pairing pain we hit was the Baileys **7.0.0-rc handshake bug**, not

@@ -283,7 +283,9 @@ SSHBLOCK
     header "Step 5 — Create vault scaffold"
     # Vault roots are per-member (vault_path in aaka.yaml) + shared vault
     # Scaffold is created on the filesystem; gDrive sync handles backup
-    python3 - <<'PYEOF'
+    # Use the venv python — it has pyyaml (bare python3 usually doesn't).
+    PY="$REPO_DIR/venv/bin/python3"; [ -x "$PY" ] || PY="python3"
+    "$PY" - <<'PYEOF'
 import sys, os
 sys.path.insert(0, os.environ.get("AAKA_BASE", "."))
 try:
@@ -330,12 +332,21 @@ PYEOF
 
     header "Step 6 — Migrate SOUL.md to vault"
     SOUL_SRC="$AAKA_BASE/contexts/family/SOUL.md"
-    SOUL_DST="$VAULT/System/contexts/family.md"
-    if [ ! -f "$SOUL_DST" ]; then
-      cp "$SOUL_SRC" "$SOUL_DST" && ok "Copied SOUL.md → vault/System/contexts/family.md" \
-        || fail "Failed to copy SOUL.md"
+    # Resolve the admin member's vault_path (was previously an unbound $VAULT).
+    VAULT="$("$PY" -c "import sys; sys.path.insert(0,'$AAKA_BASE'); import aaka_config; m=next((x for x in aaka_config.members() if x.get('admin')), None); print((m or {}).get('vault_path',''))" 2>/dev/null || echo "")"
+    if [ -z "$VAULT" ]; then
+      warn "no admin member vault_path in aaka.yaml — skipping SOUL.md migration"
+    elif [ ! -f "$SOUL_SRC" ]; then
+      warn "SOUL.md not found at $SOUL_SRC — skipping"
     else
-      ok "family.md already present — skipped"
+      SOUL_DST="$VAULT/99-System/contexts/family.md"
+      mkdir -p "$(dirname "$SOUL_DST")"
+      if [ ! -f "$SOUL_DST" ]; then
+        cp "$SOUL_SRC" "$SOUL_DST" && ok "Copied SOUL.md → $SOUL_DST" \
+          || fail "Failed to copy SOUL.md"
+      else
+        ok "family.md already present — skipped"
+      fi
     fi
 fi
 

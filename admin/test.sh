@@ -2801,6 +2801,22 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+header "deploy.sh — vault scaffold uses venv python; SOUL step has no unbound \$VAULT"
+if grep -q 'PY="\$REPO_DIR/venv/bin/python3"' "$REPO_DIR/admin/deploy.sh" 2>/dev/null; then
+    ok "deploy.sh scaffold uses venv python (has pyyaml)"
+    PASS=$((PASS + 1))
+else
+    fail "deploy.sh scaffold uses bare python3 → 'No module named yaml' on fresh boxes"
+    FAIL=$((FAIL + 1))
+fi
+if grep -q 'SOUL_DST="\$VAULT/System/contexts' "$REPO_DIR/admin/deploy.sh" 2>/dev/null; then
+    fail "deploy.sh Step 6 references unbound \$VAULT (unbound-variable crash)"
+    FAIL=$((FAIL + 1))
+else
+    ok "deploy.sh Step 6: \$VAULT resolved before use (no unbound crash)"
+    PASS=$((PASS + 1))
+fi
+
 # Node boot smoke test — only if node is available and WA_TEST_BOOT=1.
 # Uses a free test port + throwaway auth dir; never touches the live session.
 if [ "${WA_TEST_BOOT:-0}" = "1" ] && command -v node &>/dev/null; then
