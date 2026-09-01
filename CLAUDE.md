@@ -268,6 +268,7 @@ Register an agent: `python3 admin/register_agent.py <id> "<Display Name>"`
 | `undo_queue` | /undo, undo #hash | — | cancel queued action; delete calendar events if already written (0 tokens) |
 | `pdf_tool` | /pdf, p \<cmd\> | `p` | compress/extract/split/merge/delete pages on PDFs; `delete blank-pages` auto-removes blanks (`dont-return` to skip companion); `ocr` runs Tesseract → .txt (trailing `ocr` chains after any command); returns files via sendDocument (0 tokens, sensor-side) |
 | `pay` | /pay, pay | — | generate EPC/GiroCode QR for SEPA transfer → sendPhoto PNG (0 tokens, sensor-side). Format: `pay NAME IBAN AMOUNT REFERENCE` |
+| `invite` | /invite \<name\> | — | admin-only: mint a one-time code + wa.me deep link to onboard a member; invitee taps → sends → auto-registered (handle bound in `data/wa_allowlist.json`, no aaka.yaml edit). Solves @lid opacity. See `sensor/wa_onboard.py` (0 tokens) |
 | `menu` | /menu, commands | — | lists commands (0 tokens) |
 | `errors_report` | /errors, /errors flush | — | show/acknowledge unacked sensor errors (admin only, 0 tokens) |
 | `mail_view` | /mail, m | `m` | list accounts, messages, read message body (executor-side, Maildir) |

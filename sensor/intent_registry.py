@@ -41,6 +41,7 @@ INTENT_PATTERNS: list[tuple[str, list[str]]] = [
     ("block_cal",      [r"^/block\b", r"^block\b"]),
     ("add_task",       [r"^/addtask\b", r"^/task\b", r"\badd\s+task\b", r"\bnew\s+task\b",
                         r"\bremind\s+me\s+to\b"]),
+    ("invite",         [r"^/invite\b"]),
     ("list_tasks",     [r"^/tasks\b"]),
     ("edit_task",      [r"^/edit\b"]),
     ("delete_task",    [r"^/del\b", r"^/delete\b"]),

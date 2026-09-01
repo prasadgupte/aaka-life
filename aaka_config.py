@@ -375,7 +375,29 @@ def member_by_sender(sender: str) -> dict | None:
         tg = m.get("telegram_id") or m.get("telegram") or ""
         if s == str(tg).strip().lower():
             return m
+    # Dynamic allowlist (populated by the /invite onboarding flow) — maps a
+    # WhatsApp handle (@lid or +E.164) → member id, without editing aaka.yaml.
+    al = wa_allowlist()
+    mid = al.get(s) or al.get(_wa_norm)
+    if mid:
+        return next((m for m in members() if m.get("id") == mid), None)
     return None
+
+
+def _wa_allowlist_path() -> Path:
+    return CONFIG_DIR / "data" / "wa_allowlist.json"
+
+
+def wa_allowlist() -> dict:
+    """Handle → member_id map from data/wa_allowlist.json. Lowercased keys."""
+    import json as _json
+    p = _wa_allowlist_path()
+    try:
+        if p.exists():
+            return {str(k).strip().lower(): v for k, v in _json.loads(p.read_text()).items()}
+    except Exception:
+        pass
+    return {}
 
 
 def primary_calendar_id(member_name: str) -> str:

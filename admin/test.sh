@@ -2757,6 +2757,9 @@ header "WA Sidecar — inbound receiver unit tests"
 check "wa_inbound: receive() called with channel=whatsapp; reply via egress" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_wa_inbound.py"
 
+check "wa_onboard: invite mint → signup binds handle → recognized (one-time)" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_wa_onboard.py"
+
 header "WA Sidecar — no openclaw import in whatsapp channel"
 if grep -q "openclaw" "$REPO_DIR/gateway/channels/whatsapp.py" 2>/dev/null; then
     fail "gateway/channels/whatsapp.py still references openclaw"

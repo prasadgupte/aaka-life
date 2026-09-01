@@ -804,6 +804,35 @@ def _handle_local_intent(intent: str, message: str = "", sender: str = "", chann
     return "❓ Unknown intent."
 
 
+def _handle_invite(message: str, sender_id: str) -> str:
+    """Admin-only: `/invite <name>` → mint a one-time code + a wa.me deep link.
+    The invitee taps it, sends the pre-filled message, and is auto-registered on
+    their first message (see sensor/wa_onboard.try_signup)."""
+    requester = aaka_config.member_by_sender(sender_id)
+    if not requester or not aaka_config.member_is_admin(requester.get("id", "")):
+        return "🔒 Only an admin can invite members."
+    arg = re.sub(r"^/invite\b", "", message, flags=re.I).strip()
+    if not arg:
+        return "Usage: `/invite <name>` — e.g. `/invite Sam` (must be an existing member)."
+    # Resolve the target member by id or name (case-insensitive).
+    a = arg.lower()
+    target = next((m for m in aaka_config.members()
+                   if m.get("id", "").lower() == a or m.get("name", "").lower() == a), None)
+    if not target:
+        names = ", ".join(m.get("name", m.get("id", "?")) for m in aaka_config.members())
+        return f"🤷 No member named “{arg}”. Add them to aaka.yaml first. Members: {names}"
+    from sensor import wa_onboard
+    code = wa_onboard.create_invite(target["id"], target.get("name", arg))
+    url, text = wa_onboard.invite_link(code, target.get("name", arg))
+    if url:
+        return (f"✅ Invite for {target.get('name', arg)} ready. Send them this link:\n\n"
+                f"{url}\n\n"
+                f"They tap it, hit send, and I'll welcome them automatically. Code `{code}` (valid 7 days).")
+    return (f"✅ Invite code for {target.get('name', arg)}: `{code}` (valid 7 days).\n\n"
+            f"Ask them to WhatsApp me: “{text}”. (Couldn't build a wa.me link — "
+            f"WhatsApp session not connected, so I don't know my own number yet.)")
+
+
 _IBAN_LEN = {
     "AL": 28, "AD": 24, "AT": 20, "AZ": 28, "BH": 22, "BE": 16, "BA": 20,
     "BR": 29, "BG": 22, "CR": 22, "HR": 21, "CY": 28, "CZ": 24, "DK": 18,
@@ -1268,6 +1297,18 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
     # ── Channel gate — drop unknown senders/groups ────────────────────────────
     if not dry_run and not _is_allowed_channel(sender_id, channel_id):
         _log.info("drop source=%s sender=%s channel=%s (not in allowlist)", source, sender_id, channel_id)
+        # Invite-code onboarding: a valid one-time code in the message
+        # auto-registers the sender (binds their handle → member) and welcomes
+        # them, before the "ask the admin" fallback. DMs only.
+        if sender_id == channel_id:
+            try:
+                from sensor import wa_onboard
+                welcome = wa_onboard.try_signup(sender_id, sender_name, message)
+                if welcome:
+                    _log.info("signup source=%s sender=%s — bound via invite code", source, sender_id)
+                    return welcome
+            except Exception as _e:  # pragma: no cover - defensive
+                _log.warning("invite signup check failed: %s", _e)
         # For DMs, reply with the sender's own handle so they can be added.
         # Group messages silently drop (no way to know intent).
         if source == "telegram" and sender_id == channel_id:
@@ -1773,6 +1814,11 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
     if intent == "pay":
         return _handle_pay(message, channel_id=channel_id, sender=sender_id,
                            message_id=message_id, dry_run=dry_run, source=source)
+
+    if intent == "invite":
+        return _reply(_handle_invite(message, sender_id),
+                      channel_id=channel_id, sender=sender_id,
+                      message_id=message_id, dry_run=dry_run, source=source)
 
     if intent in _LOCAL_INTENTS:
         text = _handle_local_intent(intent, message=message, sender=sender_id, channel_id=channel_id, source=source)
