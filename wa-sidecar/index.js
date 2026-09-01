@@ -297,9 +297,24 @@ async function handleMessagesUpsert({ messages, type }) {
         console.log(`${logHead} → skip (our echo)`);
         continue;
       }
-      // Forward: live incoming ("notify"), OR a recent self-chat command from the
-      // linked account (fromMe + fresh). Drop history backfill / stale appends.
-      const isLive = (type === 'notify') || (fromMe && ageMs >= 0 && ageMs < SELF_CHAT_MAX_AGE_MS);
+
+      // Self-chat = a fromMe message in OUR OWN chat (aaka linked to the user's
+      // own number). WhatsApp may address us by a privacy @lid, so match either
+      // our real number (me.id) or our lid (me.lid). A fromMe message to anyone
+      // ELSE is the user chatting normally — NOT a command — so it's dropped.
+      const me = sock && sock.authState && sock.authState.creds && sock.authState.creds.me;
+      const rjid = msg.key.remoteJid;
+      const isSelfChat = fromMe && me && (rjid === me.id || rjid === me.lid ||
+        (me.lid && rjid.split(':')[0] === me.lid.split(':')[0]) ||
+        (me.id && rjid.split(':')[0].split('@')[0] === me.id.split(':')[0].split('@')[0]));
+      if (fromMe && !isSelfChat) {
+        console.log(`${logHead} → skip (fromMe to someone else — not a command)`);
+        continue;
+      }
+      // Forward: live incoming ("notify"), OR a recent self-chat command.
+      // Drop history backfill / stale appends.
+      const isLive = (type === 'notify' && !fromMe) ||
+        (isSelfChat && ageMs >= 0 && ageMs < SELF_CHAT_MAX_AGE_MS);
       if (!isLive) {
         console.log(`${logHead} → skip (not live: type/history)`);
         continue;
@@ -308,11 +323,17 @@ async function handleMessagesUpsert({ messages, type }) {
       const text = extractText(msg);
       const media = mediaKind(msg);
       if (!text && !media) { console.log(`${logHead} → skip (no text/media)`); continue; }
-      console.log(`${logHead} text="${short}" → forward`);
+
+      // For self-chat, resolve the sender/reply target to our REAL number
+      // (me.id, +E.164) instead of the opaque @lid — so the allowlist uses +49…
+      // and the reply lands back in the "Message Yourself" chat.
+      let senderJid = rjid;
+      if (isSelfChat && me && me.id) senderJid = me.id;
+      console.log(`${logHead} resolved=${senderJid.split('@')[0]} text="${short}" → forward`);
 
       const body = {
-        sender_id: msg.key.remoteJid,
-        channel_id: msg.key.remoteJid,
+        sender_id: senderJid,
+        channel_id: senderJid,
         message_id: msg.key.id,
         text: text,
         from_me: !!msg.key.fromMe,

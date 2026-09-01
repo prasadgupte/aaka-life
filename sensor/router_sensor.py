@@ -1276,13 +1276,18 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                 f"Share this with whoever set me up and they'll add you in a few seconds."
             )
         if source == "whatsapp" and sender_id == channel_id:
-            # Show the E.164 number so the admin can add it as a member's whatsapp.
-            num = sender_id.replace("@s.whatsapp.net", "")
-            if num and not num.startswith("+"):
-                num = "+" + num
+            # Show the handle to add to the allowlist. Real numbers → +E.164; a
+            # privacy @lid has no phone equivalent, so show it verbatim (no bogus +).
+            if sender_id.endswith("@s.whatsapp.net"):
+                num = sender_id.replace("@s.whatsapp.net", "")
+                if num and not num.startswith("+"):
+                    num = "+" + num
+                what = f"Your WhatsApp number is `{num}`"
+            else:
+                what = f"Your WhatsApp handle is `{sender_id}`"
             return (
-                f"👋 Hi! You're almost in — I don't recognise this number yet.\n\n"
-                f"Your WhatsApp number is `{num}`.\n\n"
+                f"👋 Hi! You're almost in — I don't recognise you yet.\n\n"
+                f"{what}.\n\n"
                 f"Share it with whoever set me up and they'll add you in a few seconds."
             )
         return ""
