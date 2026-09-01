@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Templated by admin/deploy.sh: ${NODE_BIN} ${AAKA_BASE} ${AAKA_CONFIG_DIR} are
+     substituted at install time. Runs the Baileys sidecar under launchd so the
+     WhatsApp session is always-on and auto-restarts — no manual `node index.js`. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aaka.wasidecar</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>${NODE_BIN}</string>
+    <string>${AAKA_BASE}/wa-sidecar/index.js</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${AAKA_BASE}/wa-sidecar</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AAKA_CONFIG_DIR</key>
+    <string>${AAKA_CONFIG_DIR}</string>
+    <key>WA_SIDECAR_PORT</key>
+    <string>18792</string>
+    <key>WA_RECEIVER_URL</key>
+    <string>http://127.0.0.1:18793/inbound</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>${AAKA_CONFIG_DIR}/logs/wa_sidecar.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${AAKA_CONFIG_DIR}/logs/wa_sidecar.log</string>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>

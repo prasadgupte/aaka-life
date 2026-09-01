@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Templated by admin/deploy.sh: ${PYTHON_BIN} ${AAKA_BASE} ${AAKA_CONFIG_DIR} are
+     substituted at install time so this works at any install path, not just the
+     original /Users/Shared one. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -8,7 +11,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/Shared/aaka-repo/venv/bin/python3</string>
+    <string>${PYTHON_BIN}</string>
     <string>-m</string>
     <string>uvicorn</string>
     <string>sensor.wa_inbound:app</string>
@@ -19,14 +22,14 @@
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/Shared/aaka-repo</string>
+  <string>${AAKA_BASE}</string>
 
   <key>EnvironmentVariables</key>
   <dict>
     <key>AAKA_CONFIG_DIR</key>
-    <string>/Users/Shared/aaka-repo-config</string>
+    <string>${AAKA_CONFIG_DIR}</string>
     <key>AAKA_BASE</key>
-    <string>/Users/Shared/aaka-repo</string>
+    <string>${AAKA_BASE}</string>
     <key>ENABLED_CHANNELS</key>
     <string>telegram,whatsapp</string>
   </dict>
@@ -38,10 +41,10 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>/Users/Shared/aaka-repo-config/logs/wa_inbound.log</string>
+  <string>${AAKA_CONFIG_DIR}/logs/wa_inbound.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Users/Shared/aaka-repo-config/logs/wa_inbound.log</string>
+  <string>${AAKA_CONFIG_DIR}/logs/wa_inbound.log</string>
 
   <key>ThrottleInterval</key>
   <integer>10</integer>
