@@ -82,20 +82,14 @@ def test_adapter_routing():
     check("phase2: telegram routes through egress", m is not None and m.channel == "telegram")
     check("phase2: egress msg carries text", m is not None and m.text == "hello tg")
 
-    # WhatsApp → still the claw CLI subprocess
-    calls = {}
-    import subprocess as _sp
-    orig_run = _sp.run
-
-    class _R: returncode = 0; stdout = ""; stderr = ""
-    def fake_run(cmd, **kw):
-        calls["cmd"] = cmd
-        return _R()
-    adapter_mod.subprocess.run = fake_run
+    # WhatsApp → egress too (native, via the wa-sidecar; no claw CLI)
+    captured_wa = {}
+    egress.send = lambda m: captured_wa.update(msg=m)
     GatewayAdapter().send_message("whatsapp", "+31600", "hello wa")
-    adapter_mod.subprocess.run = orig_run
-    check("phase2: whatsapp still uses claw CLI", calls.get("cmd", [None])[0] is not None
-          and "message" in calls["cmd"] and "--channel" in calls["cmd"])
+    egress.send = orig_send
+    wm = captured_wa.get("msg")
+    check("phase3: whatsapp routes through egress (no claw CLI)",
+          wm is not None and wm.channel == "whatsapp" and wm.text == "hello wa")
 
     # dry_run prints, sends nothing
     sent = {}

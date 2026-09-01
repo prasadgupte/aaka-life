@@ -1,27 +1,25 @@
 """
 Gateway configuration.
 
-Controls which claw backend is active (message transport) and the LLM provider.
+Fully native — no OpenClaw. Messages go through gateway.egress (Telegram HTTP,
+WhatsApp via wa-sidecar, Slack Web API); LLM calls through gateway.llm_providers.
 
 Environment variables:
-  GATEWAY_BACKEND   openclaw | zeroclaw  (default: openclaw) — message transport, being phased out
-  CLAW_BIN          binary name override (default: same as GATEWAY_BACKEND)
   GEMINI_API_KEY    API key for the Gemini LLM provider
   LLM_PROVIDER      gemini | anthropic | claude-cli  (default: gemini) — see gateway/llm_providers.py
+  ENABLED_CHANNELS  comma list, e.g. telegram,whatsapp,slack (default: telegram)
 """
 import os
 from pathlib import Path
 
-BACKEND: str = os.environ.get("GATEWAY_BACKEND", "openclaw")  # openclaw | zeroclaw
-CLAW_BIN: str = os.environ.get("CLAW_BIN", BACKEND)           # binary name on PATH
 GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
 
 # LLM provider — direct API / local, no OpenClaw. See gateway/llm_providers.py.
 LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "gemini")  # gemini | anthropic | claude-cli
 
-# Enabled channels (comma list). Default is Telegram-only → OpenClaw-free out of
-# the box. Add "whatsapp" to enable the (OpenClaw/Baileys) WhatsApp transport,
-# "slack" for Slack. e.g. ENABLED_CHANNELS=telegram,whatsapp,slack
+# Enabled channels (comma list). Default is Telegram-only. Add "whatsapp" to
+# enable the Baileys wa-sidecar transport, "slack" for Slack.
+# e.g. ENABLED_CHANNELS=telegram,whatsapp,slack
 ENABLED_CHANNELS: list = [
     c.strip() for c in os.environ.get("ENABLED_CHANNELS", "telegram").split(",") if c.strip()
 ]

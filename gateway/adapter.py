@@ -1,8 +1,10 @@
 """
-GatewayAdapter — unified interface for zeroclaw and openclaw backends.
+GatewayAdapter — unified interface for outbound messages and LLM calls.
 
-All outbound message sends and LLM calls route through this class.
-Switch backends with the GATEWAY_BACKEND env var — no code changes needed.
+Everything is native now: messages go through gateway.egress (Telegram HTTP,
+WhatsApp via the wa-sidecar, Slack Web API) and LLM calls go through
+gateway.llm_providers (gemini · anthropic · claude-cli). No OpenClaw, no claw
+subprocess — the abstraction that once dispatched to a claw binary is gone.
 
 Usage:
     from gateway.adapter import GatewayAdapter
@@ -13,22 +15,15 @@ Usage:
 
 import json
 import os
-import shutil
-import subprocess
-import urllib.error
-import urllib.request
-from gateway.config import BACKEND, CLAW_BIN
-
-# LLM providers now live in gateway/llm_providers.py (gemini · anthropic · claude-cli),
-# selected by LLM_PROVIDER. call_llm() below delegates there.
 
 
 class GatewayAdapter:
-    """Dispatches gateway + LLM calls to the configured claw backend."""
+    """Dispatches outbound messages (via egress) and LLM calls (via providers)."""
 
-    def __init__(self, backend: str = BACKEND, claw_bin: str = CLAW_BIN):
-        self.backend = backend
-        self.claw_bin = claw_bin
+    def __init__(self, *_ignored, **_kwignored):
+        # Positional/keyword args are accepted and ignored for back-compat with
+        # old GatewayAdapter(backend=..., claw_bin=...) call sites.
+        pass
 
     # ── Message sending ───────────────────────────────────────────────────────
 
@@ -43,62 +38,29 @@ class GatewayAdapter:
         reply_to_message_id: str | None = None,
     ) -> None:
         """
-        Send a message via the configured gateway.
+        Send a message via the native egress gateway.
 
         Args:
-            channel:  'telegram' | 'whatsapp'
+            channel:  'telegram' | 'whatsapp' | 'slack'
             target:   Chat ID, E.164 phone, or group JID
             message:  Text to send
             silent:   Send without notification (Telegram)
             dry_run:  Print payload without sending
-
-        Raises RuntimeError on non-zero exit.
         """
         if dry_run:
             print(f"[dry-run] {channel} → {target}: {message[:80]}")
             return
 
-        # Telegram goes through the native egress path — no OpenClaw CLI.
-        if channel == "telegram":
-            self.send_message_direct_tg(
-                target, message, silent=silent,
-                reply_to_message_id=reply_to_message_id,
-            )
-            return
-
-        # WhatsApp (and any other channel) still via the claw CLI until its
-        # own native transport lands (see docs/openclaw-removal.md Phase 3/5).
-        cmd = [
-            self.claw_bin, "message", "send",
-            "--channel", channel,
-            "--target", target,
-            "--message", message,
-        ]
-        if silent:
-            cmd.append("--silent")
-        if dry_run:
-            cmd.append("--dry-run")
-        if reply_to_message_id:
-            cmd += ["--reply-to", str(reply_to_message_id)]
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"[gateway] send_message failed ({self.claw_bin}): "
-                    + (result.stderr or result.stdout).strip()
-                )
-        except RuntimeError as exc:
-            if reply_to_message_id and "--reply-to" in str(exc):
-                # Graceful fallback: retry without --reply-to
-                cmd_no_reply = [a for a in cmd if a not in ("--reply-to", str(reply_to_message_id))]
-                result = subprocess.run(cmd_no_reply, capture_output=True, text=True)
-                if result.returncode != 0:
-                    raise RuntimeError(
-                        f"[gateway] send_message failed ({self.claw_bin}): "
-                        + (result.stderr or result.stdout).strip()
-                    )
-            else:
-                raise
+        from gateway.egress import send, OutboundMessage, MessageKind
+        send(OutboundMessage(
+            kind=MessageKind.TEXT,
+            recipient=target,
+            channel=channel,
+            text=message,
+            source="gateway_adapter",
+            silent=silent,
+            reply_to_message_id=reply_to_message_id,
+        ))
 
     def send_message_direct_tg(
         self,
@@ -109,11 +71,8 @@ class GatewayAdapter:
         reply_to_message_id: str | None = None,
         bot_id: str | None = None,
     ) -> None:
-        """Send a Telegram message via the egress gateway (audited, rate-limited).
-
-        Native path — no OpenClaw CLI. `bot_id` selects which bot token to use
-        for multi-bot deployments (see gateway/channels/telegram.py).
-        """
+        """Send a Telegram message via egress. `bot_id` selects which bot token to
+        use for multi-bot deployments (see gateway/channels/telegram.py)."""
         from gateway.egress import send, OutboundMessage, MessageKind
         send(OutboundMessage(
             kind=MessageKind.TEXT,
@@ -134,15 +93,12 @@ class GatewayAdapter:
         emoji: str = "👀",
     ) -> None:
         """Send an emoji reaction to a message (best-effort; swallows errors)."""
-        cmd = [
-            self.claw_bin, "message", "react",
-            "--channel", channel,
-            "--target", target,
-            "--message-id", str(message_id),
-            "--emoji", emoji,
-        ]
         try:
-            subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            from gateway.egress import reaction, send
+            send(reaction(
+                recipient=target, channel=channel, emoji=emoji,
+                message_id=str(message_id), source="gateway_adapter",
+            ))
         except Exception:
             pass  # non-fatal
 
@@ -166,10 +122,10 @@ class GatewayAdapter:
             self._log_llm_usage(name, "error", error=str(exc)[:200])
             raise
 
-    def _call_llm_openclaw(self, prompt: str, timeout: int,
+    def _call_llm_fallback(self, prompt: str, timeout: int,
                            _gemini_only: bool = False) -> str:
-        # Back-compat shim. gateway.agent_api's /v1/llm fallback passes
-        # _gemini_only=True to force the Gemini provider.
+        """Fallback LLM entry used by gateway.agent_api's /v1/llm route.
+        _gemini_only=True forces the Gemini provider."""
         return self.call_llm(prompt, timeout,
                              provider="gemini" if _gemini_only else None)
 
@@ -199,17 +155,3 @@ class GatewayAdapter:
                 fh.write(json.dumps(entry) + "\n")
         except Exception:
             pass  # non-fatal
-
-    # ── Gateway lifecycle ─────────────────────────────────────────────────────
-
-    def gateway_cmd(self, *args: str) -> subprocess.CompletedProcess:
-        """Run an arbitrary gateway sub-command: gateway_cmd('status')."""
-        return subprocess.run(
-            [self.claw_bin, "gateway", *args],
-            capture_output=True, text=True,
-        )
-
-    def status(self) -> str:
-        """Return gateway status string."""
-        result = self.gateway_cmd("status")
-        return (result.stdout or result.stderr).strip()
