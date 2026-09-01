@@ -210,6 +210,23 @@ if 0 <= idx < len(members):
                     echo "    (skip $svc)"
                 fi
             done
+            # Verify the WhatsApp services actually bound. A stray manual
+            # `node`/`uvicorn` on their ports makes the launchd service crash-loop
+            # on "address already in use" — surface that instead of silent success.
+            sleep 2
+            for probe in "wasidecar:18792:/status" "wasidecar_receiver:18793:/health"; do
+                name="${probe%%:*}"; rest="${probe#*:}"; port="${rest%%:*}"; hpath="${rest#*:}"
+                echo "$svcs" | grep -q "com.aaka.$name" || continue
+                if ! curl -sf "http://127.0.0.1:${port}${hpath}" >/dev/null 2>&1; then
+                    holder=$(lsof -ti ":${port}" 2>/dev/null | head -1)
+                    if [ -n "$holder" ]; then
+                        echo "  ⚠ com.aaka.$name didn't come up on :$port — held by PID $holder (a manual run?)."
+                        echo "     Free it and re-run:  lsof -ti :$port | xargs kill"
+                    else
+                        echo "  ⚠ com.aaka.$name not responding on :$port yet — check ${AAKA_CONFIG_DIR:-\$AAKA_CONFIG_DIR}/logs/${name/wasidecar_receiver/wa_inbound}.log"
+                    fi
+                fi
+            done
         fi
         echo "  Done."
         ;;
