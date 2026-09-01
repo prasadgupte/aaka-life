@@ -1832,6 +1832,25 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                 dry_run=dry_run, source=source,
             )
 
+    # ── aaka Tools: a message matching a registered tool's `command` runs it ──
+    # (checked after core intents so tools can't shadow built-ins — aaka owns the
+    # namespace). Only for recognized senders; admin gate lives per-tool if needed.
+    if intent is None and message.lstrip().startswith("/"):
+        try:
+            from sensor import tool_runner
+            cmd = message.strip().split()[0].lower()
+            extra = message.strip()[len(cmd):].strip()
+            for tname, tentry in tool_runner.load_manifest().items():
+                tcmd = (tentry.get("command") or "").lower()
+                if tcmd and tcmd == cmd and tentry.get("enabled", True):
+                    res = tool_runner.run_and_report(tname, extra)
+                    head = "✅" if res.get("ok") else "⚠️"
+                    return _reply(f"{head} {res.get('summary') or res.get('error') or tname}",
+                                  channel_id=channel_id, sender=sender_id,
+                                  message_id=message_id, dry_run=dry_run, source=source)
+        except Exception:
+            pass
+
     if intent is None:
         return _reply(f"{REPLY_PREFIX}Sorry, I didn't understand that. ↪ /menu", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
 
