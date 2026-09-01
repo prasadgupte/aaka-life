@@ -47,6 +47,28 @@ def _route(text: str) -> str:
     return _route_impl(text)
 
 
+def _wa_envelope(sender_id: str, channel_id: str, message_id: str, text: str) -> str:
+    """Wrap a WhatsApp message in the Format A metadata envelope the router
+    expects (mirrors telegram_poller._build_format_a). The 'whatsapp:' chat_id
+    prefix tells gateway.ingress.normalize() to route on the whatsapp channel and
+    reply to <jid>. Without this envelope route() has no sender/channel context
+    and returns an empty reply."""
+    import json as _json
+    meta = {
+        "chat_id": f"whatsapp:{channel_id or sender_id}",
+        "message_id": str(message_id or ""),
+        "sender_id": str(sender_id),
+        "conversation_label": f"id:{channel_id or sender_id}",
+    }
+    return (
+        "Conversation info (untrusted metadata):\n"
+        "```json\n"
+        f"{_json.dumps(meta)}\n"
+        "```\n"
+        f"{text}"
+    )
+
+
 def _egress_send(msg: OutboundMessage) -> None:
     _egress_send_impl(msg)
 
@@ -79,11 +101,19 @@ async def inbound(request: Request):
         # Blocked sender or parse error — ingress already logged it.
         return Response(status_code=204)
 
-    # ingress Format C leaves is_self_dm=False; the sidecar carries the truth via
-    # from_me (InboundMessage has no such field), so patch it here.
-    parsed.is_self_dm = bool(body.get("from_me", False))
+    # Never route the account's own outgoing messages (fromMe): they include the
+    # replies aaka itself sends, so routing them would loop, and they aren't
+    # commands to aaka.
+    if bool(body.get("from_me", False)):
+        return JSONResponse({"ok": True, "skipped": "from_me"})
 
-    reply = _route(parsed.text)
+    # Route through the full sensor router with proper WhatsApp context. route()
+    # re-normalizes this envelope (channel=whatsapp, channel_id=<jid>) and returns
+    # the reply text for zero-token intents; queued intents return "" and are
+    # handled by the executor.
+    reply = _route(_wa_envelope(
+        parsed.sender_id, parsed.channel_id, parsed.message_id or "", parsed.text,
+    ))
 
     if reply:
         _egress_send(OutboundMessage(
