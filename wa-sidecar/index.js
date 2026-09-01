@@ -177,6 +177,23 @@ async function handleConnectionUpdate(update) {
       process.exit(1);
     }
 
+    if (code === DisconnectReason.restartRequired) {
+      // Normal final step of pairing (and stream restarts): WhatsApp accepted the
+      // scan and asks us to reconnect to finish login. Must reconnect IMMEDIATELY —
+      // a backoff here makes the phone's "linking…" flow time out ("couldn't link
+      // device"). This is NOT a refusal, so it does not count as a pair attempt.
+      console.log('wa-sidecar: restart required (515) — reconnecting now to finish login.');
+      connectionStatus = 'connecting';
+      reconnectAttempt = 0;
+      pairAttempt = 0;
+      setTimeout(() => {
+        startSession().catch((e) =>
+          console.error('wa-sidecar: restart reconnect failed:', e && e.message)
+        );
+      }, 250);
+      return;
+    }
+
     const registered = !!(sock && sock.authState && sock.authState.creds && sock.authState.creds.registered);
 
     if (!registered) {
