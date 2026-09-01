@@ -2760,6 +2760,16 @@ check "wa_inbound: receive() called with channel=whatsapp; reply via egress" \
 check "wa_onboard: invite mint → signup binds handle → recognized (one-time)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_wa_onboard.py"
 
+check "config getters survive empty/minimal config (no KeyError; read system.*)" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"
+import aaka_config as c
+c._load = lambda: {}
+assert c.bot_name() and c.bot_emoji() and c.timezone() and c.members()==[]
+c._load = lambda: {'system': {'timezone':'Asia/Kolkata','bot_name':'Rosi'}, 'calendar':{'default_id':'primary'}}
+assert c.timezone()=='Asia/Kolkata' and c.bot_name()=='Rosi' and c.calendar_id()=='primary', 'system.* not read'
+print('config robust')
+\""
+
 header "WA Sidecar — no openclaw import in whatsapp channel"
 if grep -q "openclaw" "$REPO_DIR/gateway/channels/whatsapp.py" 2>/dev/null; then
     fail "gateway/channels/whatsapp.py still references openclaw"

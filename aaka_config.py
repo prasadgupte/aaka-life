@@ -229,7 +229,12 @@ def calendar_id() -> str:
 
 
 def timezone() -> str:
-    return _load()["timezone"]
+    # Back-compat: old configs use top-level `timezone`; the setup template writes
+    # `system.timezone`. Accept either, default to UTC.
+    cfg = _load()
+    return (cfg.get("timezone")
+            or (cfg.get("system") or {}).get("timezone")
+            or "UTC")
 
 
 _BOT_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{1,15}$")
@@ -244,7 +249,9 @@ def bot_name() -> str:
     Validated against [a-zA-Z][a-zA-Z0-9_-]{1,15} so it is safe to use in
     file paths, log namespaces, and intent regex prefixes.
     """
-    name = _load().get("bot_name") or "Aaka"
+    cfg = _load()
+    # Accept top-level (old) or system.bot_name (setup template); default Aaka.
+    name = cfg.get("bot_name") or (cfg.get("system") or {}).get("bot_name") or "Aaka"
     if not _BOT_NAME_RE.match(name):
         raise ValueError(
             f"bot_name {name!r} is invalid — must match [a-zA-Z][a-zA-Z0-9_-]{{1,15}}"
@@ -263,7 +270,8 @@ def branded_name() -> str:
 
 
 def bot_emoji() -> str:
-    return _load().get("bot_emoji", "🌤️")
+    cfg = _load()
+    return cfg.get("bot_emoji") or (cfg.get("system") or {}).get("bot_emoji") or "🌤️"
 
 
 def reply_prefix() -> str:
@@ -453,9 +461,9 @@ def primary_calendar_id(member_name: str) -> str:
 def all_calendar_ids() -> list[str]:
     """Return all distinct calendar IDs across the shared calendar and all members."""
     ids: set[str] = set()
-    cfg = _load()
-    if cfg.get("calendar_id"):
-        ids.add(cfg["calendar_id"])
+    cid = calendar_id()  # robust: top-level calendar_id OR calendar.default_id
+    if cid:
+        ids.add(cid)
     for m in members():
         if m.get("primary_calendar_id"):
             ids.add(m["primary_calendar_id"])

@@ -131,7 +131,7 @@ def try_signup(handle: str, sender_name: str, text: str) -> str | None:
 
 def _bot_name() -> str:
     try:
-        return (aaka_config._load().get("system", {}) or {}).get("bot_name", "aaka")
+        return aaka_config.bot_name()  # single source (top-level or system.bot_name)
     except Exception:
         return "aaka"
 
