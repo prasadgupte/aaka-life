@@ -1242,6 +1242,7 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
     sender_id  = _parsed.sender_id
     channel_id = _parsed.channel_id
     source     = _parsed.channel
+    sender_name = getattr(_parsed, "sender_name", "") or ""
     sender_email = ""
     message_id = _parsed.message_id
 
@@ -1285,8 +1286,9 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                 what = f"Your WhatsApp number is `{num}`"
             else:
                 what = f"Your WhatsApp handle is `{sender_id}`"
+            greeting = f"👋 Hi{(' ' + sender_name) if sender_name else ''}! You're almost in"
             return (
-                f"👋 Hi! You're almost in — I don't recognise you yet.\n\n"
+                f"{greeting} — I don't recognise you yet.\n\n"
                 f"{what}.\n\n"
                 f"Share it with whoever set me up and they'll add you in a few seconds."
             )

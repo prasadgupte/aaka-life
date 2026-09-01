@@ -298,10 +298,11 @@ async function handleMessagesUpsert({ messages, type }) {
       if (!msg || !msg.key || !msg.key.remoteJid || !msg.key.id) continue;
 
       const fromMe = !!msg.key.fromMe;
+      const pushName = msg.pushName || '';
       const tsMs = Number(msg.messageTimestamp || 0) * 1000;
       const ageMs = tsMs ? (Date.now() - tsMs) : 0;
       const short = (extractText(msg) || '').slice(0, 40).replace(/\n/g, ' ');
-      const logHead = `wa-in: id=${msg.key.id.slice(0, 8)} from=${msg.key.remoteJid.split('@')[0]} fromMe=${fromMe} type=${type} age=${Math.round(ageMs / 1000)}s`;
+      const logHead = `wa-in: id=${msg.key.id.slice(0, 8)} from=${msg.key.remoteJid.split('@')[0]}${pushName ? ' name="' + pushName + '"' : ''} fromMe=${fromMe} type=${type} age=${Math.round(ageMs / 1000)}s`;
 
       // Suppress our own outbound echoes (tracked by id) — never route them.
       if (fromMe && sentIds.has(msg.key.id)) {
@@ -347,6 +348,7 @@ async function handleMessagesUpsert({ messages, type }) {
         message_id: msg.key.id,
         text: text,
         from_me: !!msg.key.fromMe,
+        push_name: pushName,
         timestamp: new Date(Number(msg.messageTimestamp || 0) * 1000).toISOString(),
       };
 

@@ -85,6 +85,10 @@ class ParsedMessage:
     # True when the WhatsApp sender is the account's own phone (self-DM)
     is_self_dm: bool = False
 
+    # Sender's display name (WhatsApp pushName / Telegram name) when known —
+    # for human-readable logs + onboarding (name a person) given @lid opacity.
+    sender_name: str = ""
+
     # Set by ingress.receive() — used to correlate with egress log
     correlation_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
@@ -241,6 +245,7 @@ def normalize(msg: InboundMessage) -> Optional[ParsedMessage]:
     mime_type = msg.mime_type
     original_filename: Optional[str] = None
     is_self_dm = False
+    sender_name = ""
     text = raw
 
     # ── Format A (Telegram poller envelope) ──────────────────────────────────
@@ -250,6 +255,7 @@ def normalize(msg: InboundMessage) -> Optional[ParsedMessage]:
             meta = json.loads(m_a.group(1))
             sender_id = str(meta.get("sender_id", sender_id))
             message_id = str(meta.get("message_id", message_id or ""))
+            sender_name = str(meta.get("sender_name", "") or "")
             # channel + channel_id from "chat_id": "<channel>:<id>" (telegram:… /
             # whatsapp:…). Defaults to telegram for back-compat with older envelopes.
             chat_id = meta.get("chat_id", "")
@@ -309,6 +315,7 @@ def normalize(msg: InboundMessage) -> Optional[ParsedMessage]:
         mime_type=mime_type,
         original_filename=original_filename,
         is_self_dm=is_self_dm,
+        sender_name=sender_name,
         raw_text=raw,
     )
 

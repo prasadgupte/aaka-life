@@ -47,7 +47,8 @@ def _route(text: str) -> str:
     return _route_impl(text)
 
 
-def _wa_envelope(sender_id: str, channel_id: str, message_id: str, text: str) -> str:
+def _wa_envelope(sender_id: str, channel_id: str, message_id: str, text: str,
+                 sender_name: str = "") -> str:
     """Wrap a WhatsApp message in the Format A metadata envelope the router
     expects (mirrors telegram_poller._build_format_a). The 'whatsapp:' chat_id
     prefix tells gateway.ingress.normalize() to route on the whatsapp channel and
@@ -58,6 +59,7 @@ def _wa_envelope(sender_id: str, channel_id: str, message_id: str, text: str) ->
         "chat_id": f"whatsapp:{channel_id or sender_id}",
         "message_id": str(message_id or ""),
         "sender_id": str(sender_id),
+        "sender_name": str(sender_name or ""),
         "conversation_label": f"id:{channel_id or sender_id}",
     }
     return (
@@ -112,6 +114,7 @@ async def inbound(request: Request):
     # handled by the executor.
     reply = _route(_wa_envelope(
         parsed.sender_id, parsed.channel_id, parsed.message_id or "", parsed.text,
+        sender_name=body.get("push_name", "") or "",
     ))
 
     if reply:
