@@ -17,6 +17,7 @@
  *   WA_AUTH_DIR      auth state dir  (default: $AAKA_CONFIG_DIR/whatsapp-auth or ./whatsapp-auth)
  *   WA_SIDECAR_PORT  HTTP API port   (default: 18792)
  *   WA_RECEIVER_URL  inbound forward  (default: http://127.0.0.1:18793/inbound)
+ *   WA_MEDIA_DIR     inbound media    (default: <auth-parent>/wa-media)
  *
  * Baileys patterns lifted from /Users/Shared/tools/wa-backup/server.js
  * (makeWASocket + useMultiFileAuthState + connection.update + reconnect),
@@ -33,6 +34,7 @@ const {
   Browsers,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
 } = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
 
@@ -45,6 +47,9 @@ const WA_AUTH_DIR =
 const WA_SIDECAR_PORT = parseInt(process.env.WA_SIDECAR_PORT || '18792', 10);
 const WA_RECEIVER_URL =
   process.env.WA_RECEIVER_URL || 'http://127.0.0.1:18793/inbound';
+// Inbound media is saved next to the auth dir (sibling), never inside it.
+const WA_MEDIA_DIR =
+  process.env.WA_MEDIA_DIR || path.join(path.dirname(WA_AUTH_DIR), 'wa-media');
 
 // ── Session state ──────────────────────────────────────────────────────────
 let sock = null;
@@ -145,8 +150,103 @@ async function handleConnectionUpdate(update) {
   }
 }
 
-// messages.upsert handler is wired in the next commit.
-async function handleMessagesUpsert() {}
+function extractText(msg) {
+  const m = msg && msg.message;
+  if (!m) return '';
+  return (
+    m.conversation ||
+    (m.extendedTextMessage && m.extendedTextMessage.text) ||
+    (m.imageMessage && m.imageMessage.caption) ||
+    (m.documentMessage && m.documentMessage.caption) ||
+    ''
+  );
+}
+
+function mediaKind(msg) {
+  const m = msg && msg.message;
+  if (!m) return null;
+  if (m.imageMessage) return { field: 'imageMessage', mime: m.imageMessage.mimetype || 'image/jpeg', ext: '.jpg' };
+  if (m.documentMessage) return { field: 'documentMessage', mime: m.documentMessage.mimetype || 'application/octet-stream', ext: extFromName(m.documentMessage.fileName) };
+  return null;
+}
+
+function extFromName(name) {
+  if (!name) return '';
+  const e = path.extname(name);
+  return e || '';
+}
+
+async function handleMessagesUpsert({ messages, type }) {
+  if (!Array.isArray(messages)) return;
+  for (const msg of messages) {
+    try {
+      if (!msg || !msg.key || !msg.key.remoteJid || !msg.key.id) continue;
+      // Skip history/backfill — only forward live "notify" events.
+      if (type !== 'notify') continue;
+
+      const text = extractText(msg);
+      const media = mediaKind(msg);
+      if (!text && !media) continue; // nothing routable
+
+      const body = {
+        sender_id: msg.key.remoteJid,
+        channel_id: msg.key.remoteJid,
+        message_id: msg.key.id,
+        text: text,
+        from_me: !!msg.key.fromMe,
+        timestamp: new Date(Number(msg.messageTimestamp || 0) * 1000).toISOString(),
+      };
+
+      if (media) {
+        try {
+          const buf = await downloadMediaMessage(msg, 'buffer', {});
+          fs.mkdirSync(WA_MEDIA_DIR, { recursive: true });
+          const fname = `${msg.key.id}${media.ext || ''}`;
+          const fpath = path.join(WA_MEDIA_DIR, fname);
+          fs.writeFileSync(fpath, buf);
+          body.media_path = fpath;
+          body.mime_type = media.mime;
+        } catch (e) {
+          console.error('wa-sidecar: media download failed:', e && e.message);
+        }
+      }
+
+      postInbound(body).catch((e) =>
+        console.error('wa-sidecar: inbound POST failed (discarded):', e && e.message)
+      );
+    } catch (e) {
+      console.error('wa-sidecar: upsert handler error (discarded):', e && e.message);
+    }
+  }
+}
+
+// POST an inbound message body to the Python receiver. Discards on failure.
+function postInbound(body) {
+  return new Promise((resolve, reject) => {
+    const data = Buffer.from(JSON.stringify(body), 'utf8');
+    const u = new URL(WA_RECEIVER_URL);
+    const client = u.protocol === 'https:' ? require('https') : require('http');
+    const req = client.request(
+      {
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname + u.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': data.length,
+        },
+      },
+      (res) => {
+        res.resume(); // drain
+        res.on('end', resolve);
+      }
+    );
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
 
 // ── HTTP helpers ───────────────────────────────────────────────────────────
 function sendJson(res, code, obj) {
@@ -175,13 +275,67 @@ function readBody(req) {
   });
 }
 
-// ── Route handlers (STUB — Baileys not wired yet) ──────────────────────────
-async function handleSend(_req, res) {
-  sendJson(res, 503, { ok: false, error: 'session not ready' });
+// ── Route handlers ─────────────────────────────────────────────────────────
+async function handleSend(req, res) {
+  if (!sock || connectionStatus !== 'connected') {
+    return sendJson(res, 503, { ok: false, error: 'session not ready' });
+  }
+  let body;
+  try {
+    body = await readBody(req);
+  } catch (e) {
+    return sendJson(res, 400, { ok: false, error: 'invalid JSON' });
+  }
+  const { jid, text } = body;
+  if (!jid || typeof text !== 'string') {
+    return sendJson(res, 400, { ok: false, error: 'jid and text required' });
+  }
+  try {
+    await sock.sendMessage(jid, { text });
+    return sendJson(res, 200, { ok: true });
+  } catch (e) {
+    return sendJson(res, 500, { ok: false, error: String(e && e.message ? e.message : e) });
+  }
 }
 
-async function handleSendMedia(_req, res) {
-  sendJson(res, 503, { ok: false, error: 'session not ready' });
+async function handleSendMedia(req, res) {
+  if (!sock || connectionStatus !== 'connected') {
+    return sendJson(res, 503, { ok: false, error: 'session not ready' });
+  }
+  let body;
+  try {
+    body = await readBody(req);
+  } catch (e) {
+    return sendJson(res, 400, { ok: false, error: 'invalid JSON' });
+  }
+  const { jid, mime_type, file_path, caption } = body;
+  if (!jid || !file_path) {
+    return sendJson(res, 400, { ok: false, error: 'jid and file_path required' });
+  }
+  let buf;
+  try {
+    buf = fs.readFileSync(file_path);
+  } catch (e) {
+    return sendJson(res, 400, { ok: false, error: `cannot read file: ${e && e.message}` });
+  }
+  try {
+    const cap = caption || '';
+    let content;
+    if (mime_type && String(mime_type).startsWith('image/')) {
+      content = { image: buf, mimetype: mime_type, caption: cap };
+    } else {
+      content = {
+        document: buf,
+        mimetype: mime_type || 'application/octet-stream',
+        fileName: path.basename(file_path),
+        caption: cap,
+      };
+    }
+    await sock.sendMessage(jid, content);
+    return sendJson(res, 200, { ok: true });
+  } catch (e) {
+    return sendJson(res, 500, { ok: false, error: String(e && e.message ? e.message : e) });
+  }
 }
 
 // ── HTTP server ────────────────────────────────────────────────────────────
