@@ -61,12 +61,22 @@ const WA_MEDIA_DIR =
 let sock = null;
 let currentQrDataUri = null;
 let pairingCode = null;
-let connectionStatus = 'connecting'; // "connecting" | "qr" | "pairing" | "connected"
+let connectionStatus = 'connecting'; // "connecting" | "qr" | "pairing" | "connected" | "rate_limited"
 let connectedJid = null;
+let statusMessage = null;   // human-readable note surfaced at /status and /pair
 let reconnectAttempt = 0;
+let pairAttempt = 0;        // fresh-pairing (unregistered) close count — bounded, unlike reconnect
 
 const RECONNECT_CAP_MS = 30000;
 const CONNECTION_REPLACED = 440; // DisconnectReason.connectionReplaced numeric
+
+// Fresh pairing (unregistered) must NOT hammer WhatsApp — rapid retries earn an
+// IP-level pairing ban (428 "Connection Terminated" before any QR/code). So when
+// unpaired we back off HARD and stop after a few tries, surfacing "rate_limited"
+// instead of looping. Established-session reconnects keep the fast backoff above.
+const MAX_PAIR_ATTEMPTS = 3;
+const PAIR_BACKOFF_MS = 90000;      // 90s between fresh-pairing retries
+const PAIR_BACKOFF_CAP_MS = 300000; // cap 5 min
 
 // ── JID helpers (lifted from wa-backup) ────────────────────────────────────
 function normalizeJid(jid) {
@@ -144,7 +154,9 @@ async function handleConnectionUpdate(update) {
     connectedJid = sock && sock.user ? normalizeJid(sock.user.id) : null;
     currentQrDataUri = null;
     pairingCode = null;
+    statusMessage = null;
     reconnectAttempt = 0;
+    pairAttempt = 0;
     console.log(`wa-sidecar: connected as ${connectedJid}`);
   }
 
@@ -164,6 +176,36 @@ async function handleConnectionUpdate(update) {
       process.exit(1);
     }
 
+    const registered = !!(sock && sock.authState && sock.authState.creds && sock.authState.creds.registered);
+
+    if (!registered) {
+      // Fresh pairing was refused (no session yet). Retrying fast = an IP ban.
+      // Back off hard and give up after a few tries, surfacing rate_limited.
+      pairAttempt += 1;
+      currentQrDataUri = null;
+      pairingCode = null;
+      if (pairAttempt >= MAX_PAIR_ATTEMPTS) {
+        connectionStatus = 'rate_limited';
+        statusMessage =
+          'WhatsApp refused pairing from this IP (code ' + code + '). This is a pairing-rate block — ' +
+          'wait a few hours or pair from a different network (e.g. phone hotspot), then restart the sidecar.';
+        console.error('wa-sidecar: ' + statusMessage + ' — NOT retrying (avoids deepening the ban).');
+        return; // stay alive so /status reports rate_limited; no more attempts
+      }
+      connectionStatus = 'connecting';
+      const pdelay = Math.min(PAIR_BACKOFF_MS * pairAttempt, PAIR_BACKOFF_CAP_MS);
+      console.log(
+        `wa-sidecar: pairing refused (code ${code}) — backing off ${pdelay}ms (pair attempt ${pairAttempt}/${MAX_PAIR_ATTEMPTS}).`
+      );
+      setTimeout(() => {
+        startSession().catch((e) =>
+          console.error('wa-sidecar: pairing retry failed:', e && e.message)
+        );
+      }, pdelay);
+      return;
+    }
+
+    // Established session dropped — legitimate reconnect, fast backoff is fine.
     connectionStatus = 'connecting';
     connectedJid = null;
     const delay = Math.min(1000 * 2 ** reconnectAttempt, RECONNECT_CAP_MS);
@@ -371,7 +413,7 @@ async function handleSendMedia(req, res) {
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/status') {
-      return sendJson(res, 200, { status: connectionStatus, jid: connectedJid });
+      return sendJson(res, 200, { status: connectionStatus, jid: connectedJid, message: statusMessage });
     }
     if (req.method === 'GET' && req.url === '/qr') {
       if (connectionStatus === 'connected') {
@@ -383,7 +425,7 @@ const server = http.createServer(async (req, res) => {
       if (connectionStatus === 'connected') {
         return sendJson(res, 409, { error: 'already connected' });
       }
-      return sendJson(res, 200, { code: pairingCode, status: connectionStatus });
+      return sendJson(res, 200, { code: pairingCode, status: connectionStatus, message: statusMessage });
     }
     if (req.method === 'GET' && req.url === '/health') {
       return sendJson(res, 200, { ok: true });
