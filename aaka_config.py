@@ -178,7 +178,12 @@ def default_actor() -> str:
 
 
 def calendar_id() -> str:
-    return _load()["calendar_id"]
+    # Back-compat: old configs use a top-level `calendar_id`; the current setup
+    # template writes `calendar.default_id`. Accept either, default to "primary".
+    cfg = _load()
+    return (cfg.get("calendar_id")
+            or (cfg.get("calendar") or {}).get("default_id")
+            or "primary")
 
 
 def timezone() -> str:
