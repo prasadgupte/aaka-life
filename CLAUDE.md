@@ -136,6 +136,11 @@ automatically via `.mcp.json` when you run `claude` in this directory.
 | `shopping_list(name, action, items)` | View/update a shopping list |
 | `setup_status()` | Tier-aware setup check (JSON) |
 | `bot_info()` | Name, members, timezone |
+| `list_members()` | Members + bound WhatsApp/Telegram handles (id, name, role, source) |
+| `add_member(name)` | Create a member (no aaka.yaml edit → `data/members_dynamic.json`) |
+| `set_contact(member, handle, channel)` | Bind a handle (@lid/+E.164/telegram id) → member (dynamic allowlist) |
+| `invite(name)` | Mint a one-time code + wa.me link to onboard someone (creates member if new) |
+| `remove_member(member_id)` | Remove a dynamic member + unbind handles (yaml members protected) |
 
 **Why Python-native, not HTTP:** MCP runs in the repo process on the same Mac that holds OAuth tokens — direct imports are faster and avoid the gateway overhead. The HTTP gateway exists for *other agent processes* that can't import aaka's Python.
 

@@ -86,6 +86,30 @@ def bind(handle: str, member_id: str) -> None:
     _save_json(p, al)
 
 
+def unbind_member(member_id: str) -> int:
+    """Remove all allowlist handles bound to `member_id`. Returns count removed."""
+    p = _cfg_dir() / "data" / "wa_allowlist.json"
+    try:
+        al = json.loads(p.read_text()) if p.exists() else {}
+    except Exception:
+        return 0
+    kept = {h: mid for h, mid in al.items() if mid != member_id}
+    removed = len(al) - len(kept)
+    if removed:
+        _save_json(p, kept)
+    return removed
+
+
+def handles_for(member_id: str) -> list[str]:
+    """Allowlist handles currently bound to `member_id`."""
+    p = _cfg_dir() / "data" / "wa_allowlist.json"
+    try:
+        al = json.loads(p.read_text()) if p.exists() else {}
+    except Exception:
+        return []
+    return [h for h, mid in al.items() if mid == member_id]
+
+
 def _find_code(text: str) -> str | None:
     """Extract a plausible code token from free text (e.g. 'Hi rosi (A7X2)')."""
     for tok in re.findall(r"[A-Za-z0-9]{%d}" % _CODE_LEN, text or ""):

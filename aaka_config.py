@@ -150,12 +150,28 @@ def add_dynamic_member(name: str) -> dict:
          "admin": False, "namespace": mid, "source": "invite"}
     dyn = _dynamic_members()
     dyn.append(m)
+    _save_dynamic_members(dyn)
+    return m
+
+
+def _save_dynamic_members(dyn: list) -> None:
+    import json as _json
     p = _dynamic_members_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".json.tmp")
     tmp.write_text(_json.dumps(dyn, indent=2))
     os.replace(tmp, p)
-    return m
+
+
+def remove_dynamic_member(member_id: str) -> bool:
+    """Remove a dynamically-created member. Returns True if one was removed.
+    Never touches aaka.yaml members (only the dynamic store)."""
+    dyn = _dynamic_members()
+    kept = [m for m in dyn if m.get("id") != member_id]
+    if len(kept) == len(dyn):
+        return False
+    _save_dynamic_members(kept)
+    return True
 
 
 # ── Groups (purpose-bound chats) ─────────────────────────────────────────────

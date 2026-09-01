@@ -286,5 +286,83 @@ def bot_info() -> dict:
     }
 
 
+# ── Config management (no aaka.yaml editing — dynamic stores) ────────────────
+# These let Claude manage members + contacts by conversation. Everything lands
+# in data/members_dynamic.json + data/wa_allowlist.json, merged by aaka_config —
+# aaka.yaml is never mutated, so there's no formatting/comment risk.
+
+@mcp.tool()
+def list_members() -> dict:
+    """List everyone the assistant knows: id, name, role, admin, source
+    (yaml|invite), and the WhatsApp/Telegram handles bound to each."""
+    from sensor import wa_onboard
+    out = []
+    for m in aaka_config.members():
+        out.append({
+            "id": m.get("id"),
+            "name": m.get("name", m.get("id")),
+            "role": m.get("role", ""),
+            "admin": bool(m.get("admin")),
+            "source": m.get("source", "yaml"),
+            "whatsapp_field": m.get("whatsapp", ""),
+            "bound_handles": wa_onboard.handles_for(m.get("id", "")),
+        })
+    return {"members": out}
+
+
+@mcp.tool()
+def add_member(name: str) -> dict:
+    """Create a new member by name (no aaka.yaml editing). Returns the member.
+    Use invite() next to bind their WhatsApp, or set_contact() if you know it."""
+    m = aaka_config.add_dynamic_member(name)
+    return {"ok": True, "member": m}
+
+
+@mcp.tool()
+def set_contact(member: str, handle: str, channel: str = "whatsapp") -> dict:
+    """Bind a contact handle to an existing member (id or name) so they're
+    recognized — without editing aaka.yaml. `handle` is a WhatsApp @lid/+E.164
+    or a Telegram id. `channel` is informational (the allowlist is generic)."""
+    from sensor import wa_onboard
+    a = member.strip().lower()
+    target = next((m for m in aaka_config.members()
+                   if m.get("id", "").lower() == a or m.get("name", "").lower() == a), None)
+    if not target:
+        return {"ok": False, "error": f"no member '{member}' — add_member() first"}
+    wa_onboard.bind(handle, target["id"])
+    return {"ok": True, "member": target["id"], "handle": handle.strip().lower(), "channel": channel}
+
+
+@mcp.tool()
+def invite(name: str) -> dict:
+    """Create a one-time invite for a member (creating the member if new) and
+    return a wa.me deep link the invitee taps to auto-register. No config editing."""
+    from sensor import wa_onboard
+    a = name.strip().lower()
+    target = next((m for m in aaka_config.members()
+                   if m.get("id", "").lower() == a or m.get("name", "").lower() == a), None)
+    created = False
+    if not target:
+        target = aaka_config.add_dynamic_member(name)
+        created = True
+    code = wa_onboard.create_invite(target["id"], target.get("name", name))
+    url, text = wa_onboard.invite_link(code, target.get("name", name))
+    return {"ok": True, "member": target["id"], "created": created,
+            "code": code, "wa_me_link": url, "prefilled_text": text}
+
+
+@mcp.tool()
+def remove_member(member_id: str) -> dict:
+    """Remove a dynamically-created member and unbind their handles. Only removes
+    members created via onboarding — never touches aaka.yaml members."""
+    from sensor import wa_onboard
+    unbound = wa_onboard.unbind_member(member_id)
+    removed = aaka_config.remove_dynamic_member(member_id)
+    if not removed:
+        return {"ok": False, "error": f"'{member_id}' is not a dynamic member "
+                f"(aaka.yaml members are not removable here); unbound {unbound} handle(s)"}
+    return {"ok": True, "removed": member_id, "handles_unbound": unbound}
+
+
 if __name__ == "__main__":
     mcp.run()
