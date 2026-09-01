@@ -2775,6 +2775,32 @@ else
     PASS=$((PASS + 1))
 fi
 
+header "WA — inbound wraps in Format-A envelope; unknown senders get onboarding reply"
+if grep -q "whatsapp:{channel_id" "$REPO_DIR/sensor/wa_inbound.py" 2>/dev/null; then
+    ok "wa_inbound: wraps message in whatsapp Format-A envelope (route() gets sender/channel)"
+    PASS=$((PASS + 1))
+else
+    fail "wa_inbound: missing Format-A envelope — route() will get no context and return empty"
+    FAIL=$((FAIL + 1))
+fi
+if grep -q 'source == "whatsapp" and sender_id == channel_id' "$REPO_DIR/sensor/router_sensor.py" 2>/dev/null; then
+    ok "router: unknown WhatsApp sender gets 'almost in' onboarding reply (not silent)"
+    PASS=$((PASS + 1))
+else
+    fail "router: unknown WhatsApp sender is silently dropped (no onboarding reply)"
+    FAIL=$((FAIL + 1))
+fi
+
+header "WA — always-on launchd services present + templatable"
+if [ -f "$REPO_DIR/executor/com.aaka.wasidecar.plist" ] && \
+   grep -q '\${NODE_BIN}' "$REPO_DIR/executor/com.aaka.wasidecar.plist" 2>/dev/null; then
+    ok "sidecar launchd plist present and path-portable (\${NODE_BIN}/\${AAKA_BASE})"
+    PASS=$((PASS + 1))
+else
+    fail "sidecar launchd plist missing or not templatable"
+    FAIL=$((FAIL + 1))
+fi
+
 # Node boot smoke test — only if node is available and WA_TEST_BOOT=1.
 # Uses a free test port + throwaway auth dir; never touches the live session.
 if [ "${WA_TEST_BOOT:-0}" = "1" ] && command -v node &>/dev/null; then

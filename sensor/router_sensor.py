@@ -1267,13 +1267,23 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
     # ── Channel gate — drop unknown senders/groups ────────────────────────────
     if not dry_run and not _is_allowed_channel(sender_id, channel_id):
         _log.info("drop source=%s sender=%s channel=%s (not in allowlist)", source, sender_id, channel_id)
-        # For Telegram DMs, reply with the sender's ID so they can add themselves.
-        # Group messages and WhatsApp silently drop (no way to know intent).
+        # For DMs, reply with the sender's own handle so they can be added.
+        # Group messages silently drop (no way to know intent).
         if source == "telegram" and sender_id == channel_id:
             return (
                 f"👋 Hi! You're almost in — I just need to know this is you.\n\n"
                 f"Your Telegram ID is `{sender_id}`.\n\n"
                 f"Share this with whoever set me up and they'll add you in a few seconds."
+            )
+        if source == "whatsapp" and sender_id == channel_id:
+            # Show the E.164 number so the admin can add it as a member's whatsapp.
+            num = sender_id.replace("@s.whatsapp.net", "")
+            if num and not num.startswith("+"):
+                num = "+" + num
+            return (
+                f"👋 Hi! You're almost in — I don't recognise this number yet.\n\n"
+                f"Your WhatsApp number is `{num}`.\n\n"
+                f"Share it with whoever set me up and they'll add you in a few seconds."
             )
         return ""
 

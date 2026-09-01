@@ -1074,11 +1074,13 @@ WA_RECEIVER_PORT="${WA_RECEIVER_PORT:-18793}"
 if echo "${ENABLED_CHANNELS:-telegram}" | grep -q "whatsapp"; then
     WA_STATUS=$(curl -sf "http://127.0.0.1:$WA_SIDECAR_PORT/status" 2>/dev/null || echo "")
     if [ -z "$WA_STATUS" ]; then
-        fail "wa-sidecar not reachable on port $WA_SIDECAR_PORT (start: wa-sidecar/start.sh)"
+        fail "wa-sidecar not reachable on :$WA_SIDECAR_PORT — service down. Reload: launchctl kickstart -k gui/\$(id -u)/com.aaka.wasidecar  (or re-run admin/deploy.sh)"
     elif echo "$WA_STATUS" | grep -q '"status":"connected"'; then
         ok "wa-sidecar: connected"
     elif echo "$WA_STATUS" | grep -q '"status":"qr"'; then
-        warn "wa-sidecar: QR pending — scan required (GET :$WA_SIDECAR_PORT/qr)"
+        warn "wa-sidecar: QR pending — pair at http://127.0.0.1:$WA_SIDECAR_PORT/"
+    elif echo "$WA_STATUS" | grep -q '"status":"rate_limited"'; then
+        warn "wa-sidecar: rate_limited — pair from another network"
     else
         warn "wa-sidecar: status=$WA_STATUS"
     fi
@@ -1086,12 +1088,27 @@ if echo "${ENABLED_CHANNELS:-telegram}" | grep -q "whatsapp"; then
     if echo "$REC_STATUS" | grep -q '"ok":true'; then
         ok "wa-sidecar receiver: healthy on port $WA_RECEIVER_PORT"
     else
-        fail "wa-sidecar receiver not reachable on port $WA_RECEIVER_PORT"
+        fail "wa-sidecar receiver not reachable on :$WA_RECEIVER_PORT — service down. Reload: launchctl kickstart -k gui/\$(id -u)/com.aaka.wasidecar_receiver"
     fi
     if pgrep -f "openclaw" &>/dev/null; then
         fail "openclaw process is running — should not be when using wa-sidecar"
     else
         ok "openclaw: not running (expected)"
+    fi
+    # Who can message aaka over WhatsApp (the family gate). Cwd-independent: uses
+    # the resolved $PYTHON + $REPO_DIR on sys.path, not a bare `venv/bin/python3`.
+    WA_MEMBERS=$("$PYTHON" -c "
+import sys; sys.path.insert(0, '$REPO_DIR')
+import aaka_config
+rows = [(m.get('id'), m.get('whatsapp')) for m in aaka_config.members() if m.get('whatsapp')]
+print('; '.join(f'{i}={w}' for i, w in rows) if rows else 'NONE')
+" 2>/dev/null || echo "ERR")
+    if [ "$WA_MEMBERS" = "NONE" ]; then
+        warn "no member has a whatsapp number — everyone is gated (bot replies 'add me'). Add whatsapp:\"+E.164\" to a member in aaka.yaml"
+    elif [ "$WA_MEMBERS" = "ERR" ]; then
+        warn "could not read members (check aaka.yaml / venv)"
+    else
+        ok "whatsapp members allowed: $WA_MEMBERS"
     fi
 else
     info "whatsapp not in ENABLED_CHANNELS — wa-sidecar checks skipped"
