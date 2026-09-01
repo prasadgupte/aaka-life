@@ -46,7 +46,13 @@ def main():
 
     # admin gate
     check("non-admin blocked", "Only an admin" in _handle_invite("/invite Sam", "99999@lid"))
-    check("unknown member rejected", "No member" in _handle_invite("/invite Bob", "+491700000000"))
+
+    # unknown name → created on the fly (no aaka.yaml edit)
+    before = {m.get("id") for m in c.members()}
+    out = _handle_invite("/invite Robin", "+491700000000")
+    check("unknown name creates a member", "Added" in out and "Invite" in out)
+    check("new member appears in members()", "robin" in {m.get("id") for m in c.members()})
+    check("existing members untouched", before <= {m.get("id") for m in c.members()})
 
     # mint + sign up
     code = wa_onboard.create_invite("sam", "Sam")

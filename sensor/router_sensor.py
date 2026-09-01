@@ -814,21 +814,24 @@ def _handle_invite(message: str, sender_id: str) -> str:
     arg = re.sub(r"^/invite\b", "", message, flags=re.I).strip()
     if not arg:
         return "Usage: `/invite <name>` — e.g. `/invite Sam` (must be an existing member)."
-    # Resolve the target member by id or name (case-insensitive).
+    # Resolve the target member by id or name (case-insensitive); create one on
+    # the fly if unknown — no aaka.yaml editing (nobody opens config files).
     a = arg.lower()
     target = next((m for m in aaka_config.members()
                    if m.get("id", "").lower() == a or m.get("name", "").lower() == a), None)
+    created = False
     if not target:
-        names = ", ".join(m.get("name", m.get("id", "?")) for m in aaka_config.members())
-        return f"🤷 No member named “{arg}”. Add them to aaka.yaml first. Members: {names}"
+        target = aaka_config.add_dynamic_member(arg)
+        created = True
     from sensor import wa_onboard
     code = wa_onboard.create_invite(target["id"], target.get("name", arg))
     url, text = wa_onboard.invite_link(code, target.get("name", arg))
+    made = f"👤 Added *{target.get('name', arg)}* as a new member.\n" if created else ""
     if url:
-        return (f"✅ Invite for {target.get('name', arg)} ready. Send them this link:\n\n"
+        return (f"{made}✅ Invite ready. Send them this link:\n\n"
                 f"{url}\n\n"
                 f"They tap it, hit send, and I'll welcome them automatically. Code `{code}` (valid 7 days).")
-    return (f"✅ Invite code for {target.get('name', arg)}: `{code}` (valid 7 days).\n\n"
+    return (f"{made}✅ Invite code for {target.get('name', arg)}: `{code}` (valid 7 days).\n\n"
             f"Ask them to WhatsApp me: “{text}”. (Couldn't build a wa.me link — "
             f"WhatsApp session not connected, so I don't know my own number yet.)")
 

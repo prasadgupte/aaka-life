@@ -113,7 +113,49 @@ def _load() -> dict:
 # ── Public API (unchanged from family_config.py) ───────────────────────────
 
 def members() -> list[dict]:
-    return _load()["members"]
+    # aaka.yaml members + dynamic members created via onboarding (no yaml edits).
+    base = _load().get("members") or []
+    dyn = _dynamic_members()
+    if not dyn:
+        return base
+    seen = {m.get("id") for m in base}
+    return base + [m for m in dyn if m.get("id") not in seen]
+
+
+def _dynamic_members_path() -> Path:
+    return CONFIG_DIR / "data" / "members_dynamic.json"
+
+
+def _dynamic_members() -> list[dict]:
+    import json as _json
+    p = _dynamic_members_path()
+    try:
+        return _json.loads(p.read_text()) if p.exists() else []
+    except Exception:
+        return []
+
+
+def add_dynamic_member(name: str) -> dict:
+    """Create a minimal member (id derived from name) in data/members_dynamic.json
+    and return it. Lets onboarding add people without ever editing aaka.yaml."""
+    import json as _json
+    import re as _re
+    existing = {m.get("id") for m in members()}
+    base_id = _re.sub(r"[^a-z0-9]", "", (name or "").lower()) or "member"
+    mid, n = base_id, 2
+    while mid in existing:
+        mid = f"{base_id}{n}"
+        n += 1
+    m = {"id": mid, "name": (name or mid).strip(), "role": "member",
+         "admin": False, "namespace": mid, "source": "invite"}
+    dyn = _dynamic_members()
+    dyn.append(m)
+    p = _dynamic_members_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(_json.dumps(dyn, indent=2))
+    os.replace(tmp, p)
+    return m
 
 
 # ── Groups (purpose-bound chats) ─────────────────────────────────────────────
