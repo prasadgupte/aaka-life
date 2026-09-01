@@ -50,6 +50,76 @@ def load_manifest() -> dict:
         return {}
 
 
+def save_manifest(man: dict) -> None:
+    import yaml
+    p = _config_dir() / "config" / "tools.yaml"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".yaml.tmp")
+    tmp.write_text(yaml.safe_dump(man, default_flow_style=False, allow_unicode=True, sort_keys=True))
+    os.replace(tmp, p)
+
+
+def register(name: str, run: str, **fields) -> dict:
+    """Add/update a tool in the manifest. Returns the entry."""
+    man = load_manifest()
+    entry = man.get(name, {})
+    entry.update({"run": run, "enabled": fields.pop("enabled", entry.get("enabled", True))})
+    entry.update({k: v for k, v in fields.items() if v is not None})
+    man[name] = entry
+    save_manifest(man)
+    return entry
+
+
+def set_enabled(name: str, enabled: bool) -> bool:
+    man = load_manifest()
+    if name not in man:
+        return False
+    man[name]["enabled"] = enabled
+    save_manifest(man)
+    return True
+
+
+def remove(name: str) -> bool:
+    man = load_manifest()
+    if name not in man:
+        return False
+    del man[name]
+    save_manifest(man)
+    return True
+
+
+def logs_tail(name: str, n: int = 10) -> list:
+    p = _config_dir() / "logs" / "tools" / f"{name}.jsonl"
+    if not p.exists():
+        return []
+    lines = p.read_text().splitlines()[-n:]
+    out = []
+    for ln in lines:
+        try:
+            out.append(json.loads(ln))
+        except Exception:
+            pass
+    return out
+
+
+def status() -> list:
+    """One row per tool: name, enabled, schedule, command, placement, last run."""
+    rows = []
+    for name, e in load_manifest().items():
+        last = (logs_tail(name, 1) or [{}])[-1]
+        rows.append({
+            "name": name,
+            "enabled": e.get("enabled", True),
+            "schedule": e.get("schedule", ""),
+            "command": e.get("command", ""),
+            "placement": e.get("placement", "executor"),
+            "last_run": last.get("ts", ""),
+            "last_ok": last.get("ok"),
+            "last_summary": (last.get("summary") or "")[:80],
+        })
+    return rows
+
+
 def _secrets_dir(entry: dict) -> str:
     s = entry.get("secrets") or ""
     if not s:
@@ -149,12 +219,16 @@ def run_and_report(name: str, extra_args: str = "") -> dict:
     return result
 
 
-def run_due(now_min: int | None = None) -> list:
-    """Run every enabled tool whose cron schedule matches now (called by cron)."""
+def run_due(side: str | None = None) -> list:
+    """Run every enabled tool whose cron matches now AND whose placement is this
+    side (sensor|executor). Called every minute by each side's scheduler."""
     from datetime import datetime
+    side = side or os.environ.get("AAKA_ROLE", "executor")
     ran = []
     for name, entry in load_manifest().items():
         if not entry.get("enabled", True) or not entry.get("schedule"):
+            continue
+        if entry.get("placement", "executor") != side:
             continue
         if _cron_matches(entry["schedule"], datetime.now()):
             ran.append((name, run_and_report(name)))

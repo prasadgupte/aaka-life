@@ -364,5 +364,52 @@ def remove_member(member_id: str) -> dict:
     return {"ok": True, "removed": member_id, "handles_unbound": unbound}
 
 
+# ── aaka Tools (pluggable scheduled/triggered capabilities) ──────────────────
+# See docs/aaka-tools.md. Tools run a script, report back through aaka, and are
+# managed by manifest (config/tools.yaml) — admin-only, no hand-editing.
+
+@mcp.tool()
+def list_tools() -> dict:
+    """List registered aaka Tools with schedule, command, placement, last run."""
+    from sensor import tool_runner
+    return {"tools": tool_runner.status()}
+
+
+@mcp.tool()
+def register_tool(name: str, run: str, schedule: str = "", command: str = "",
+                  placement: str = "executor", report_to: str = "",
+                  on_error: str = "alert", secrets: str = "", args: str = "") -> dict:
+    """Register/update an aaka Tool. `run` is a script path; `schedule` is cron
+    (blank = on-demand only); `secrets` names a vault dir under
+    $AAKA_CONFIG_DIR/secrets/. Admin action — persists to config/tools.yaml."""
+    from sensor import tool_runner
+    entry = tool_runner.register(
+        name, run, schedule=schedule or None, command=command or None,
+        placement=placement, report_to=report_to or None,
+        on_error=on_error, secrets=secrets or None, args=args or None)
+    return {"ok": True, "tool": name, "entry": entry}
+
+
+@mcp.tool()
+def run_tool(name: str, args: str = "") -> dict:
+    """Run a registered tool now and report back. Returns its structured result."""
+    from sensor import tool_runner
+    return tool_runner.run_and_report(name, args)
+
+
+@mcp.tool()
+def set_tool_enabled(name: str, enabled: bool) -> dict:
+    """Enable or disable a tool without removing it."""
+    from sensor import tool_runner
+    return {"ok": tool_runner.set_enabled(name, enabled), "tool": name, "enabled": enabled}
+
+
+@mcp.tool()
+def tool_logs(name: str, n: int = 10) -> dict:
+    """Recent run records for a tool (start ts, ok, error, summary, ms)."""
+    from sensor import tool_runner
+    return {"tool": name, "runs": tool_runner.logs_tail(name, n)}
+
+
 if __name__ == "__main__":
     mcp.run()

@@ -836,6 +836,37 @@ def _handle_invite(message: str, sender_id: str) -> str:
             f"WhatsApp session not connected, so I don't know my own number yet.)")
 
 
+def _handle_tools(message: str, sender_id: str) -> str:
+    """Admin-only: `/tools` lists registered aaka Tools; `/tools run <name>` runs
+    one on demand and reports the result inline. See docs/aaka-tools.md."""
+    requester = aaka_config.member_by_sender(sender_id)
+    if not requester or not aaka_config.member_is_admin(requester.get("id", "")):
+        return "🔒 Only an admin can manage tools."
+    from sensor import tool_runner
+    arg = re.sub(r"^/tools\b", "", message, flags=re.I).strip()
+    m = re.match(r"run\s+(\S+)\s*(.*)$", arg, re.I)
+    if m:
+        name, extra = m.group(1), m.group(2).strip()
+        res = tool_runner.run_and_report(name, extra)
+        head = "✅" if res.get("ok") else "⚠️"
+        return f"{head} {name}: {res.get('summary') or res.get('error') or 'done'}"
+    rows = tool_runner.status()
+    if not rows:
+        return ("🧰 No tools registered yet. Add one via MCP (`register_tool`) or "
+                "config/tools.yaml. See docs/aaka-tools.md.")
+    lines = ["🧰 *aaka Tools*"]
+    for r in rows:
+        dot = "🟢" if r["enabled"] else "⚪️"
+        sched = f" · `{r['schedule']}`" if r["schedule"] else " · on-demand"
+        last = ""
+        if r["last_run"]:
+            last = f" · last {'✓' if r['last_ok'] else '✗'} {r['last_run'][11:16]}"
+        cmd = f" · {r['command']}" if r["command"] else ""
+        lines.append(f"{dot} *{r['name']}* ({r['placement']}){sched}{cmd}{last}")
+    lines.append("\n`/tools run <name>` to run now.")
+    return "\n".join(lines)
+
+
 _IBAN_LEN = {
     "AL": 28, "AD": 24, "AT": 20, "AZ": 28, "BH": 22, "BE": 16, "BA": 20,
     "BR": 29, "BG": 22, "CR": 22, "HR": 21, "CY": 28, "CZ": 24, "DK": 18,
@@ -1820,6 +1851,11 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
 
     if intent == "invite":
         return _reply(_handle_invite(message, sender_id),
+                      channel_id=channel_id, sender=sender_id,
+                      message_id=message_id, dry_run=dry_run, source=source)
+
+    if intent == "tools_list":
+        return _reply(_handle_tools(message, sender_id),
                       channel_id=channel_id, sender=sender_id,
                       message_id=message_id, dry_run=dry_run, source=source)
 

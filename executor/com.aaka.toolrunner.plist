@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Templated by admin/deploy.sh (${PYTHON_BIN} ${AAKA_BASE} ${AAKA_CONFIG_DIR}).
+     Runs executor-placed aaka Tools whose cron is due, every 60s. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aaka.toolrunner</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>${PYTHON_BIN}</string>
+    <string>${AAKA_BASE}/sensor/tool_runner.py</string>
+    <string>--due</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${AAKA_BASE}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AAKA_CONFIG_DIR</key>
+    <string>${AAKA_CONFIG_DIR}</string>
+    <key>AAKA_BASE</key>
+    <string>${AAKA_BASE}</string>
+    <key>AAKA_ROLE</key>
+    <string>executor</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>60</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>${AAKA_CONFIG_DIR}/logs/tool_runner.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${AAKA_CONFIG_DIR}/logs/tool_runner.log</string>
+</dict>
+</plist>

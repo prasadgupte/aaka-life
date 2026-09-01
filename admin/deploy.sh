@@ -243,6 +243,19 @@ SSHBLOCK
         warn "Calendar sync plist not found: $SYNC_SRC"
     fi
 
+    # aaka Tools runner (executor-placed tools, cron-checked every 60s)
+    TR_SRC="$REPO_DIR/executor/com.aaka.toolrunner.plist"
+    TR_DST="$HOME/Library/LaunchAgents/com.aaka.toolrunner.plist"
+    if [[ -f "$TR_SRC" ]]; then
+        sed -e "s|\${AAKA_BASE}|$REPO_DIR|g" \
+            -e "s|\${AAKA_CONFIG_DIR}|$AAKA_CONFIG_DIR|g" \
+            -e "s|\${PYTHON_BIN}|$REPO_DIR/venv/bin/python3|g" \
+            "$TR_SRC" > "$TR_DST"
+        launchctl unload "$TR_DST" 2>/dev/null || true
+        launchctl load "$TR_DST"
+        ok "com.aaka.toolrunner installed and loaded (aaka Tools scheduler)"
+    fi
+
     # WhatsApp sidecar + inbound receiver — only when whatsapp is enabled. Makes
     # WhatsApp always-on like Telegram: no manual `node`/`uvicorn` to keep running.
     # Read ENABLED_CHANNELS from the canonical .env (not just the shell env) — the

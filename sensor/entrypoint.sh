@@ -80,6 +80,7 @@ echo "0 23 * * * . /etc/aaka-cron-env && cd /app && /usr/local/bin/python3 senso
 echo "*/10 * * * * . /etc/aaka-cron-env && cd /app && /usr/local/bin/python3 sensor/gmail_poller.py >> /config/logs/gmail_poller.log 2>&1"
 echo "30 7 * * * . /etc/aaka-cron-env && cd /app && /usr/local/bin/python3 sensor/error_digest.py >> /config/logs/error_digest.log 2>&1"
 echo "*/5 * * * * . /etc/aaka-cron-env && cd /app && /usr/local/bin/python3 -c 'from aaka_queue.queue import expire_reply_requests; n = expire_reply_requests(); n and print(f\"expired {n} stale reply_request(s)\")' >> /config/logs/reply_sweep.log 2>&1"
+echo "* * * * * . /etc/aaka-cron-env && cd /app && AAKA_ROLE=sensor /usr/local/bin/python3 sensor/tool_runner.py --due >> /config/logs/tool_runner.log 2>&1"
 } | crontab -
 service cron start
 
