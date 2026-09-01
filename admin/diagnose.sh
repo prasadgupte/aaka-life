@@ -65,7 +65,7 @@ header "4. Env File"
 ENV_FILE="$REPO_DIR/.env"
 if [ -f "$ENV_FILE" ]; then
     ok ".env present at $ENV_FILE"
-    for var in GATEWAY_BACKEND TELEGRAM_BOT_TOKEN GEMINI_API_KEY; do
+    for var in LLM_PROVIDER TELEGRAM_BOT_TOKEN GEMINI_API_KEY; do
         val=$(grep "^${var}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
         if [ -n "$val" ]; then
             masked="${val:0:4}****"
@@ -80,7 +80,7 @@ fi
 
 # ── 5. Folder structure ──────────────────────────────────────────────────────
 header "5. Folder Structure"
-for subdir in config tokens data/queue data/calendar logs openclaw-data; do
+for subdir in config tokens data/queue data/calendar logs; do
     if [ -d "$AAKA_CONFIG_DIR/$subdir" ]; then
         ok "$AAKA_CONFIG_DIR/$subdir"
     else
@@ -692,30 +692,11 @@ else
     fail "date range regex check failed — review _DATE_RANGE_RE in prepare_event.py"
 fi
 
-# ── Section 19: Telegram groupPolicy must be "open" ─────────────────────────
-header "19. Telegram groupPolicy (group message routing)"
-OC_JSON="/opt/aaka-config/openclaw-data/openclaw.json"
-if [ "$INSTANCE" = "vps" ]; then
-    if [ -f "$OC_JSON" ]; then
-        gp=$(python3 -c "import json; d=json.load(open('$OC_JSON')); print(d.get('channels',{}).get('telegram',{}).get('groupPolicy','missing'))" 2>/dev/null || echo "error")
-        if [ "$gp" = "open" ]; then
-            ok "openclaw.json telegram.groupPolicy = open"
-        else
-            fail "openclaw.json telegram.groupPolicy = $gp (expected 'open') — rebuild container to fix"
-        fi
-    else
-        warn "$OC_JSON not found — container not yet started"
-    fi
-elif [ "$SENSOR_UP" = "true" ]; then
-    gp=$(docker exec "$SENSOR_CONTAINER" python3 -c "import json; d=json.load(open('/home/aaka/.openclaw/openclaw.json')); print(d.get('channels',{}).get('telegram',{}).get('groupPolicy','missing'))" 2>/dev/null || echo "error")
-    if [ "$gp" = "open" ]; then
-        ok "openclaw.json telegram.groupPolicy = open (inside container)"
-    else
-        fail "openclaw.json telegram.groupPolicy = $gp (expected 'open') — rebuild container to fix"
-    fi
-else
-    warn "groupPolicy check: sensor container not running ($SENSOR_CONTAINER)"
-fi
+# ── Section 19: Telegram group routing ──────────────────────────────────────
+header "19. Telegram group routing"
+# Group message routing is native now (telegram_multibot.py + router_sensor.py
+# mention patterns) — no OpenClaw config to check. Nothing to verify here.
+ok "group routing is native (telegram_multibot; no openclaw.json groupPolicy)"
 
 # ── Section 20: VPS Token Validity ───────────────────────────────────────────
 header "20. VPS Scoped Token (token_vps.json)"
@@ -982,8 +963,8 @@ if [ "$INSTANCE" = "vps" ] || docker ps --format '{{.Names}}' 2>/dev/null | grep
         fi
     fi
 
-    if [ -z "$TG_TOKEN" ] && docker ps --format '{{.Names}}' 2>/dev/null | grep -q aaka-sensor; then
-        TG_TOKEN=$(docker exec aaka-sensor sh -c 'cat /home/aaka/.openclaw/agent.yaml 2>/dev/null | grep botToken | head -1 | sed "s/.*botToken: *\"\(.*\)\"/\1/"' 2>/dev/null || echo "")
+    if [ -z "$TG_TOKEN" ]; then
+        TG_TOKEN=$(grep "^TELEGRAM_BOT_TOKEN=" "$REPO_DIR/.env" 2>/dev/null | cut -d= -f2- || echo "")
     fi
     if [ -n "$TG_TOKEN" ]; then
         PENDING=$(curl -s "https://api.telegram.org/bot${TG_TOKEN}/getWebhookInfo" \

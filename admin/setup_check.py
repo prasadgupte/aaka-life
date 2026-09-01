@@ -103,7 +103,7 @@ def check_config_dir() -> dict:
         "label": "Config directory",
         "ok": ok,
         "value": str(CONFIG_DIR),
-        "fix": f'mkdir -p "{CONFIG_DIR}/config" "{CONFIG_DIR}/tokens" "{CONFIG_DIR}/data/queue" "{CONFIG_DIR}/data/calendar" "{CONFIG_DIR}/logs" "{CONFIG_DIR}/openclaw-data"',
+        "fix": f'mkdir -p "{CONFIG_DIR}/config" "{CONFIG_DIR}/tokens" "{CONFIG_DIR}/data/queue" "{CONFIG_DIR}/data/calendar" "{CONFIG_DIR}/logs"',
         "note": "" if ok else f"Run the fix command, then set AAKA_CONFIG_DIR={CONFIG_DIR} in your shell",
     }
 
@@ -342,15 +342,29 @@ def check_vps() -> dict:
 
 def check_whatsapp() -> dict:
     enabled = "whatsapp" in [c.strip() for c in os.environ.get("ENABLED_CHANNELS", "telegram").split(",")]
-    phone = _env_from_dotenv().get("WHATSAPP_PHONE") or os.environ.get("WHATSAPP_PHONE", "")
-    connected = enabled and bool(phone)
+    # Real status = the wa-sidecar's /status (not just an env var).
+    port = os.environ.get("WA_SIDECAR_PORT", "18792")
+    status, value = "", "not connected"
+    try:
+        import json as _json
+        import urllib.request as _u
+        with _u.urlopen(f"http://127.0.0.1:{port}/status", timeout=2) as r:
+            data = _json.loads(r.read() or b"{}")
+        status = data.get("status", "")
+        if status == "connected":
+            value = data.get("jid", "connected")
+        elif status:
+            value = status  # qr | connecting | rate_limited
+    except Exception:
+        pass
+    connected = enabled and status == "connected"
     return {
         "id": "whatsapp",
         "tier": 3,
         "label": "WhatsApp",
         "ok": connected,
-        "value": phone if connected else "not connected",
-        "fix": "Add 'whatsapp' to ENABLED_CHANNELS and set WHATSAPP_PHONE, then link a session (see docs/openclaw-removal.md §5).",
+        "value": value if enabled else "not enabled",
+        "fix": "Add 'whatsapp' to ENABLED_CHANNELS, run admin/deploy.sh (installs the wa-sidecar service), then pair at http://127.0.0.1:18792/ (see CLAUDE_SETUP.md §10).",
         "note": "" if connected else "Optional — Aaka is Telegram-first. WhatsApp is available as an add-on channel.",
     }
 

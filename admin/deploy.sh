@@ -19,7 +19,6 @@ mkdir -p "$AAKA_CONFIG_DIR/tokens"
 mkdir -p "$AAKA_CONFIG_DIR/data/queue"
 mkdir -p "$AAKA_CONFIG_DIR/data/calendar"
 mkdir -p "$AAKA_CONFIG_DIR/logs"
-mkdir -p "$AAKA_CONFIG_DIR/openclaw-data"
 ok "Directories created under $AAKA_CONFIG_DIR"
 
 # Seed aaka.yaml from sample if missing
@@ -90,7 +89,6 @@ if [ "$INSTANCE" = "vps" ]; then
         read -rp "  WHATSAPP_PHONE (e.g. 491700000000@s.whatsapp.net): " wa_phone
         read -rp "  WHATSAPP_GROUP_JID (e.g. 120363424460011185@g.us):  " wa_group
         cat > "$CANONICAL_ENV" <<ENVEOF
-GATEWAY_BACKEND=openclaw
 TELEGRAM_BOT_TOKEN=${tok}
 TELEGRAM_GROUP_ID=${tg_group}
 GEMINI_API_KEY=${gemini}
