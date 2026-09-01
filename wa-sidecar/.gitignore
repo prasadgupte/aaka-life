@@ -1,0 +1,5 @@
+# Runtime WhatsApp Web auth state — treat as credentials, never commit.
+whatsapp-auth/
+# Downloaded inbound media staged for the receiver.
+wa-media/
+node_modules/

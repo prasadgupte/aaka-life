@@ -250,13 +250,21 @@ def normalize(msg: InboundMessage) -> Optional[ParsedMessage]:
             meta = json.loads(m_a.group(1))
             sender_id = str(meta.get("sender_id", sender_id))
             message_id = str(meta.get("message_id", message_id or ""))
-            # channel_id from "conversation_label": "id:<chat_id>"
+            # channel + channel_id from "chat_id": "<channel>:<id>" (telegram:… /
+            # whatsapp:…). Defaults to telegram for back-compat with older envelopes.
+            chat_id = meta.get("chat_id", "")
+            if chat_id.startswith("whatsapp:"):
+                channel = "whatsapp"
+                channel_id = chat_id[len("whatsapp:"):]
+            elif chat_id.startswith("telegram:"):
+                channel = "telegram"
+                channel_id = chat_id[len("telegram:"):]
+            else:
+                channel = "telegram"
+            # "conversation_label": "id:<chat_id>" overrides channel_id when present
             label = meta.get("conversation_label", "")
             if label.startswith("id:"):
                 channel_id = label[3:]
-            elif meta.get("chat_id", "").startswith("telegram:"):
-                channel_id = meta["chat_id"][len("telegram:"):]
-            channel = "telegram"
         except Exception:
             pass
         # Strip the metadata envelope from the text

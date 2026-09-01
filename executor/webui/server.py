@@ -99,6 +99,8 @@ def _reload_identity() -> None:
             "name": m.get("name") or m["id"].capitalize(),
             "telegram": str(m.get("telegram") or ""),
             "emoji": m.get("emoji") or "",
+            "role": m.get("role") or "",
+            "admin": bool(m.get("admin", False)),
         }
         for m in aaka_config.members()
     }

@@ -1,0 +1,192 @@
+/* aaka — brand component primitives
+ * Depends on tokens.css.
+ * See COMPONENTS.md for usage and contracts.
+ */
+
+/* ---------------- Lockup: mark + wordmark, baseline-aligned ---------------- */
+.lockup {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.18em;
+  line-height: 1;
+}
+
+/* ---------------- Mark — Fraunces 800 italic & in teal ---------------- */
+.mark {
+  font-family: var(--aaka-font-display);
+  font-weight: 800;
+  font-style: italic;
+  color: var(--aaka-teal);
+  line-height: 1;
+}
+
+/* ---------------- Wordmark — Fraunces 700 lowercase with period ---------------- */
+.wordmark {
+  font-family: var(--aaka-font-display);
+  font-weight: 700;
+  font-style: normal;
+  color: var(--aaka-text);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+.wordmark__period { color: var(--aaka-teal); }
+
+/* ---------------- Gradient bar — signature 4-color bar (4-5px) ---------------- */
+.gradient-bar {
+  display: block;
+  width: 48px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--aaka-gradient);
+}
+.gradient-bar--wide  { width: 100%; height: 4px; border-radius: 0; }
+.gradient-bar--xs    { width: 32px; height: 3px; }
+
+/* ---------------- Pill — solid in light, ghost in dark ---------------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: var(--aaka-radius-pill);
+  font-family: var(--aaka-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: var(--aaka-teal);
+  color: var(--aaka-white);
+  border: 1px solid transparent;
+}
+.pill--ghost {
+  background: rgba(0, 180, 162, 0.10);
+  color: var(--aaka-teal);
+  border-color: rgba(0, 180, 162, 0.25);
+}
+.pill--dot::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Auto: in dark mode, default pill becomes ghost (unless --solid is forced). */
+:root.dark .pill:not(.pill--solid):not(.pill--ghost),
+:root[data-theme="dark"] .pill:not(.pill--solid):not(.pill--ghost) {
+  background: rgba(0, 180, 162, 0.10);
+  color: var(--aaka-teal);
+  border-color: rgba(0, 180, 162, 0.25);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not([data-theme="light"]) .pill:not(.pill--solid):not(.pill--ghost) {
+    background: rgba(0, 180, 162, 0.10);
+    color: var(--aaka-teal);
+    border-color: rgba(0, 180, 162, 0.25);
+  }
+}
+
+/* ---------------- Card — 12-16px radius, optional top gradient bar ---------------- */
+.card {
+  background: var(--aaka-surface);
+  border: 1px solid var(--aaka-border);
+  border-radius: var(--aaka-radius);
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+.card--bar::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: var(--aaka-gradient);
+}
+.card h3 {
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+.card p { font-size: 15px; }
+
+/* ---------------- Button — primary teal, secondary outline ---------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: var(--aaka-radius-lg);
+  font-family: var(--aaka-font-body);
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  text-decoration: none;
+  transition: transform var(--aaka-dur) var(--aaka-ease),
+              background var(--aaka-dur) var(--aaka-ease),
+              border-color var(--aaka-dur) var(--aaka-ease);
+  cursor: pointer;
+}
+.btn:hover { transform: translateY(-1px); text-decoration: none; }
+.btn:active { transform: translateY(0); }
+
+.btn--primary {
+  background: var(--aaka-teal);
+  color: var(--aaka-white);
+}
+.btn--primary:hover { background: #00a392; }
+
+.btn--secondary {
+  background: transparent;
+  color: var(--aaka-teal);
+  border-color: var(--aaka-teal);
+}
+.btn--secondary:hover { background: rgba(0,180,162,0.08); }
+
+.btn--ghost {
+  background: transparent;
+  color: var(--aaka-text);
+  border-color: var(--aaka-border);
+}
+.btn--ghost:hover { border-color: var(--aaka-teal); color: var(--aaka-teal); }
+
+/* ---------------- Well — translucent surface (highlight callouts) ---------------- */
+.well {
+  background: rgba(0, 180, 162, 0.07);
+  border: 1px solid rgba(0, 180, 162, 0.18);
+  border-radius: var(--aaka-radius);
+  padding: 20px 24px;
+  color: var(--aaka-text);
+}
+.well strong { color: var(--aaka-teal); }
+
+/* ---------------- Form fields ---------------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field label {
+  font-family: var(--aaka-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--aaka-text-muted);
+}
+.input, .textarea, .select {
+  font-family: var(--aaka-font-body);
+  font-size: 15px;
+  color: var(--aaka-text);
+  background: var(--aaka-surface);
+  border: 1px solid var(--aaka-border);
+  border-radius: var(--aaka-radius-sm);
+  padding: 12px 14px;
+  outline: none;
+  transition: border-color var(--aaka-dur) var(--aaka-ease);
+  width: 100%;
+}
+.input:focus, .textarea:focus, .select:focus {
+  border-color: var(--aaka-teal);
+}
+.textarea { resize: vertical; min-height: 96px; }

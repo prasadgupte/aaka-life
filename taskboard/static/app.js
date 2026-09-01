@@ -18,7 +18,7 @@ const TAG_SHOW_LIMIT = 10;
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
-const API = '/api';
+const API = (window._TASKBOARD_API_BASE || '') + '/api';
 
 async function apiFetch(path, opts = {}) {
   const res = await fetch(API + path, {

@@ -46,8 +46,6 @@
     <string>family</string>
     <key>QUEUE_DB</key>
     <string>/Users/Shared/aaka-repo-config/data/queue/butler.db</string>
-    <key>GATEWAY_BACKEND</key>
-    <string>openclaw</string>
   </dict>
 
   <key>StandardOutPath</key>

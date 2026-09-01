@@ -135,7 +135,6 @@ if 0 <= idx < len(members):
     vps-telegram)
         VPS_HOST="${AAKA_VPS_HOST:-aaka-away}"
         CONTAINER="aaka-sensor"
-        OC_JSON="/opt/aaka-config/openclaw-data/openclaw.json"
         echo ""
         echo "  Telegram status on ${VPS_HOST}"
         echo "  ─────────────────────────────────────────────────────"
@@ -144,23 +143,15 @@ if 0 <= idx < len(members):
         status=$(ssh "$VPS_HOST" "docker inspect -f '{{.State.Status}}' $CONTAINER 2>/dev/null || echo 'missing'")
         echo "  Container : $status"
 
-        # Telegram channel state from openclaw log
+        # Telegram poller state from the container log
         echo ""
         echo "  Recent Telegram events:"
         ssh "$VPS_HOST" "docker logs $CONTAINER 2>&1 | grep -i telegram | tail -8 | sed 's/^/    /'"
 
-        # model_fallback (candidate_failed = router_sensor.py crashing)
+        # Router errors from the native poller log
         echo ""
         echo "  Router errors (last 5):"
-        ssh "$VPS_HOST" "docker exec $CONTAINER python3 -c \"
-import json
-with open('/tmp/openclaw-997/openclaw-2026-04-25.log') as f:
-    lines = [l for l in f if 'candidate_failed' in l or ('ERROR' in l and 'router' in l.lower())]
-for l in lines[-5:]:
-    try:
-        d = json.loads(l); print('   ', str(d.get('1',''))[:160])
-    except: print('   ', l[:160].strip())
-\" 2>/dev/null || echo '    (log not found)'"
+        ssh "$VPS_HOST" "docker exec $CONTAINER sh -c 'grep -iE \"error|traceback\" /config/logs/telegram_poller.log 2>/dev/null | tail -5' | sed 's/^/    /' || echo '    (log not found)'"
 
         # /config permissions
         echo ""
@@ -182,90 +173,26 @@ for l in lines[-5:]:
         fi
         echo "  ─────────────────────────────────────────────────────"
         ;;
-    vps-whatsapp)
-        VPS_HOST="${AAKA_VPS_HOST:-aaka-away}"
-        CONTAINER="aaka-sensor"
-        OC_DATA="/opt/aaka-config/openclaw-data"
+    whatsapp|wa|vps-whatsapp)
+        # WhatsApp runs on this Mac via the wa-sidecar (not the VPS). Query it locally.
+        WA_PORT="${WA_SIDECAR_PORT:-18792}"
+        REC_PORT="${WA_RECEIVER_PORT:-18793}"
         echo ""
-        echo "  WhatsApp status on ${VPS_HOST}"
+        echo "  WhatsApp (wa-sidecar, local)"
         echo "  ─────────────────────────────────────────────────────"
-
-        # Container running?
-        status=$(ssh "$VPS_HOST" "docker inspect -f '{{.State.Status}}' $CONTAINER 2>/dev/null || echo 'missing'")
-        echo "  Container : $status"
-
-        # WhatsApp channel state from docker logs
-        echo ""
-        echo "  Recent WhatsApp events:"
-        ssh "$VPS_HOST" "docker logs $CONTAINER 2>&1 | grep -i whatsapp | tail -10 | sed 's/^/    /'"
-
-        # Session files present?
-        echo ""
-        echo "  Session files in openclaw-data:"
-        ssh "$VPS_HOST" "ls -lh ${OC_DATA}/ 2>/dev/null | grep -v '^total' | sed 's/^/    /'"
-
-        # Check if session creds exist (Baileys stores them in a subdirectory)
-        echo ""
-        echo "  Baileys creds (session health):"
-        ssh "$VPS_HOST" "find ${OC_DATA} -name 'creds.json' 2>/dev/null | sed 's/^/    /' || echo '    (none found — re-pair needed)'"
-
-        # Offer actions
-        echo ""
-        echo "  Actions:"
-        echo "    [1] Restart container (re-connects using existing session)"
-        echo "    [2] Clear WhatsApp session + restart (forces new QR scan)"
-        echo "    [3] Do nothing"
-        echo ""
-        printf "  Choice [1/2/3]: "
-        read -r _ans
-
-        case "$_ans" in
-            1)
-                echo "  Restarting container..."
-                ssh "$VPS_HOST" "docker restart $CONTAINER"
-                echo "  Done. Watch logs:"
-                echo "    ssh $VPS_HOST 'docker logs -f $CONTAINER'"
-                ;;
-            2)
-                echo "  Clearing WhatsApp session files..."
-                ssh "$VPS_HOST" "find ${OC_DATA} -name 'creds.json' -o -name '*.json' -path '*/baileys*' 2>/dev/null | xargs rm -f"
-                ssh "$VPS_HOST" "find ${OC_DATA} -maxdepth 2 -name 'session-*' -type d 2>/dev/null | xargs rm -rf"
-                echo "  Restarting container..."
-                ssh "$VPS_HOST" "docker restart $CONTAINER"
-                echo ""
-                echo "  A QR code will appear in the logs. Scan it with WhatsApp:"
-                echo "    ssh $VPS_HOST 'docker logs -f $CONTAINER 2>&1 | grep -A2 QR'"
-                echo "  Or watch all logs:"
-                echo "    ssh $VPS_HOST 'docker logs -f $CONTAINER'"
-                ;;
-            *)
-                echo "  No action taken."
-                ;;
-        esac
-        echo "  ─────────────────────────────────────────────────────"
-        ;;
-    tunnel-claw)
-        LOCAL_PORT="${2:-18789}"
-        VPS_HOST="${AAKA_VPS_HOST:-aaka-away}"
-        VPS_PORT="18789"
-        OC_JSON="/opt/aaka-config/openclaw-data/openclaw.json"
-        TOKEN=$(ssh "$VPS_HOST" "python3 -c \"import json; d=json.load(open('${OC_JSON}')); print(d.get('gateway',{}).get('auth',{}).get('token',''))\"" 2>/dev/null || echo "")
-        echo ""
-        echo "  OpenClaw Dashboard"
-        echo "  ─────────────────────────────────────────────────────"
-        echo "  URL:   http://localhost:${LOCAL_PORT}/__openclaw__/canvas/"
-        if [ -n "$TOKEN" ]; then
-            echo "  Token: ${TOKEN}"
-            echo ""
-            echo "  Full URL with token:"
-            echo "  http://localhost:${LOCAL_PORT}/__openclaw__/canvas/?token=${TOKEN}"
+        WA_STATUS=$(curl -sf "http://127.0.0.1:${WA_PORT}/status" 2>/dev/null || echo "")
+        if [ -z "$WA_STATUS" ]; then
+            echo "  Sidecar   : DOWN (:${WA_PORT}) — reload: launchctl kickstart -k gui/\$(id -u)/com.aaka.wasidecar"
         else
-            echo "  Token: (not found — check ${OC_JSON} on VPS)"
+            echo "  Sidecar   : $WA_STATUS"
         fi
-        echo "  ─────────────────────────────────────────────────────"
-        echo "  Press Ctrl+C to close the tunnel."
+        REC=$(curl -sf "http://127.0.0.1:${REC_PORT}/health" 2>/dev/null || echo "")
+        echo "  Receiver  : $([ -n "$REC" ] && echo "healthy (:${REC_PORT})" || echo "DOWN (:${REC_PORT})")"
         echo ""
-        ssh -N -L "${LOCAL_PORT}:localhost:${VPS_PORT}" "$VPS_HOST"
+        echo "  Pair / re-pair:  open http://127.0.0.1:${WA_PORT}/"
+        echo "  Session dir:     \$AAKA_CONFIG_DIR/whatsapp-auth  (rm to force re-pair)"
+        echo "  Logs:            \$AAKA_CONFIG_DIR/logs/wa_sidecar.log  ·  wa_inbound.log"
+        echo "  ─────────────────────────────────────────────────────"
         ;;
     cal)
         bash "$SCRIPT_DIR/cal.sh" "${@:2}"
@@ -318,7 +245,7 @@ for l in lines[-5:]:
         echo "No caffeinate, no battery drain, no display needed."
         ;;
     help|--help|-h|*)
-        echo "Usage: bash admin/aaka.sh [diagnose|deploy|test|rebuild|exec|skills|auth|sync|reauth|cal|queue|status|tunnel-claw|demo|overnight]"
+        echo "Usage: bash admin/aaka.sh [diagnose|deploy|test|rebuild|exec|skills|auth|sync|reauth|cal|queue|status|whatsapp|demo|overnight]"
         echo ""
         echo "  setup        AI-native non-interactive setup [--config JSON] [--check] [--reset]"
         echo "  diagnose     Full health check — environment, deps, config, queue, &Away/&Home"
@@ -333,10 +260,9 @@ for l in lines[-5:]:
         echo "  cal          Verify calendar access — list all configured calendars with ✓/✗"
         echo "  queue        &Home queue status — item counts, recent items, last poll log"
         echo "  status       Shared status sub-commands: code | queue | llm"
-        echo "  tunnel-claw  SSH tunnel to OpenClaw dashboard on VPS [local-port, default: 18789]"
         echo "  vps-telegram Diagnose Telegram channel on VPS; offer permission repair + restart"
-        echo "  vps-whatsapp Diagnose WhatsApp channel on VPS; restart or clear session for re-pair
-  demo         Launch demo REPL (Ash-Kaa family, no Docker, no API keys needed) [--reset]
+        echo "  whatsapp     WhatsApp (wa-sidecar) status on this Mac; pair/re-pair pointer (alias: wa)"
+        echo "  demo         Launch demo REPL (Ash-Kaa family, no Docker, no API keys needed) [--reset]
   overnight     Check AC power + Power Nap ready for unattended background work"
         ;;
 esac

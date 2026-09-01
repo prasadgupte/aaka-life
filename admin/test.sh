@@ -2739,6 +2739,89 @@ check "telegram: multi-bot supervisor resolve + per-bot offset/metadata" \
 check "slack: web-api adapter — postMessage/reactions + workspace token (mocked)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' -m gateway.channels.slack_test"
 
+# ── Aaka Console (unified shell: Console · Tasks · Status, port 8003) ──────────
+header "Console — server routes"
+check "console server: shell, healthz, webui routes, mounted taskboard CRUD" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' executor/console/test_server.py"
+
+header "Console — status routes"
+check "console status: setup_check subprocess (happy/exit/timeout) + log tail" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' executor/console/test_status.py"
+
+# ── WA sidecar (Baileys WhatsApp, OpenClaw-free) ──────────────────────────────
+header "WA Sidecar — channel adapter unit tests"
+check "whatsapp channel: send_text POSTs to sidecar, zero subprocess" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' gateway/channels/test_whatsapp_channel.py"
+
+header "WA Sidecar — inbound receiver unit tests"
+check "wa_inbound: receive() called with channel=whatsapp; reply via egress" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_wa_inbound.py"
+
+header "WA Sidecar — no openclaw import in whatsapp channel"
+if grep -q "openclaw" "$REPO_DIR/gateway/channels/whatsapp.py" 2>/dev/null; then
+    fail "gateway/channels/whatsapp.py still references openclaw"
+    FAIL=$((FAIL + 1))
+else
+    ok "gateway/channels/whatsapp.py: no openclaw reference"
+    PASS=$((PASS + 1))
+fi
+
+header "WA Sidecar — ingress.py has no new normalization branch (AC-IN-4)"
+if grep -qE "Format D|wa_inbound|wa-sidecar" "$REPO_DIR/gateway/ingress.py" 2>/dev/null; then
+    fail "gateway/ingress.py gained a wa-sidecar-specific branch"
+    FAIL=$((FAIL + 1))
+else
+    ok "gateway/ingress.py: routes WA via Format C (no new branch)"
+    PASS=$((PASS + 1))
+fi
+
+header "WA — inbound wraps in Format-A envelope; unknown senders get onboarding reply"
+if grep -q "whatsapp:{channel_id" "$REPO_DIR/sensor/wa_inbound.py" 2>/dev/null; then
+    ok "wa_inbound: wraps message in whatsapp Format-A envelope (route() gets sender/channel)"
+    PASS=$((PASS + 1))
+else
+    fail "wa_inbound: missing Format-A envelope — route() will get no context and return empty"
+    FAIL=$((FAIL + 1))
+fi
+if grep -q 'source == "whatsapp" and sender_id == channel_id' "$REPO_DIR/sensor/router_sensor.py" 2>/dev/null; then
+    ok "router: unknown WhatsApp sender gets 'almost in' onboarding reply (not silent)"
+    PASS=$((PASS + 1))
+else
+    fail "router: unknown WhatsApp sender is silently dropped (no onboarding reply)"
+    FAIL=$((FAIL + 1))
+fi
+
+header "WA — always-on launchd services present + templatable"
+if [ -f "$REPO_DIR/executor/com.aaka.wasidecar.plist" ] && \
+   grep -q '\${NODE_BIN}' "$REPO_DIR/executor/com.aaka.wasidecar.plist" 2>/dev/null; then
+    ok "sidecar launchd plist present and path-portable (\${NODE_BIN}/\${AAKA_BASE})"
+    PASS=$((PASS + 1))
+else
+    fail "sidecar launchd plist missing or not templatable"
+    FAIL=$((FAIL + 1))
+fi
+
+# Node boot smoke test — only if node is available and WA_TEST_BOOT=1.
+# Uses a free test port + throwaway auth dir; never touches the live session.
+if [ "${WA_TEST_BOOT:-0}" = "1" ] && command -v node &>/dev/null; then
+    header "WA Sidecar — Node boot smoke"
+    WA_BOOT_AUTH="$(mktemp -d /tmp/wa-sidecar-boot.XXXXXX)"
+    WA_AUTH_DIR="$WA_BOOT_AUTH" WA_SIDECAR_PORT=18799 \
+        node "$REPO_DIR/wa-sidecar/index.js" &>/tmp/wa-sidecar-boot.log &
+    WA_PID=$!
+    sleep 3
+    WA_BOOT_STATUS=$(curl -sf "http://127.0.0.1:18799/status" 2>/dev/null || echo "")
+    kill "$WA_PID" 2>/dev/null; wait "$WA_PID" 2>/dev/null || true
+    rm -rf "$WA_BOOT_AUTH"
+    if echo "$WA_BOOT_STATUS" | grep -qE '"status":"(connecting|qr)"'; then
+        ok "wa-sidecar Node boot: /status returns connecting|qr"
+        PASS=$((PASS + 1))
+    else
+        fail "wa-sidecar Node boot: /status unreachable or unexpected: $WA_BOOT_STATUS"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}Results: ${GREEN}${PASS} passed${NC}, ${RED}${FAIL} failed${NC}"

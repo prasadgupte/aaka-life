@@ -46,11 +46,9 @@ BOT_ID = os.environ.get("AAKA_BOT_ID", "")
 if str(BASE) not in sys.path:
     sys.path.insert(0, str(BASE))
 
-# Offset persistence — per-bot when AAKA_BOT_ID is set; our file takes precedence,
-# bootstrapping from openclaw's on first run for the default bot.
+# Offset persistence — per-bot when AAKA_BOT_ID is set.
 _OFFSET_NAME = f"telegram_offset_{BOT_ID}.json" if BOT_ID else "telegram_offset.json"
 _OUR_OFFSET_FILE = CONFIG_DIR / "data" / _OFFSET_NAME
-_OPENCLAW_OFFSET_FILE = Path("/home/aaka/.openclaw/telegram/update-offset-default.json")
 
 POLL_TIMEOUT = 30  # seconds for Telegram long-poll
 
@@ -146,20 +144,16 @@ def _send_document(chat_id: str, file_path: str, caption: str = "",
 # ── Offset persistence ──────────────────────────────────────────────────────────
 
 def _load_offset() -> int:
-    """Return the next update_id to request.
-
-    Priority: our own offset file → openclaw's offset file → 0.
-    """
-    for path in [_OUR_OFFSET_FILE, _OPENCLAW_OFFSET_FILE]:
-        try:
-            if path.exists():
-                d = json.loads(path.read_text())
-                uid = int(d.get("lastUpdateId", 0))
-                if uid > 0:
-                    _log.info("loaded offset %d from %s", uid, path.name)
-                    return uid + 1
-        except Exception:
-            pass
+    """Return the next update_id to request (from our offset file, else 0)."""
+    try:
+        if _OUR_OFFSET_FILE.exists():
+            d = json.loads(_OUR_OFFSET_FILE.read_text())
+            uid = int(d.get("lastUpdateId", 0))
+            if uid > 0:
+                _log.info("loaded offset %d from %s", uid, _OUR_OFFSET_FILE.name)
+                return uid + 1
+    except Exception:
+        pass
     return 0
 
 

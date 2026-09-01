@@ -7,8 +7,9 @@
 # What's backed up:
 #   config/           aaka.yaml, message_send.json
 #   tokens/           Google OAuth credentials + token
-#   openclaw-data/    WhatsApp + Telegram session (critical — avoids re-scan on new VPS)
 #   .env              All secrets/env vars
+# Note: the WhatsApp session now lives on the Mac (wa-sidecar's whatsapp-auth/),
+# not the VPS — it's already local, so it's not part of this VPS→Mac backup.
 #
 # What's excluded:
 #   data/queue/       SQLite DB (ephemeral; recreated from schema on restore)
@@ -49,4 +50,4 @@ rsync -avz --progress \
 echo ""
 ok "Backup complete → ${LOCAL_CONFIG}/"
 info "To restore on a new VPS: bash admin/deploy.sh"
-info "  deploy.sh detects ${LOCAL_CONFIG}/.env and openclaw-data/ automatically."
+info "  deploy.sh detects ${LOCAL_CONFIG}/.env automatically."

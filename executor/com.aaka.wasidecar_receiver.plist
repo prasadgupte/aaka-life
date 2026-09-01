@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Templated by admin/deploy.sh: ${PYTHON_BIN} ${AAKA_BASE} ${AAKA_CONFIG_DIR} are
+     substituted at install time so this works at any install path, not just the
+     original /Users/Shared one. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aaka.wasidecar_receiver</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>${PYTHON_BIN}</string>
+    <string>-m</string>
+    <string>uvicorn</string>
+    <string>sensor.wa_inbound:app</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>18793</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${AAKA_BASE}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AAKA_CONFIG_DIR</key>
+    <string>${AAKA_CONFIG_DIR}</string>
+    <key>AAKA_BASE</key>
+    <string>${AAKA_BASE}</string>
+    <key>ENABLED_CHANNELS</key>
+    <string>telegram,whatsapp</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>${AAKA_CONFIG_DIR}/logs/wa_inbound.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${AAKA_CONFIG_DIR}/logs/wa_inbound.log</string>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>

@@ -119,8 +119,7 @@ else
     "$AAKA_CONFIG_DIR/data/queue" \
     "$AAKA_CONFIG_DIR/data/calendar" \
     "$AAKA_CONFIG_DIR/data/contacts" \
-    "$AAKA_CONFIG_DIR/logs" \
-    "$AAKA_CONFIG_DIR/openclaw-data"
+    "$AAKA_CONFIG_DIR/logs"
   _ok
 fi
 
@@ -221,7 +220,6 @@ else
   else
     if [[ $CHECK_ONLY -eq 0 ]]; then
       cat > "$CANONICAL_ENV" <<ENVEOF
-GATEWAY_BACKEND=openclaw
 TELEGRAM_BOT_TOKEN=${TG_TOKEN}
 TELEGRAM_GROUP_ID=${TG_GROUP}
 TELEGRAM_USER_ID=${TG_USER}

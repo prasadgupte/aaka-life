@@ -1,0 +1,76 @@
+/* executor/console/static/tasks.css
+ * Brand-token remap for the embedded taskboard. Loaded AFTER taskboard/style.css.
+ * Redefines the taskboard's own custom properties to point at the aaka brand
+ * tokens (from /static/brand/tokens.css). Does not delete the taskboard vars —
+ * only overrides their values, so all of style.css's layout rules keep working.
+ * Source of truth: features/aaka-console/design-spec.md §3.2 token map.
+ */
+
+:root {
+  /* Surfaces */
+  --bg:         var(--aaka-night);       /* #161520 */
+  --bg-raised:  var(--aaka-dusk);        /* #1E1D2C */
+  --bg-card:    var(--aaka-elevated);    /* #242338 */
+  --bg-hover:   #2c2a40;                 /* lighter hover — no exact token */
+  --bg-active:  #302d45;                 /* selected rows — kept as-is */
+
+  /* Borders */
+  --border:     var(--aaka-border);      /* #2A2940 in dark */
+  --border-md:  rgba(255,255,255,0.13);  /* kept */
+
+  /* Text */
+  --text:       var(--aaka-light);       /* #F0F0F0 */
+  --text-2:     var(--aaka-fog);         /* #8890A0 */
+  --text-3:     rgba(136,144,160,0.5);   /* fog @ 50% */
+
+  /* Accents — old violet→iris, mint→teal, coral→berry, amber→sunshine */
+  --violet:     var(--aaka-iris);        /* #7B68EE */
+  --violet-bg:  rgba(123,104,238,0.12);
+  --mint:       var(--aaka-teal);        /* #00B4A2 */
+  --mint-bg:    rgba(0,180,162,0.10);
+  --coral:      var(--aaka-berry);       /* #FF6B8A */
+  --coral-bg:   rgba(255,107,138,0.12);
+  --coral-dim:  rgba(255,107,138,0.06);
+  --amber:      var(--aaka-sunshine);    /* #FFBA49 */
+  --amber-bg:   rgba(255,186,73,0.10);
+  --sky:        var(--aaka-teal);        /* aaka has one green — consolidate */
+  --sky-bg:     rgba(0,180,162,0.10);
+
+  /* Typography */
+  --font-head:  var(--aaka-font-display);  /* Fraunces */
+  --font-body:  var(--aaka-font-body);     /* Plus Jakarta Sans */
+  --font-mono:  var(--aaka-font-mono);     /* JetBrains Mono */
+
+  /* Radius */
+  --r-sm:   var(--aaka-radius-sm);   /* 8px */
+  --r-md:   var(--aaka-radius);      /* 14px */
+  --r-lg:   var(--aaka-radius-lg);   /* 22px */
+  --r-full: var(--aaka-radius-pill); /* 999px */
+}
+
+/* Spinner + loading accent → iris (design-spec §3.9) */
+.spinner { border-top-color: var(--aaka-iris) !important; }
+
+/* Modal overlay backdrop: warm night wash (design-spec §3.6) */
+.modal-overlay { background: rgba(22,21,32,0.75) !important; }
+
+/* Modal header title uses the display font (design-spec §3.6) */
+.modal-head h2 { font-family: var(--aaka-font-display); font-weight: 600; }
+
+/* ── Task cards: drop the left accent bar (owner: "looks very AI") ──────────
+ * The taskboard marks overdue/today rows with a `border-left: 3px` accent +
+ * extra left padding. Reskin to the brand without that bar: keep the row
+ * padding uniform and lean on the already-colored due-date text
+ * (.meta-due.overdue / .meta-due.today) + a soft full-tint on hover to signal
+ * urgency. Overriding here (loaded after style.css) leaves the shared
+ * taskboard style.css untouched. */
+.task-row.overdue,
+.task-row.today {
+  border-left: 1px solid transparent;   /* cancel the 3px accent bar */
+  padding-left: 12px;                    /* restore uniform padding */
+}
+/* Give overdue/today a whisper-soft full-card wash instead of a side bar. */
+.task-row.overdue { background: rgba(255,107,138,0.05); }
+.task-row.today   { background: rgba(255,186,73,0.06); }
+.task-row.overdue:hover { background: var(--coral-dim); border-color: var(--border); }
+.task-row.today:hover   { background: var(--amber-bg);  border-color: var(--border); }

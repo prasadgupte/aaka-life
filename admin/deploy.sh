@@ -19,7 +19,6 @@ mkdir -p "$AAKA_CONFIG_DIR/tokens"
 mkdir -p "$AAKA_CONFIG_DIR/data/queue"
 mkdir -p "$AAKA_CONFIG_DIR/data/calendar"
 mkdir -p "$AAKA_CONFIG_DIR/logs"
-mkdir -p "$AAKA_CONFIG_DIR/openclaw-data"
 ok "Directories created under $AAKA_CONFIG_DIR"
 
 # Seed aaka.yaml from sample if missing
@@ -90,7 +89,6 @@ if [ "$INSTANCE" = "vps" ]; then
         read -rp "  WHATSAPP_PHONE (e.g. 491700000000@s.whatsapp.net): " wa_phone
         read -rp "  WHATSAPP_GROUP_JID (e.g. 120363424460011185@g.us):  " wa_group
         cat > "$CANONICAL_ENV" <<ENVEOF
-GATEWAY_BACKEND=openclaw
 TELEGRAM_BOT_TOKEN=${tok}
 TELEGRAM_GROUP_ID=${tg_group}
 GEMINI_API_KEY=${gemini}
@@ -243,6 +241,43 @@ SSHBLOCK
         info "Logs: $AAKA_CONFIG_DIR/logs/calendarsync.log"
     else
         warn "Calendar sync plist not found: $SYNC_SRC"
+    fi
+
+    # WhatsApp sidecar + inbound receiver — only when whatsapp is enabled. Makes
+    # WhatsApp always-on like Telegram: no manual `node`/`uvicorn` to keep running.
+    if echo "${ENABLED_CHANNELS:-telegram}" | grep -q "whatsapp"; then
+        NODE_BIN="$(command -v node || true)"
+        PYTHON_BIN="$REPO_DIR/venv/bin/python3"
+        if [ -z "$NODE_BIN" ]; then
+            warn "node not found on PATH — WhatsApp sidecar service NOT installed. Install Node 20+ and re-run deploy."
+        elif [ ! -x "$PYTHON_BIN" ]; then
+            warn "venv python missing ($PYTHON_BIN) — WhatsApp receiver NOT installed. Create the venv and re-run deploy."
+        else
+            if [ ! -d "$REPO_DIR/wa-sidecar/node_modules" ]; then
+                info "Installing wa-sidecar Node deps (one-time)…"
+                ( cd "$REPO_DIR/wa-sidecar" && npm install >/dev/null 2>&1 ) \
+                    && ok "wa-sidecar deps installed" || warn "npm install failed in wa-sidecar — install manually"
+            fi
+            for wa in wasidecar wasidecar_receiver; do
+                WA_SRC="$REPO_DIR/executor/com.aaka.$wa.plist"
+                WA_DST="$HOME/Library/LaunchAgents/com.aaka.$wa.plist"
+                if [ -f "$WA_SRC" ]; then
+                    sed -e "s|\${AAKA_BASE}|$REPO_DIR|g" \
+                        -e "s|\${AAKA_CONFIG_DIR}|$AAKA_CONFIG_DIR|g" \
+                        -e "s|\${NODE_BIN}|$NODE_BIN|g" \
+                        -e "s|\${PYTHON_BIN}|$PYTHON_BIN|g" \
+                        "$WA_SRC" > "$WA_DST"
+                    launchctl unload "$WA_DST" 2>/dev/null || true
+                    launchctl load "$WA_DST"
+                    ok "com.aaka.$wa installed and loaded"
+                else
+                    warn "WhatsApp plist not found: $WA_SRC"
+                fi
+            done
+            info "WhatsApp always-on: sidecar :18792 + receiver :18793. Pair once at http://127.0.0.1:18792/"
+        fi
+    else
+        info "WhatsApp not in ENABLED_CHANNELS — skipping sidecar services (Telegram-only install)."
     fi
 
     header "Step 5 — Create vault scaffold"

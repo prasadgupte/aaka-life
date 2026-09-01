@@ -1227,7 +1227,7 @@ def _call_gemini_fallback(prompt: str, timeout: int) -> tuple[str, str]:
     from gateway.adapter import GatewayAdapter
     adapter = GatewayAdapter()
     # _gemini_only=True: skip the Claude-CLI path the agent_api just tried.
-    text = adapter._call_llm_openclaw(prompt, timeout, _gemini_only=True)
+    text = adapter._call_llm_fallback(prompt, timeout, _gemini_only=True)
     model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
     return text, model
 

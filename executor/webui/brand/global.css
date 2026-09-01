@@ -1,0 +1,139 @@
+/* aaka — global reset, base, fonts, utilities
+ * Imported BEFORE tokens.css. Body uses tokens.
+ */
+
+/* Google Fonts loaded via preconnect+link in Base.astro <head> */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 68px; /* clear the sticky header on anchor jumps */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+body {
+  font-family: var(--aaka-font-body);
+  font-weight: 400;
+  line-height: 1.6;
+  background: var(--aaka-bg);
+  color: var(--aaka-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  position: relative;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--aaka-font-display);
+  color: var(--aaka-text);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+h1 { font-weight: 700; }
+h2 { font-weight: 600; }
+h3 { font-weight: 600; }
+
+p { line-height: 1.7; color: var(--aaka-text-muted); }
+
+a {
+  color: var(--aaka-teal);
+  text-decoration: none;
+  transition: color var(--aaka-dur) var(--aaka-ease);
+}
+a:hover { text-decoration: underline; }
+
+code, pre, kbd, samp {
+  font-family: var(--aaka-font-mono);
+  font-size: 0.92em;
+}
+
+img, svg { display: block; max-width: 100%; }
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ----------------- Utilities ----------------- */
+
+/* Aurora wash — subtle multi-color radial wash, dimmed in dark mode */
+.bg-aurora {
+  position: relative;
+  isolation: isolate;
+}
+.bg-aurora::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 80%, rgba(0,180,162,0.10) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 35% at 80% 20%, rgba(123,104,238,0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 60% 70%, rgba(255,107,138,0.06) 0%, transparent 60%);
+}
+:root.dark .bg-aurora::before,
+:root[data-theme="dark"] .bg-aurora::before {
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 80%, rgba(0,180,162,0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 35% at 80% 20%, rgba(123,104,238,0.07) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 60% 70%, rgba(255,107,138,0.05) 0%, transparent 60%);
+}
+
+/* Watermark & — oversized italic ampersand at 3-5% opacity */
+.bg-watermark-amp {
+  position: relative;
+}
+.bg-watermark-amp::after {
+  content: '&';
+  position: absolute;
+  right: -5vw;
+  bottom: -8vh;
+  font-family: var(--aaka-font-display);
+  font-size: clamp(200px, 35vw, 520px);
+  font-weight: 800;
+  font-style: italic;
+  color: rgba(0, 180, 162, 0.05);
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+
+/* Container */
+.container {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.container-sm { max-width: 680px; }
+
+/* Section spacing */
+.section { padding: 80px 0; }
+@media (max-width: 640px) {
+  .section { padding: 56px 0; }
+}
+
+/* Mono label */
+.mono-label {
+  font-family: var(--aaka-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--aaka-teal);
+}

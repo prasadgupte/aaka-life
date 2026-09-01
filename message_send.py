@@ -2,8 +2,8 @@
 """
 message_send — send alerts via WhatsApp or Telegram.
 
-Routes through gateway/adapter.py. GATEWAY_BACKEND controls which
-backend handles the actual send (zeroclaw or openclaw).
+Routes through gateway/adapter.py → gateway.egress (native: Telegram HTTP,
+WhatsApp via the wa-sidecar, Slack Web API). No OpenClaw.
 
 Usage (CLI):
   ./message_send.py "Hello, world!"

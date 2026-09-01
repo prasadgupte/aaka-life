@@ -180,6 +180,7 @@ members:
     admin: true
     namespace: "<name_lowercase>"
     email: "<email>"          # required for calendar auth
+    whatsapp: "<+E.164>"      # the number THEY message aaka from (see WhatsApp section) — omit if not using WhatsApp
 
 calendar:
   default_id: primary
@@ -230,7 +231,7 @@ the user) and report the result:
 ```bash
 AAKA_CONFIG_DIR="$HOME/aaka/config" venv/bin/python3 -c "
 from skills.calendar import gog
-cals = gog.list_calendars()
+cals = gog.get_service().calendarList().list(maxResults=10).execute().get('items', [])
 print(f'✓ Calendar access: {len(cals)} calendar(s)')
 for c in cals[:5]:
     print(f'  - {c[\"summary\"]}')
@@ -298,6 +299,35 @@ Common causes:
 - Bot not in the group → user needs to add the bot as a member
 - Wrong `TELEGRAM_USER_ID` → sensor ignores unknown senders (check logs for "unknown sender")
 - Bad token → auth error in logs
+
+### 10 — WhatsApp [optional, no OpenClaw]
+
+WhatsApp runs through a self-contained Baileys **sidecar** — no OpenClaw. It's two
+always-on launchd services (sidecar `:18792` + inbound receiver `:18793`) that
+`deploy.sh` installs and supervises automatically when `whatsapp` is in
+`ENABLED_CHANNELS`. **The user never runs `node` or `uvicorn` by hand.**
+
+Enable it:
+
+1. Add `whatsapp` to `ENABLED_CHANNELS` in `.env` (e.g. `ENABLED_CHANNELS=telegram,whatsapp`).
+2. Ensure **Node ≥20** is installed (`node -v`). Re-run `bash admin/deploy.sh` — it
+   installs the two services (running `npm install` in `wa-sidecar/` once).
+3. **Pair once:** open **http://127.0.0.1:18792/** in a browser → a live QR appears →
+   scan it from the phone (WhatsApp → Linked Devices → Link a device). The page turns
+   green (`connected`) when done. The session persists across restarts.
+
+**Capture who's allowed — do this during pairing, don't skip it.** aaka only replies
+to numbers listed as members. Right after pairing, **ask the user: "What WhatsApp
+number will you message aaka from?"** Confirm it's theirs, then add it to *their*
+member in `aaka.yaml` as `whatsapp: "+E.164"` (e.g. `+4915123146203`). Do the same
+for any other family member who'll use WhatsApp. Without this, their messages are
+silently gated — the bot replies "I don't recognise this number, your number is
+`+…`, share it with whoever set me up" so it's never a black hole, but the admin
+still has to add them.
+
+Test: from a **member's** phone, send `status` to the paired number → the reply comes
+back over WhatsApp. If nothing: `tail -30 "$HOME/aaka/config/logs/wa_sidecar.log"`
+(session) and `wa_inbound.log` (routing), or run `bash admin/diagnose.sh`.
 
 ---
 

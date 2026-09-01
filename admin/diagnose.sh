@@ -65,7 +65,7 @@ header "4. Env File"
 ENV_FILE="$REPO_DIR/.env"
 if [ -f "$ENV_FILE" ]; then
     ok ".env present at $ENV_FILE"
-    for var in GATEWAY_BACKEND TELEGRAM_BOT_TOKEN GEMINI_API_KEY; do
+    for var in LLM_PROVIDER TELEGRAM_BOT_TOKEN GEMINI_API_KEY; do
         val=$(grep "^${var}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
         if [ -n "$val" ]; then
             masked="${val:0:4}****"
@@ -80,7 +80,7 @@ fi
 
 # ── 5. Folder structure ──────────────────────────────────────────────────────
 header "5. Folder Structure"
-for subdir in config tokens data/queue data/calendar logs openclaw-data; do
+for subdir in config tokens data/queue data/calendar logs; do
     if [ -d "$AAKA_CONFIG_DIR/$subdir" ]; then
         ok "$AAKA_CONFIG_DIR/$subdir"
     else
@@ -692,30 +692,11 @@ else
     fail "date range regex check failed — review _DATE_RANGE_RE in prepare_event.py"
 fi
 
-# ── Section 19: Telegram groupPolicy must be "open" ─────────────────────────
-header "19. Telegram groupPolicy (group message routing)"
-OC_JSON="/opt/aaka-config/openclaw-data/openclaw.json"
-if [ "$INSTANCE" = "vps" ]; then
-    if [ -f "$OC_JSON" ]; then
-        gp=$(python3 -c "import json; d=json.load(open('$OC_JSON')); print(d.get('channels',{}).get('telegram',{}).get('groupPolicy','missing'))" 2>/dev/null || echo "error")
-        if [ "$gp" = "open" ]; then
-            ok "openclaw.json telegram.groupPolicy = open"
-        else
-            fail "openclaw.json telegram.groupPolicy = $gp (expected 'open') — rebuild container to fix"
-        fi
-    else
-        warn "$OC_JSON not found — container not yet started"
-    fi
-elif [ "$SENSOR_UP" = "true" ]; then
-    gp=$(docker exec "$SENSOR_CONTAINER" python3 -c "import json; d=json.load(open('/home/aaka/.openclaw/openclaw.json')); print(d.get('channels',{}).get('telegram',{}).get('groupPolicy','missing'))" 2>/dev/null || echo "error")
-    if [ "$gp" = "open" ]; then
-        ok "openclaw.json telegram.groupPolicy = open (inside container)"
-    else
-        fail "openclaw.json telegram.groupPolicy = $gp (expected 'open') — rebuild container to fix"
-    fi
-else
-    warn "groupPolicy check: sensor container not running ($SENSOR_CONTAINER)"
-fi
+# ── Section 19: Telegram group routing ──────────────────────────────────────
+header "19. Telegram group routing"
+# Group message routing is native now (telegram_multibot.py + router_sensor.py
+# mention patterns) — no OpenClaw config to check. Nothing to verify here.
+ok "group routing is native (telegram_multibot; no openclaw.json groupPolicy)"
 
 # ── Section 20: VPS Token Validity ───────────────────────────────────────────
 header "20. VPS Scoped Token (token_vps.json)"
@@ -982,8 +963,8 @@ if [ "$INSTANCE" = "vps" ] || docker ps --format '{{.Names}}' 2>/dev/null | grep
         fi
     fi
 
-    if [ -z "$TG_TOKEN" ] && docker ps --format '{{.Names}}' 2>/dev/null | grep -q aaka-sensor; then
-        TG_TOKEN=$(docker exec aaka-sensor sh -c 'cat /home/aaka/.openclaw/agent.yaml 2>/dev/null | grep botToken | head -1 | sed "s/.*botToken: *\"\(.*\)\"/\1/"' 2>/dev/null || echo "")
+    if [ -z "$TG_TOKEN" ]; then
+        TG_TOKEN=$(grep "^TELEGRAM_BOT_TOKEN=" "$REPO_DIR/.env" 2>/dev/null | cut -d= -f2- || echo "")
     fi
     if [ -n "$TG_TOKEN" ]; then
         PENDING=$(curl -s "https://api.telegram.org/bot${TG_TOKEN}/getWebhookInfo" \
@@ -1066,3 +1047,50 @@ for tag in ('tax', 'tax25', 'tax26'):
     assert tag in routes, f'missing route: {tag}'
 print('OK — tax/tax25/tax26 routes present')
 "
+
+# ── WA sidecar (if whatsapp ∈ ENABLED_CHANNELS) ───────────────────────────────
+header "WA Sidecar (whatsapp channel)"
+WA_SIDECAR_PORT="${WA_SIDECAR_PORT:-18792}"
+WA_RECEIVER_PORT="${WA_RECEIVER_PORT:-18793}"
+if echo "${ENABLED_CHANNELS:-telegram}" | grep -q "whatsapp"; then
+    WA_STATUS=$(curl -sf "http://127.0.0.1:$WA_SIDECAR_PORT/status" 2>/dev/null || echo "")
+    if [ -z "$WA_STATUS" ]; then
+        fail "wa-sidecar not reachable on :$WA_SIDECAR_PORT — service down. Reload: launchctl kickstart -k gui/\$(id -u)/com.aaka.wasidecar  (or re-run admin/deploy.sh)"
+    elif echo "$WA_STATUS" | grep -q '"status":"connected"'; then
+        ok "wa-sidecar: connected"
+    elif echo "$WA_STATUS" | grep -q '"status":"qr"'; then
+        warn "wa-sidecar: QR pending — pair at http://127.0.0.1:$WA_SIDECAR_PORT/"
+    elif echo "$WA_STATUS" | grep -q '"status":"rate_limited"'; then
+        warn "wa-sidecar: rate_limited — pair from another network"
+    else
+        warn "wa-sidecar: status=$WA_STATUS"
+    fi
+    REC_STATUS=$(curl -sf "http://127.0.0.1:$WA_RECEIVER_PORT/health" 2>/dev/null || echo "")
+    if echo "$REC_STATUS" | grep -q '"ok":true'; then
+        ok "wa-sidecar receiver: healthy on port $WA_RECEIVER_PORT"
+    else
+        fail "wa-sidecar receiver not reachable on :$WA_RECEIVER_PORT — service down. Reload: launchctl kickstart -k gui/\$(id -u)/com.aaka.wasidecar_receiver"
+    fi
+    if pgrep -f "openclaw" &>/dev/null; then
+        fail "openclaw process is running — should not be when using wa-sidecar"
+    else
+        ok "openclaw: not running (expected)"
+    fi
+    # Who can message aaka over WhatsApp (the family gate). Cwd-independent: uses
+    # the resolved $PYTHON + $REPO_DIR on sys.path, not a bare `venv/bin/python3`.
+    WA_MEMBERS=$("$PYTHON" -c "
+import sys; sys.path.insert(0, '$REPO_DIR')
+import aaka_config
+rows = [(m.get('id'), m.get('whatsapp')) for m in aaka_config.members() if m.get('whatsapp')]
+print('; '.join(f'{i}={w}' for i, w in rows) if rows else 'NONE')
+" 2>/dev/null || echo "ERR")
+    if [ "$WA_MEMBERS" = "NONE" ]; then
+        warn "no member has a whatsapp number — everyone is gated (bot replies 'add me'). Add whatsapp:\"+E.164\" to a member in aaka.yaml"
+    elif [ "$WA_MEMBERS" = "ERR" ]; then
+        warn "could not read members (check aaka.yaml / venv)"
+    else
+        ok "whatsapp members allowed: $WA_MEMBERS"
+    fi
+else
+    info "whatsapp not in ENABLED_CHANNELS — wa-sidecar checks skipped"
+fi

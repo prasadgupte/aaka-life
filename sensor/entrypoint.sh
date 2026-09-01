@@ -1,106 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Channel set — default Telegram-only (OpenClaw-free). WhatsApp (OpenClaw/Baileys)
-# is enabled only when "whatsapp" is in ENABLED_CHANNELS.
+# Sensor is OpenClaw-free. It receives Telegram natively via telegram_multibot.py.
+# WhatsApp is handled entirely on the Mac by the wa-sidecar (Baileys) — the VPS
+# container never touches WhatsApp, so no OpenClaw daemon is needed here.
 ENABLED_CHANNELS="${ENABLED_CHANNELS:-telegram}"
-case ",${ENABLED_CHANNELS}," in
-    *,whatsapp,*) WHATSAPP_ON=1 ;;
-    *)            WHATSAPP_ON=0 ;;
-esac
-echo "[entrypoint] ENABLED_CHANNELS=${ENABLED_CHANNELS} (whatsapp=${WHATSAPP_ON})"
-
-# ── OpenClaw setup (WhatsApp only) ────────────────────────────────────────────
-if [ "$WHATSAPP_ON" = "1" ]; then
-
-# Ensure openclaw config dir exists (may be a mounted volume)
-mkdir -p /home/aaka/.openclaw
-
-# Always re-template agent.yaml (cheap, keeps it in sync with env vars)
-envsubst < /app/gateway/openclaw/agent.yaml.example > /home/aaka/.openclaw/agent.yaml
-
-# Strip bindings with empty IDs (env var not set) so openclaw.json groupPolicy takes over
-python3 - <<'PYEOF'
-import yaml, re
-path = '/home/aaka/.openclaw/agent.yaml'
-with open(path) as f:
-    cfg = yaml.safe_load(f)
-original = len(cfg.get('bindings', []))
-cfg['bindings'] = [b for b in cfg.get('bindings', []) if b.get('id', '').strip()]
-removed = original - len(cfg['bindings'])
-if removed:
-    with open(path, 'w') as f:
-        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
-    print(f'[entrypoint] Removed {removed} agent.yaml binding(s) with empty id (env var not set)')
-PYEOF
-
-# Inject gateway config with controlUi fallback for non-loopback binding
-python3 -c "
-import json, os
-cfg_path = '/home/aaka/.openclaw/openclaw.json'
-cfg = {}
-if os.path.exists(cfg_path):
-    with open(cfg_path) as f: cfg = json.load(f)
-cfg.setdefault('gateway', {}).setdefault('controlUi', {})['dangerouslyAllowHostHeaderOriginFallback'] = True
-# Register router as a CLI backend so model 'router/router' resolves to router_sensor.py
-cfg.setdefault('agents', {}).setdefault('defaults', {}).setdefault('cliBackends', {})['router'] = {
-    'command': '/usr/local/bin/python3',
-    'args': ['/app/sensor/router_sensor.py'],
-    'input': 'arg',
-    'output': 'text',
-    'sessionMode': 'none'
-}
-# Disable openclaw's Telegram connector — telegram_poller.py handles inbound polling
-# directly and is more reliable (openclaw's Telegram connector silently stops polling).
-tg = cfg.setdefault('channels', {}).setdefault('telegram', {})
-tg['enabled'] = False
-tg['groupPolicy'] = 'open'
-# Remove invalid streaming sub-key (openclaw >=2026.4 rejects streaming.mode)
-tg.pop('streaming', None)
-# WhatsApp: only enable when WHATSAPP_PHONE is set (prevents dev containers from
-# stealing the VPS WhatsApp Web session and causing 440 session conflicts)
-if os.environ.get('WHATSAPP_PHONE', '').strip():
-    cfg.setdefault('channels', {})['whatsapp'] = {'enabled': True, 'groupPolicy': 'open', 'dmPolicy': 'allowlist'}
-else:
-    cfg.setdefault('channels', {})['whatsapp'] = {'enabled': False}
-# Group-chat trigger patterns: allow slash commands and single-letter aliases
-# without requiring an @mention of the bot
-cfg.setdefault('messages', {})['groupChat'] = {
-    'mentionPatterns': [
-        '^/',                             # any slash command
-        '^[bcdnqstw]\\\\s',                # single-letter alias + space
-        '^[bcdnqstw]$',                   # bare single-letter alias
-        '^#',                             # hashtag shortcuts: #done #clear #all #share
-        '^[yYnN]$',                       # single-char confirm/cancel: y/n/Y/N
-        '^(yes|no|cancel|force)$',        # word confirmations
-        '^\\\\d[\\\\d\\\\s]*$',               # bare numbers for list check-off
-        '\\\\b(today|week|status|menu|plan|block|done|buy|note|drop)\\\\b',
-    ],
-}
-cfg['messages']['ackReactionScope'] = 'group-all'
-# Remove legacy keys that openclaw >=2026.3 rejects
-cfg.pop('providers', None)
-if 'defaults' in cfg.get('models', {}):
-    del cfg['models']['defaults']
-with open(cfg_path, 'w') as f: json.dump(cfg, f, indent=2)
-"
-
-# Configure Gemini model via CLI (GEMINI_API_KEY env var provides auth automatically)
-openclaw models set google/gemini-2.5-flash 2>/dev/null || true
-
-# openclaw models set writes agents.defaults.model.primary = gemini, which overrides
-# the per-agent model: router/router from agent.yaml. Replace it with router/router
-# so all agents route through router_sensor.py by default (no LLM fallback).
-python3 -c "
-import json
-cfg_path = '/home/aaka/.openclaw/openclaw.json'
-with open(cfg_path) as f: cfg = json.load(f)
-defaults = cfg.get('agents', {}).get('defaults', {})
-defaults['model'] = {'primary': 'router/router', 'fallbacks': []}
-with open(cfg_path, 'w') as f: json.dump(cfg, f, indent=2)
-"
-
-fi  # end WhatsApp/OpenClaw setup
+echo "[entrypoint] ENABLED_CHANNELS=${ENABLED_CHANNELS} (telegram native; whatsapp via Mac wa-sidecar)"
 
 # Write sensor version info for /status code
 mkdir -p /config/data
@@ -139,9 +44,6 @@ for _d in /config/data/staging /config/data/telegram_media; do
     [ -d "$_d" ] && chmod a+w "$_d" 2>/dev/null || true
 done
 
-# Ensure openclaw dir is owned by aaka (harmless if unused)
-[ -d /home/aaka/.openclaw ] && chown -R aaka:aaka /home/aaka/.openclaw 2>/dev/null || true
-
 # Ensure contacts write dirs exist with correct ownership (bday_lists created by cron as root otherwise)
 mkdir -p /config/data/contacts/bday_lists
 chown -R aaka:aaka /config/data/contacts 2>/dev/null || true
@@ -157,7 +59,6 @@ export AAKA_CONFIG_DIR=/config
 export AAKA_BASE=/app
 export AAKA_ROLE=sensor
 export AAKA_CONTEXT=${AAKA_CONTEXT:-family}
-export GATEWAY_BACKEND=${GATEWAY_BACKEND:-openclaw}
 export LLM_PROVIDER=${LLM_PROVIDER:-gemini}
 export ENABLED_CHANNELS=${ENABLED_CHANNELS}
 export QUEUE_DB=${QUEUE_DB:-/config/data/queue/butler.db}
@@ -186,19 +87,6 @@ service cron start
 python3 sensor/router_sensor.py --serve --port 18790 &
 
 # ── Foreground process ────────────────────────────────────────────────────────
-# Telegram runs via the multi-bot supervisor (one native poller per bot).
-if [ "$WHATSAPP_ON" = "1" ]; then
-    # WhatsApp needs the OpenClaw daemon in the foreground; run Telegram alongside it.
-    (while true; do
-        gosu aaka env ENABLED_CHANNELS="$ENABLED_CHANNELS" python3 -u /app/sensor/telegram_multibot.py \
-            >> /config/logs/telegram_poller.log 2>&1
-        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [entrypoint] telegram supervisor exited (code $?), restarting in 5s" \
-            >> /config/logs/telegram_poller.log
-        sleep 5
-    done) &
-    # Cap Node heap to 400 MB — openclaw loads large plugin deps (playwright, pdfjs, etc.).
-    exec gosu aaka env NODE_OPTIONS="--max-old-space-size=400" openclaw gateway run --bind lan --allow-unconfigured
-else
-    # Telegram-only (default): the supervisor is the foreground process. No OpenClaw.
-    exec gosu aaka env ENABLED_CHANNELS="$ENABLED_CHANNELS" python3 -u /app/sensor/telegram_multibot.py
-fi
+# Telegram multi-bot supervisor (one native poller per bot) is the foreground
+# process. No OpenClaw. WhatsApp, if used, runs on the Mac via the wa-sidecar.
+exec gosu aaka env ENABLED_CHANNELS="$ENABLED_CHANNELS" python3 -u /app/sensor/telegram_multibot.py
