@@ -81,18 +81,19 @@ def test_inbound_blocked_sender_returns_204():
     check("blocked sender -> 204", r.status_code == 204)
 
 
-def test_from_me_is_skipped():
-    """from_me=True -> message is NOT routed (loop guard: aaka's own replies come
-    back as from_me, and outgoing messages aren't commands)."""
+def test_from_me_is_routed():
+    """from_me=True -> IS routed now (self-chat when aaka is linked to the user's
+    own number). The sidecar suppresses aaka's own reply echoes by id, so there's
+    no loop; wa_inbound must not drop self-chat commands."""
     mock_parsed = MagicMock()
-    mock_parsed.text = "hello"
+    mock_parsed.text = "status"
     mock_parsed.sender_id = "me@s.whatsapp.net"
     mock_parsed.channel_id = "me@s.whatsapp.net"
     routed = {"called": False}
     egressed = {"called": False}
     def _mark_route(_):
         routed["called"] = True
-        return "should-not-send"
+        return "🟢 healthy"
     def _mark_egress(_):
         egressed["called"] = True
     with patch("sensor.wa_inbound._ingress_receive", return_value=mock_parsed), \
@@ -100,12 +101,12 @@ def test_from_me_is_skipped():
          patch("sensor.wa_inbound._egress_send", side_effect=_mark_egress):
         r = client.post("/inbound", json={
             "sender_id": "me@s.whatsapp.net", "channel_id": "me@s.whatsapp.net",
-            "message_id": "y", "text": "hello", "from_me": True,
+            "message_id": "y", "text": "status", "from_me": True,
             "timestamp": "2026-09-01T10:00:00Z",
         })
     check("from_me=True -> 200", r.status_code == 200)
-    check("from_me=True -> not routed", routed["called"] is False)
-    check("from_me=True -> no reply sent", egressed["called"] is False)
+    check("from_me=True -> routed (self-chat)", routed["called"] is True)
+    check("from_me=True -> reply sent", egressed["called"] is True)
 
 
 def test_reply_sent_via_egress():
@@ -140,7 +141,7 @@ def test_health():
 def main():
     test_inbound_calls_ingress_receive()
     test_inbound_blocked_sender_returns_204()
-    test_from_me_is_skipped()
+    test_from_me_is_routed()
     test_reply_sent_via_egress()
     test_health()
     print()

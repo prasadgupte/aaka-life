@@ -101,11 +101,10 @@ async def inbound(request: Request):
         # Blocked sender or parse error — ingress already logged it.
         return Response(status_code=204)
 
-    # Never route the account's own outgoing messages (fromMe): they include the
-    # replies aaka itself sends, so routing them would loop, and they aren't
-    # commands to aaka.
-    if bool(body.get("from_me", False)):
-        return JSONResponse({"ok": True, "skipped": "from_me"})
+    # Note: from_me messages ARE routed now — when aaka is linked to the user's own
+    # number ("no spare phone"), their self-chat commands are fromMe. The sidecar
+    # already suppresses aaka's OWN reply echoes by message-id, so this can't loop;
+    # a stray echo that slips through isn't a valid command and route() returns "".
 
     # Route through the full sensor router with proper WhatsApp context. route()
     # re-normalizes this envelope (channel=whatsapp, channel_id=<jid>) and returns

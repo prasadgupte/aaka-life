@@ -79,6 +79,20 @@ const MAX_PAIR_ATTEMPTS = 3;
 const PAIR_BACKOFF_MS = 90000;      // 90s between fresh-pairing retries
 const PAIR_BACKOFF_CAP_MS = 300000; // cap 5 min
 
+// IDs of messages WE sent, so we can suppress their echoes in messages.upsert
+// without dropping the user's own self-chat commands (both are fromMe when aaka
+// is linked to the user's own number — the "no spare phone" case).
+const sentIds = new Set();
+const SENT_IDS_CAP = 300;
+function markSent(id) {
+  if (!id) return;
+  sentIds.add(id);
+  if (sentIds.size > SENT_IDS_CAP) sentIds.delete(sentIds.values().next().value);
+}
+// A fromMe message is a live self-chat command (forward it) only if it's recent —
+// this ignores the history backfill that also arrives as fromMe on (re)connect.
+const SELF_CHAT_MAX_AGE_MS = 120000; // 2 min
+
 // ── JID helpers (lifted from wa-backup) ────────────────────────────────────
 function normalizeJid(jid) {
   const [userPart, server] = String(jid).split('@');
@@ -270,12 +284,31 @@ async function handleMessagesUpsert({ messages, type }) {
   for (const msg of messages) {
     try {
       if (!msg || !msg.key || !msg.key.remoteJid || !msg.key.id) continue;
-      // Skip history/backfill — only forward live "notify" events.
-      if (type !== 'notify') continue;
+
+      const fromMe = !!msg.key.fromMe;
+      const tsMs = Number(msg.messageTimestamp || 0) * 1000;
+      const ageMs = tsMs ? (Date.now() - tsMs) : 0;
+      const short = (extractText(msg) || '').slice(0, 40).replace(/\n/g, ' ');
+      const logHead = `wa-in: id=${msg.key.id.slice(0, 8)} from=${msg.key.remoteJid.split('@')[0]} fromMe=${fromMe} type=${type} age=${Math.round(ageMs / 1000)}s`;
+
+      // Suppress our own outbound echoes (tracked by id) — never route them.
+      if (fromMe && sentIds.has(msg.key.id)) {
+        sentIds.delete(msg.key.id);
+        console.log(`${logHead} → skip (our echo)`);
+        continue;
+      }
+      // Forward: live incoming ("notify"), OR a recent self-chat command from the
+      // linked account (fromMe + fresh). Drop history backfill / stale appends.
+      const isLive = (type === 'notify') || (fromMe && ageMs >= 0 && ageMs < SELF_CHAT_MAX_AGE_MS);
+      if (!isLive) {
+        console.log(`${logHead} → skip (not live: type/history)`);
+        continue;
+      }
 
       const text = extractText(msg);
       const media = mediaKind(msg);
-      if (!text && !media) continue; // nothing routable
+      if (!text && !media) { console.log(`${logHead} → skip (no text/media)`); continue; }
+      console.log(`${logHead} text="${short}" → forward`);
 
       const body = {
         sender_id: msg.key.remoteJid,
@@ -380,7 +413,8 @@ async function handleSend(req, res) {
     return sendJson(res, 400, { ok: false, error: 'jid and text required' });
   }
   try {
-    await sock.sendMessage(jid, { text });
+    const r = await sock.sendMessage(jid, { text });
+    markSent(r && r.key && r.key.id);
     return sendJson(res, 200, { ok: true });
   } catch (e) {
     return sendJson(res, 500, { ok: false, error: String(e && e.message ? e.message : e) });
@@ -420,7 +454,8 @@ async function handleSendMedia(req, res) {
         caption: cap,
       };
     }
-    await sock.sendMessage(jid, content);
+    const r = await sock.sendMessage(jid, content);
+    markSent(r && r.key && r.key.id);
     return sendJson(res, 200, { ok: true });
   } catch (e) {
     return sendJson(res, 500, { ok: false, error: String(e && e.message ? e.message : e) });
