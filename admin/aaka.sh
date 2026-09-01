@@ -194,6 +194,25 @@ if 0 <= idx < len(members):
         echo "  Logs:            \$AAKA_CONFIG_DIR/logs/wa_sidecar.log  ·  wa_inbound.log"
         echo "  ─────────────────────────────────────────────────────"
         ;;
+    restart)
+        # Config (aaka.yaml) + env are lru-cached per process, so edits are only
+        # picked up after a restart. Kick every loaded com.aaka.* launchd service.
+        echo ""
+        echo "  Restarting aaka services (picks up aaka.yaml / .env edits)…"
+        svcs=$(launchctl list 2>/dev/null | grep -oE 'com\.aaka\.[a-z_]+' | sort -u)
+        if [ -z "$svcs" ]; then
+            echo "  No com.aaka.* launchd services loaded (dev mode? run services manually or bash admin/deploy.sh)."
+        else
+            for svc in $svcs; do
+                if launchctl kickstart -k "gui/$(id -u)/$svc" 2>/dev/null; then
+                    echo "    ↻ $svc"
+                else
+                    echo "    (skip $svc)"
+                fi
+            done
+        fi
+        echo "  Done."
+        ;;
     cal)
         bash "$SCRIPT_DIR/cal.sh" "${@:2}"
         ;;
@@ -262,6 +281,7 @@ if 0 <= idx < len(members):
         echo "  status       Shared status sub-commands: code | queue | llm"
         echo "  vps-telegram Diagnose Telegram channel on VPS; offer permission repair + restart"
         echo "  whatsapp     WhatsApp (wa-sidecar) status on this Mac; pair/re-pair pointer (alias: wa)"
+        echo "  restart      Restart all aaka launchd services (apply aaka.yaml / .env edits)"
         echo "  demo         Launch demo REPL (Ash-Kaa family, no Docker, no API keys needed) [--reset]
   overnight     Check AC power + Power Nap ready for unattended background work"
         ;;
