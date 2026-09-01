@@ -1066,3 +1066,33 @@ for tag in ('tax', 'tax25', 'tax26'):
     assert tag in routes, f'missing route: {tag}'
 print('OK — tax/tax25/tax26 routes present')
 "
+
+# ── WA sidecar (if whatsapp ∈ ENABLED_CHANNELS) ───────────────────────────────
+header "WA Sidecar (whatsapp channel)"
+WA_SIDECAR_PORT="${WA_SIDECAR_PORT:-18792}"
+WA_RECEIVER_PORT="${WA_RECEIVER_PORT:-18793}"
+if echo "${ENABLED_CHANNELS:-telegram}" | grep -q "whatsapp"; then
+    WA_STATUS=$(curl -sf "http://127.0.0.1:$WA_SIDECAR_PORT/status" 2>/dev/null || echo "")
+    if [ -z "$WA_STATUS" ]; then
+        fail "wa-sidecar not reachable on port $WA_SIDECAR_PORT (start: wa-sidecar/start.sh)"
+    elif echo "$WA_STATUS" | grep -q '"status":"connected"'; then
+        ok "wa-sidecar: connected"
+    elif echo "$WA_STATUS" | grep -q '"status":"qr"'; then
+        warn "wa-sidecar: QR pending — scan required (GET :$WA_SIDECAR_PORT/qr)"
+    else
+        warn "wa-sidecar: status=$WA_STATUS"
+    fi
+    REC_STATUS=$(curl -sf "http://127.0.0.1:$WA_RECEIVER_PORT/health" 2>/dev/null || echo "")
+    if echo "$REC_STATUS" | grep -q '"ok":true'; then
+        ok "wa-sidecar receiver: healthy on port $WA_RECEIVER_PORT"
+    else
+        fail "wa-sidecar receiver not reachable on port $WA_RECEIVER_PORT"
+    fi
+    if pgrep -f "openclaw" &>/dev/null; then
+        fail "openclaw process is running — should not be when using wa-sidecar"
+    else
+        ok "openclaw: not running (expected)"
+    fi
+else
+    info "whatsapp not in ENABLED_CHANNELS — wa-sidecar checks skipped"
+fi

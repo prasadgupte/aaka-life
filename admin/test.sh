@@ -2748,6 +2748,54 @@ header "Console — status routes"
 check "console status: setup_check subprocess (happy/exit/timeout) + log tail" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' executor/console/test_status.py"
 
+# ── WA sidecar (Baileys WhatsApp, OpenClaw-free) ──────────────────────────────
+header "WA Sidecar — channel adapter unit tests"
+check "whatsapp channel: send_text POSTs to sidecar, zero subprocess" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' gateway/channels/test_whatsapp_channel.py"
+
+header "WA Sidecar — inbound receiver unit tests"
+check "wa_inbound: receive() called with channel=whatsapp; reply via egress" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_wa_inbound.py"
+
+header "WA Sidecar — no openclaw import in whatsapp channel"
+if grep -q "openclaw" "$REPO_DIR/gateway/channels/whatsapp.py" 2>/dev/null; then
+    fail "gateway/channels/whatsapp.py still references openclaw"
+    FAIL=$((FAIL + 1))
+else
+    ok "gateway/channels/whatsapp.py: no openclaw reference"
+    PASS=$((PASS + 1))
+fi
+
+header "WA Sidecar — ingress.py has no new normalization branch (AC-IN-4)"
+if grep -qE "Format D|wa_inbound|wa-sidecar" "$REPO_DIR/gateway/ingress.py" 2>/dev/null; then
+    fail "gateway/ingress.py gained a wa-sidecar-specific branch"
+    FAIL=$((FAIL + 1))
+else
+    ok "gateway/ingress.py: routes WA via Format C (no new branch)"
+    PASS=$((PASS + 1))
+fi
+
+# Node boot smoke test — only if node is available and WA_TEST_BOOT=1.
+# Uses a free test port + throwaway auth dir; never touches the live session.
+if [ "${WA_TEST_BOOT:-0}" = "1" ] && command -v node &>/dev/null; then
+    header "WA Sidecar — Node boot smoke"
+    WA_BOOT_AUTH="$(mktemp -d /tmp/wa-sidecar-boot.XXXXXX)"
+    WA_AUTH_DIR="$WA_BOOT_AUTH" WA_SIDECAR_PORT=18799 \
+        node "$REPO_DIR/wa-sidecar/index.js" &>/tmp/wa-sidecar-boot.log &
+    WA_PID=$!
+    sleep 3
+    WA_BOOT_STATUS=$(curl -sf "http://127.0.0.1:18799/status" 2>/dev/null || echo "")
+    kill "$WA_PID" 2>/dev/null; wait "$WA_PID" 2>/dev/null || true
+    rm -rf "$WA_BOOT_AUTH"
+    if echo "$WA_BOOT_STATUS" | grep -qE '"status":"(connecting|qr)"'; then
+        ok "wa-sidecar Node boot: /status returns connecting|qr"
+        PASS=$((PASS + 1))
+    else
+        fail "wa-sidecar Node boot: /status unreachable or unexpected: $WA_BOOT_STATUS"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}Results: ${GREEN}${PASS} passed${NC}, ${RED}${FAIL} failed${NC}"
