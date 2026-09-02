@@ -1094,3 +1094,21 @@ print('; '.join(f'{i}={w}' for i, w in rows) if rows else 'NONE')
 else
     info "whatsapp not in ENABLED_CHANNELS — wa-sidecar checks skipped"
 fi
+
+# ── Security self-audit ───────────────────────────────────────────────────────
+# Runs the same checks as /security: perms, git-tracked secrets, inbound-port
+# exposure, shell=True, admin gates. FAIL here = fix before deploying to the VPS.
+header "Security self-audit"
+if [ -f "$AAKA_BASE/admin/security_check.py" ]; then
+    SEC_JSON=$(AAKA_BASE="$AAKA_BASE" python3 "$AAKA_BASE/admin/security_check.py" --json 2>/dev/null)
+    SEC_VERDICT=$(printf '%s' "$SEC_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('verdict','?'))" 2>/dev/null)
+    if [ "$SEC_VERDICT" = "ok" ]; then
+        ok "security audit: verdict OK (no exposures)"
+    elif [ "$SEC_VERDICT" = "warn" ]; then
+        info "security audit: verdict WARN — run /security or admin/security_check.py for detail"
+    else
+        fail "security audit: verdict $SEC_VERDICT — run admin/security_check.py; fix before deploy"
+    fi
+else
+    info "admin/security_check.py not present — skipping security audit"
+fi

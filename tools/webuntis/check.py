@@ -24,6 +24,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import sys
 
 import requests
@@ -155,8 +156,14 @@ def _merge_day(day: list, subjects: dict, rooms: dict) -> list:
 
 
 def _creds(member: str = "") -> dict:
-    """Read creds: per-member <secrets>/<member>/creds.json, else <secrets>/creds.json."""
+    """Read creds: per-member <secrets>/<member>/creds.json, else <secrets>/creds.json.
+
+    `member` is untrusted (comes from a chat command), so it's restricted to a
+    plain slug — no path separators or traversal (`../`) that could read a
+    creds.json outside the tool's secrets dir."""
     d = os.environ.get("AAKA_TOOL_SECRETS", "")
+    if member and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", member):
+        raise ValueError(f"invalid member id: {member!r}")
     candidates = []
     if member and d:
         candidates.append(os.path.join(d, member, "creds.json"))

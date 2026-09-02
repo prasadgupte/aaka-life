@@ -973,6 +973,26 @@ def _handle_mcp(message: str, sender_id: str) -> str:
     return f"❓ Unknown view `/mcp {arg}`. Try `/mcp` for the list."
 
 
+def _handle_security(sender_id: str) -> str:
+    """Admin-only: run the security self-audit (admin/security_check.py) and
+    report. Read-only — inspects perms, git tracking, and code structure for
+    known exposure classes. Safe to run on the sensor before a deploy."""
+    requester = aaka_config.member_by_sender(sender_id)
+    if not requester or not aaka_config.member_is_admin(requester.get("id", "")):
+        return "🔒 Only an admin can run the security audit."
+    import subprocess
+    try:
+        r = subprocess.run(
+            [sys.executable, str(BASE / "admin" / "security_check.py")],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "AAKA_BASE": str(BASE)},
+        )
+        out = (r.stdout or r.stderr or "").strip()
+        return out[:3500] if out else "⚠️ security check produced no output."
+    except Exception as e:
+        return f"⚠️ security check failed: {e}"
+
+
 _IBAN_LEN = {
     "AL": 28, "AD": 24, "AT": 20, "AZ": 28, "BH": 22, "BE": 16, "BA": 20,
     "BR": 29, "BG": 22, "CR": 22, "HR": 21, "CY": 28, "CZ": 24, "DK": 18,
@@ -1998,6 +2018,11 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
 
     if intent == "mcp_view":
         return _reply(_handle_mcp(message, sender_id),
+                      channel_id=channel_id, sender=sender_id,
+                      message_id=message_id, dry_run=dry_run, source=source)
+
+    if intent == "security_audit":
+        return _reply(_handle_security(sender_id),
                       channel_id=channel_id, sender=sender_id,
                       message_id=message_id, dry_run=dry_run, source=source)
 

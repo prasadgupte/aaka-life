@@ -273,6 +273,25 @@ def setup_status() -> dict:
 
 
 @mcp.tool()
+def security_check() -> dict:
+    """Run the security self-audit (admin/security_check.py) and return results.
+
+    Read-only: inspects file permissions, git tracking, and code structure for
+    known exposure classes (secrets in git, loose perms, inbound ports,
+    shell=True, missing admin gates). Run before deploying the sensor.
+    """
+    import subprocess, json
+    result = subprocess.run(
+        [sys.executable, str(REPO / "admin" / "security_check.py"), "--json"],
+        capture_output=True, text=True,
+        env={**os.environ, "AAKA_BASE": str(REPO)},
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return json.loads(result.stdout)
+    return {"error": (result.stderr or "no output")[:500]}
+
+
+@mcp.tool()
 def bot_info() -> dict:
     """Return the assistant's name, members, and timezone."""
     return {

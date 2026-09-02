@@ -140,6 +140,25 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# ── 3f. Security self-audit runs clean ──────────────────────────────────────
+# admin/security_check.py must exist and not report a FAIL verdict (secrets in
+# git, loose perms, inbound port, shell=True). Guards the deploy gate.
+header "Security self-audit"
+if [ -f "$AAKA_BASE/admin/security_check.py" ]; then
+    _sv=$(AAKA_BASE="$AAKA_BASE" python3 "$AAKA_BASE/admin/security_check.py" --json 2>/dev/null \
+          | python3 -c "import sys,json; print(json.load(sys.stdin).get('verdict','?'))" 2>/dev/null)
+    if [ "$_sv" = "fail" ]; then
+        fail "security audit verdict=FAIL — run admin/security_check.py"
+        FAIL=$((FAIL + 1))
+    else
+        ok "security audit verdict=$_sv (no FAIL)"
+        PASS=$((PASS + 1))
+    fi
+else
+    fail "admin/security_check.py missing"
+    FAIL=$((FAIL + 1))
+fi
+
 # VPS sensor must have its own sweeper cron — Mac-side expiry doesn't sync
 # to VPS via vps_sync.py (HWM is on created_at only). Without this cron,
 # stale 'waiting' rows would still accumulate on VPS.
