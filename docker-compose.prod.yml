@@ -32,7 +32,9 @@ services:
       # Entire config dir (rw — logs + queue need write access)
       - /opt/aaka-config:/config
     ports:
-      - "18789:18789"
+      # Loopback-only: Caddy proxies this internally. Publishing to 0.0.0.0
+      # bypasses ufw (docker-proxy) and exposed the sensor to the internet.
+      - "127.0.0.1:18789:18789"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:18790/health"]
