@@ -142,6 +142,13 @@ skills:
     enabled: true
     requires_confirmation: false
     entrypoint: null
+  tool_run:
+    intent: tool_run
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null
   fix_event:
     intent: fix_event
     type: native

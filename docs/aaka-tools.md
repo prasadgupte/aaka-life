@@ -96,6 +96,24 @@ tools can be slow (scraping), the command **acks immediately** ("⏳ On it — I
 report back") and the result arrives via the report path. On-demand and scheduled
 runs share one dispatch.
 
+## `help` is mandatory
+
+Every tool MUST handle a `help` arg and return its usage + subcommands
+(`/tools/<tool> help`). It's how users discover what a tool does without docs, and
+it must work without credentials/network. `/tools help` gives the framework
+overview. A tool that doesn't self-document is incomplete.
+
+## Executor-placed tools invoked from a sensor-processed command
+
+On a single-machine install the router *is* the executor, so `/tools/<tool>` runs
+inline. With a real sensor/executor split, an `executor`-placed tool can't run on
+the sensor (no Mac creds/env). So the router **hands off**: it enqueues a
+`tool_run` intent and acks *"⏳ running on the home machine — I'll report back"*;
+the executor's `_exec_tool_run` runs the tool and writes the result back to the
+requester's channel. Placement decides: `sensor` tools run inline on the sensor;
+`executor` tools run inline if we *are* the executor, else via the queue. (Scheduled
+runs already go to the right side — each side's cron/launchd runs only its own.)
+
 ## Reporting & error contract (kills the "went silent" problem)
 
 Every run reports — a run that produces nothing still says so:

@@ -223,10 +223,23 @@ def main() -> int:
     args = ap.parse_args()
 
     modes = {"homework", "timetable", "digest"}
+    if any(t.lower() in ("help", "-h", "--help", "?") for t in args.tokens):
+        return _emit(_ok(
+            "🏫 *WebUntis* — school timetable & homework.\n"
+            "Usage: `/tools/webuntis <kid> <what>`\n"
+            "• `digest` — tomorrow's lessons + homework (default)\n"
+            "• `homework` — open homework (next 7 days)\n"
+            "• `timetable` — tomorrow's lessons (add `week` for 7 days)\n"
+            "`<kid>` picks whose school login to use (per-member creds).\n"
+            "e.g. `/tools/webuntis <kid> homework`"))
+
     member, mode = args.member, args.mode
     for t in args.tokens:  # positional 'kid1 digest' → member + mode
-        if t.lower() in modes:
-            mode = t.lower()
+        low = t.lower()
+        if low in modes:
+            mode = low
+        elif low == "week":
+            args.days = 7
         elif not t.lstrip("-").isdigit():
             member = member or t
     mode = mode or "digest"

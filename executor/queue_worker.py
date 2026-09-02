@@ -708,6 +708,27 @@ def _exec_linkedin_post(payload: dict) -> dict:
     return result
 
 
+def _exec_tool_run(payload: dict) -> dict:
+    """Run an executor-placed aaka Tool that a sensor-side /tools command handed
+    off (the executor has the creds/env sensor-placed tools lack). Runs the tool
+    and writes the result back to the requester's channel."""
+    from sensor.tool_runner import run_tool, load_manifest
+    from aaka_queue.queue import write_outbox
+    name = payload.get("tool", "")
+    args = payload.get("args", "")
+    entry = load_manifest().get(name) or {}
+    res = run_tool(name, entry, args)
+    head = "✅" if res.get("ok") else "⚠️"
+    write_outbox(
+        channel_id=payload.get("channel_id", payload.get("sender", "")),
+        sender=payload.get("sender", ""),
+        text=REPLY_PREFIX + f"{head} {res.get('summary') or res.get('error') or name}",
+        source=payload.get("source", "telegram"),
+        reply_to_message_id=payload.get("message_id"),
+    )
+    return {"status": "done", "tool": name, "ok": res.get("ok")}
+
+
 def _exec_agent_job(payload: dict) -> dict:
     """Dispatch an agent's scheduled job.
 
@@ -874,6 +895,7 @@ _DISPATCHERS = {
     "gmail_label":           _exec_gmail_label,
     "gmail_attachment_file": lambda p: _exec_gmail_attachment_file(p),
     "agent_job":             _exec_agent_job,
+    "tool_run":              _exec_tool_run,
     "confirm_approval": _exec_confirm_approval,
     "linkedin_post":  _exec_linkedin_post,
     "mail_fetch":     _exec_mail_fetch,

@@ -836,7 +836,8 @@ def _handle_invite(message: str, sender_id: str) -> str:
             f"WhatsApp session not connected, so I don't know my own number yet.)")
 
 
-def _handle_tools(message: str, sender_id: str) -> str:
+def _handle_tools(message: str, sender_id: str, channel_id: str = "",
+                  source: str = "", message_id: str = "") -> str:
     """Admin-only: `/tools` lists registered aaka Tools; `/tools run <name>` runs
     one on demand and reports the result inline. See docs/aaka-tools.md."""
     requester = aaka_config.member_by_sender(sender_id)
@@ -844,6 +845,13 @@ def _handle_tools(message: str, sender_id: str) -> str:
         return "🔒 Only an admin can manage tools."
     from sensor import tool_runner
     arg = re.sub(r"^/tools\b", "", message, flags=re.I).strip()
+    if arg.lower() in ("help", "-h", "?"):
+        return ("🧰 *aaka Tools*\n"
+                "• `/tools` — list registered tools + status\n"
+                "• `/tools/<tool> <args>` — run a tool (e.g. `/tools/webuntis <kid> digest`)\n"
+                "• `/tools/<tool> help` — what a tool can do\n"
+                "• `/tools run <tool>` — run on demand\n"
+                "Every tool documents its own commands via `help`.")
     # Generic dispatch: `/tools/<tool> <args>` runs any registered tool with the
     # trailing args (e.g. `/tools/webuntis kid1 digest`). No per-tool command
     # wiring needed — every registered tool is instantly addressable.
@@ -851,6 +859,19 @@ def _handle_tools(message: str, sender_id: str) -> str:
         parts = arg[1:].split(None, 1)
         name = parts[0]
         extra = parts[1] if len(parts) > 1 else ""
+        entry = tool_runner.load_manifest().get(name) or {}
+        role = os.environ.get("AAKA_ROLE", "executor")
+        # If the tool must run on the executor (Mac creds/env) but we're the
+        # sensor (VPS), hand it off via the queue — the executor runs it and
+        # replies. On a single-machine install we're the executor, so run inline.
+        if entry and entry.get("placement", "executor") == "executor" and role == "sensor":
+            from aaka_queue.queue import write_item
+            write_item(intent="tool_run", raw_message=message, sender=sender_id,
+                       channel_id=channel_id or sender_id, source=source or "telegram",
+                       payload={"tool": name, "args": extra, "sender": sender_id,
+                                "channel_id": channel_id or sender_id,
+                                "source": source or "telegram", "message_id": message_id})
+            return f"⏳ Running *{name}* on the home machine — I'll report back."
         res = tool_runner.run_and_report(name, extra)
         head = "✅" if res.get("ok") else "⚠️"
         return f"{head} {res.get('summary') or res.get('error') or name}"
@@ -1884,7 +1905,7 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                       message_id=message_id, dry_run=dry_run, source=source)
 
     if intent == "tools_list":
-        return _reply(_handle_tools(message, sender_id),
+        return _reply(_handle_tools(message, sender_id, channel_id, source, message_id),
                       channel_id=channel_id, sender=sender_id,
                       message_id=message_id, dry_run=dry_run, source=source)
 
