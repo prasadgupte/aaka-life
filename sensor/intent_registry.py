@@ -43,6 +43,7 @@ INTENT_PATTERNS: list[tuple[str, list[str]]] = [
                         r"\bremind\s+me\s+to\b"]),
     ("invite",         [r"^/invite\b"]),
     ("tools_list",     [r"^/tools\b"]),
+    ("mcp_view",       [r"^/mcp\b"]),
     ("list_tasks",     [r"^/tasks\b"]),
     ("edit_task",      [r"^/edit\b"]),
     ("delete_task",    [r"^/del\b", r"^/delete\b"]),

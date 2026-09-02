@@ -900,6 +900,79 @@ def _handle_tools(message: str, sender_id: str, channel_id: str = "",
     return "\n".join(lines)
 
 
+def _handle_mcp(message: str, sender_id: str) -> str:
+    """Admin-only read-only introspection from chat — the same views the MCP
+    read tools expose (members, tools, bot, setup). Chat is not an MCP client, so
+    this doesn't proxy the protocol: both front-ends call the *same underlying*
+    aaka_config / tool_runner / wa_onboard functions, so they never drift."""
+    requester = aaka_config.member_by_sender(sender_id)
+    if not requester or not aaka_config.member_is_admin(requester.get("id", "")):
+        return "🔒 Only an admin can view introspection."
+    arg = re.sub(r"^/mcp\b", "", message, flags=re.I).strip().lower()
+    if arg in ("", "help", "-h", "?"):
+        return ("🔎 *Introspection* (read-only)\n"
+                "• `/mcp members` — family roster · roles · bound handles\n"
+                "• `/mcp tools` — registered tools · enabled · schedule\n"
+                "• `/mcp bot` — assistant name · timezone · member count\n"
+                "• `/mcp setup` — setup status across tiers\n"
+                "Same data as the MCP read tools, surfaced in chat.")
+    if arg in ("members", "who"):
+        from sensor import wa_onboard
+        lines = ["👥 *Members* — ✅ recognized (has a bound handle)"]
+        for m in aaka_config.members():
+            mid = m.get("id", "?")
+            admin = " 🛡️" if m.get("admin") else ""
+            src = m.get("source", "yaml")
+            # Recognized = reachable on some channel: static yaml fields (telegram/
+            # whatsapp) + any dynamically-bound handle (invite onboarding).
+            handles = []
+            if m.get("telegram"):
+                handles.append(f"tg:`{m['telegram']}`")
+            if m.get("whatsapp"):
+                handles.append(f"wa:`{m['whatsapp']}`")
+            for h in wa_onboard.handles_for(mid):
+                if all(h not in x for x in handles):
+                    handles.append(f"`{h}`")
+            recog = "✅" if handles else "⚪️"
+            htxt = " · ".join(handles) if handles else "_no handle — not recognized yet_"
+            lines.append(f"{recog} *{m.get('name', mid)}* `{mid}`{admin} · {m.get('role') or '—'} · {src}\n   📡 {htxt}")
+        return "\n".join(lines)
+    if arg == "tools":
+        return _handle_tools("/tools", sender_id)
+    if arg == "bot":
+        ms = aaka_config.members()
+        return (f"{aaka_config.bot_emoji()} *{aaka_config.bot_name()}*\n"
+                f"🕒 {aaka_config.timezone()}\n"
+                f"👥 {len(ms)} members")
+    if arg == "setup":
+        import subprocess
+        try:
+            r = subprocess.run(
+                [sys.executable, str(BASE / "admin" / "setup_check.py"), "--json"],
+                capture_output=True, text=True, timeout=20,
+                env={**os.environ, "AAKA_BASE": str(BASE)},
+            )
+            data = json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
+        except Exception as _e:
+            return f"⚠️ setup check failed: {_e}"
+        if not data:
+            return "⚠️ setup check returned nothing (tokens live on the executor — run from there for a full picture)."
+        lines = ["🔧 *Setup*"]
+        if isinstance(data, dict):
+            tier = data.get("tier")
+            if tier is not None:
+                lines.append(f"tier: *{tier}*")
+            for k, v in data.items():
+                if k == "tier":
+                    continue
+                mark = "✅" if v is True else ("❌" if v is False else str(v))
+                lines.append(f"• {k}: {mark}")
+        else:
+            lines.append(str(data)[:800])
+        return "\n".join(lines)
+    return f"❓ Unknown view `/mcp {arg}`. Try `/mcp` for the list."
+
+
 _IBAN_LEN = {
     "AL": 28, "AD": 24, "AT": 20, "AZ": 28, "BH": 22, "BE": 16, "BA": 20,
     "BR": 29, "BG": 22, "CR": 22, "HR": 21, "CY": 28, "CZ": 24, "DK": 18,
@@ -1920,6 +1993,11 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
 
     if intent == "tools_list":
         return _reply(_handle_tools(message, sender_id, channel_id, source, message_id),
+                      channel_id=channel_id, sender=sender_id,
+                      message_id=message_id, dry_run=dry_run, source=source)
+
+    if intent == "mcp_view":
+        return _reply(_handle_mcp(message, sender_id),
                       channel_id=channel_id, sender=sender_id,
                       message_id=message_id, dry_run=dry_run, source=source)
 

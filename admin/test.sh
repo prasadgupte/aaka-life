@@ -127,6 +127,19 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# ── 3e. /mcp introspection: chat mirror of the MCP read tools ───────────────
+# /mcp members|tools|bot|setup surfaces the same views as mcp/server.py's read
+# tools, admin-gated. Guards the intent wiring + handler.
+header "/mcp introspection command"
+if grep -q '("mcp_view"' sensor/intent_registry.py \
+   && grep -q "def _handle_mcp" sensor/router_sensor.py; then
+    ok "/mcp intent registered + _handle_mcp present"
+    PASS=$((PASS + 1))
+else
+    fail "/mcp introspection missing (intent or handler)"
+    FAIL=$((FAIL + 1))
+fi
+
 # VPS sensor must have its own sweeper cron — Mac-side expiry doesn't sync
 # to VPS via vps_sync.py (HWM is on created_at only). Without this cron,
 # stale 'waiting' rows would still accumulate on VPS.

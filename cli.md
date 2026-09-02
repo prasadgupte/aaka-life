@@ -133,6 +133,14 @@ docker compose run --rm sensor \
 docker compose run --rm sensor \
   python3 sensor/router_sensor.py --dry-run "/tag ortho route health/ortho"
 
+# Introspection (admin) — same views as the MCP read tools
+docker compose run --rm sensor \
+  python3 sensor/router_sensor.py --dry-run "/mcp"
+docker compose run --rm sensor \
+  python3 sensor/router_sensor.py --dry-run "/mcp members"
+docker compose run --rm sensor \
+  python3 sensor/router_sensor.py --dry-run "/mcp tools"
+
 # Notes — write (routed topics go to _context.md in vault)
 docker compose run --rm sensor \
   python3 sensor/router_sensor.py --dry-run "n ortho first visit"

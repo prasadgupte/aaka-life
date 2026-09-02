@@ -139,6 +139,26 @@ bday                    — same
 status          — (natural language)
 ```
 
+## Introspection — `/mcp` (admin only)
+
+Read-only views of what aaka knows, from chat. These are the **same views the
+MCP read tools expose** to Claude Code — chat isn't an MCP client, so `/mcp`
+doesn't proxy the protocol; both front-ends call the same underlying functions,
+so the data never drifts.
+
+```
+/mcp             — list the introspection views
+/mcp members     — family roster · role · admin · source (yaml|invite)
+                   · handles, with ✅ = recognized (reachable on some channel)
+/mcp tools       — registered tools · enabled · schedule (same as /tools)
+/mcp bot         — assistant name · timezone · member count
+/mcp setup       — setup status across tiers
+```
+
+`who` is an alias for `/mcp members`. Registering/enabling/disabling tools or
+members stays out of this read surface — that's admin-only via MCP (`register_tool`,
+`add_member`, …) or the dedicated commands. (0 tokens)
+
 ## Error digest (admin only)
 
 Persistent store of sensor errors — survives across digest runs so nothing is lost before you act on it.
