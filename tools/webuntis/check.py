@@ -29,14 +29,22 @@ import sys
 import requests
 
 
-def _fail(error: str, summary: str, code: int = 1) -> int:
-    print(json.dumps({"ok": False, "summary": summary, "details": "", "error": error}))
-    return code
+def _R(ok: bool, summary: str, details: str = "", error=None) -> dict:
+    return {"ok": ok, "summary": summary, "details": details, "error": error}
 
 
-def _ok(summary: str, details: str = "") -> int:
-    print(json.dumps({"ok": True, "summary": summary, "details": details, "error": None}))
-    return 0
+def _fail(error: str, summary: str) -> dict:
+    return _R(False, summary, "", error)
+
+
+def _ok(summary: str, details: str = "") -> dict:
+    return _R(True, summary, details)
+
+
+def _emit(d: dict) -> int:
+    """Print one result line + return an exit code (0 ok / 1 error)."""
+    print(json.dumps(d))
+    return 0 if d.get("ok") else 1
 
 
 def _hhmm(t) -> str:
@@ -146,54 +154,22 @@ def _merge_day(day: list, subjects: dict, rooms: dict) -> list:
     return merged
 
 
-def _creds() -> dict:
+def _creds(member: str = "") -> dict:
+    """Read creds: per-member <secrets>/<member>/creds.json, else <secrets>/creds.json."""
     d = os.environ.get("AAKA_TOOL_SECRETS", "")
-    path = os.path.join(d, "creds.json") if d else "creds.json"
-    with open(path) as f:
-        return json.load(f)
+    candidates = []
+    if member and d:
+        candidates.append(os.path.join(d, member, "creds.json"))
+    candidates.append(os.path.join(d, "creds.json") if d else "creds.json")
+    for p in candidates:
+        if os.path.exists(p):
+            with open(p) as f:
+                return json.load(f)
+    raise FileNotFoundError(candidates[0])
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["homework", "timetable"], default="homework")
-    ap.add_argument("--days", type=int, default=7, help="days ahead (homework mode)")
-    ap.add_argument("--date", default="tomorrow", help="timetable date: today|tomorrow|YYYYMMDD")
-    args = ap.parse_args()
-
-    try:
-        c = _creds()
-    except Exception as e:
-        return _fail("config_error", f"can't read creds.json: {e}")
-
-    server = c["server"].replace("https://", "").rstrip("/")
-    school = c["school"]
-    base = f"https://{server}/WebUntis"
-    s = requests.Session()
-    s.headers["User-Agent"] = "aaka-tool/webuntis"
-
-    # 1. authenticate (JSON-RPC) → session cookie
-    try:
-        r = s.post(f"{base}/jsonrpc.do", params={"school": school}, timeout=15, json={
-            "id": "aaka", "method": "authenticate", "jsonrpc": "2.0",
-            "params": {"user": c["user"], "password": c["password"], "client": "aaka"},
-        })
-        body = r.json()
-    except Exception as e:
-        return _fail("network_error", f"WebUntis unreachable: {e}")
-    if body.get("error"):
-        code = body["error"].get("code")
-        # -8504 bad credentials, -8998 too many attempts, -8509 locked
-        if code in (-8504, -8509, -8998):
-            return _fail("auth_required", f"WebUntis login failed: {body['error'].get('message', code)}")
-        return _fail("api_error", f"authenticate error: {body['error']}")
-    me = body.get("result", {}) or {}
-    # school context cookie some servers require for the REST API
-    s.cookies.set("schoolname", '"_' + school + '"', domain=server)
-
-    if args.mode == "timetable":
-        return _timetable(s, base, school, me, args.date, args.days)
-
-    # 2. bearer token for the REST API
+def _homework(s, base: str, school: str, me: dict, days: int) -> dict:
+    """Fetch + cross-check homework (never a silent false 'none'). Returns a dict."""
     try:
         tok = s.get(f"{base}/api/token/new", timeout=15)
         if tok.status_code != 200 or not tok.text.strip():
@@ -201,57 +177,96 @@ def main() -> int:
         bearer = tok.text.strip()
     except Exception as e:
         return _fail("network_error", f"token fetch failed: {e}")
-
-    # 3. homework for the window
     today = dt.date.today()
-    end = today + dt.timedelta(days=max(1, args.days))
+    end = today + dt.timedelta(days=max(1, days))
     try:
         hw = s.get(f"{base}/api/homeworks/lessons", timeout=15,
                    headers={"Authorization": f"Bearer {bearer}"},
-                   params={"startDate": today.strftime("%Y%m%d"),
-                           "endDate": end.strftime("%Y%m%d")})
-        payload = hw.json() or {}
-        data = payload.get("data", {})
+                   params={"startDate": today.strftime("%Y%m%d"), "endDate": end.strftime("%Y%m%d")})
+        data = (hw.json() or {}).get("data", {})
     except Exception as e:
         return _fail("api_error", f"homework fetch failed: {e}")
-
-    # Cross-check (your "check against a count"): a valid response has a `data`
-    # object with a `homeworks` list AND a `records` list that tracks homework
-    # items. Distinguish "confirmed zero" from "couldn't read" — never silently
-    # report "no homework" on a malformed/partial response.
     if not isinstance(data, dict) or "homeworks" not in data:
         return _fail("read_uncertain",
-                     "⚠️ Couldn't read homework — WebUntis returned an unexpected "
-                     "response (NOT reporting 'none'). Check the tool/endpoint.")
+                     "⚠️ Couldn't read homework — unexpected WebUntis response (NOT reporting 'none').")
     homeworks = data.get("homeworks") or []
     records = data.get("records") or []
     if not homeworks and records:
         return _fail("read_uncertain",
-                     f"⚠️ Homework read looks incomplete — {len(records)} lesson "
-                     f"record(s) but 0 homework items parsed. Flagging, not 'none'.")
-
+                     f"⚠️ Homework read incomplete — {len(records)} records but 0 items parsed.")
     lessons = {l.get("id"): l for l in (data.get("lessons", []) or [])}
-    def subject_of(hwk):
-        les = lessons.get(hwk.get("lessonId"), {})
+    def subject_of(h):
+        les = lessons.get(h.get("lessonId"), {})
         return les.get("subject") or les.get("name") or "?"
-
-    open_hw = [h for h in homeworks if not h.get("completed")]
-    open_hw.sort(key=lambda h: str(h.get("dueDate", "")))
-
+    open_hw = sorted([h for h in homeworks if not h.get("completed")],
+                     key=lambda h: str(h.get("dueDate", "")))
     if not open_hw:
         n = len(homeworks)
-        note = f" ({n} already completed)" if n else ""
-        return _ok(f"📚 No open homework in the next {args.days} days{note}. (confirmed ✓)")
-
+        note = f" ({n} completed)" if n else ""
+        return _ok(f"📚 No open homework in the next {days} days{note}. (confirmed ✓)")
     lines = []
     for h in open_hw:
         due = str(h.get("dueDate", ""))
         due_fmt = f"{due[6:8]}.{due[4:6]}" if len(due) == 8 else due
         text = (h.get("text") or h.get("remark") or "").strip()
         lines.append(f"• {subject_of(h)} (due {due_fmt}): {text}")
+    return _ok(f"📚 {len(open_hw)} open homework:\n" + "\n".join(lines[:8]), "\n".join(lines))
 
-    summary = f"📚 {len(open_hw)} open homework:\n" + "\n".join(lines[:8])
-    return _ok(summary, "\n".join(lines))
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("tokens", nargs="*", help="e.g. 'kid1 digest' — member + mode")
+    ap.add_argument("--member", default="")
+    ap.add_argument("--mode", default="")
+    ap.add_argument("--days", type=int, default=7)
+    ap.add_argument("--date", default="tomorrow")
+    args = ap.parse_args()
+
+    modes = {"homework", "timetable", "digest"}
+    member, mode = args.member, args.mode
+    for t in args.tokens:  # positional 'kid1 digest' → member + mode
+        if t.lower() in modes:
+            mode = t.lower()
+        elif not t.lstrip("-").isdigit():
+            member = member or t
+    mode = mode or "digest"
+
+    try:
+        c = _creds(member)
+    except Exception as e:
+        return _emit(_fail("config_error", f"can't read creds{(' for ' + member) if member else ''}: {e}"))
+
+    server = c["server"].replace("https://", "").rstrip("/")
+    school = c["school"]
+    base = f"https://{server}/WebUntis"
+    s = requests.Session()
+    s.headers["User-Agent"] = "aaka-tool/webuntis"
+
+    try:
+        body = s.post(f"{base}/jsonrpc.do", params={"school": school}, timeout=15, json={
+            "id": "aaka", "method": "authenticate", "jsonrpc": "2.0",
+            "params": {"user": c["user"], "password": c["password"], "client": "aaka"}}).json()
+    except Exception as e:
+        return _emit(_fail("network_error", f"WebUntis unreachable: {e}"))
+    if body.get("error"):
+        code = body["error"].get("code")
+        if code in (-8504, -8509, -8998):  # bad creds / locked / too many attempts
+            return _emit(_fail("auth_required", f"WebUntis login failed: {body['error'].get('message', code)}"))
+        return _emit(_fail("api_error", f"authenticate error: {body['error']}"))
+    me = body.get("result", {}) or {}
+    s.cookies.set("schoolname", '"_' + school + '"', domain=server)
+
+    if mode == "timetable":
+        r = _timetable(s, base, school, me, args.date, args.days)
+    elif mode == "homework":
+        r = _homework(s, base, school, me, args.days)
+    else:  # digest = tomorrow's timetable + homework, in one message
+        tt = _timetable(s, base, school, me, "tomorrow", 1)
+        hw = _homework(s, base, school, me, args.days)
+        parts = [x["summary"] if x["ok"] else f"⚠️ {x['error']}: {x['summary']}" for x in (tt, hw)]
+        err = None if (tt["ok"] and hw["ok"]) else (tt.get("error") or hw.get("error"))
+        r = _R(tt["ok"] or hw["ok"], "\n\n".join(parts), "\n\n".join(parts), err)
+    return _emit(r)
 
 
 if __name__ == "__main__":

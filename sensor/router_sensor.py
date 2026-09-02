@@ -844,6 +844,16 @@ def _handle_tools(message: str, sender_id: str) -> str:
         return "🔒 Only an admin can manage tools."
     from sensor import tool_runner
     arg = re.sub(r"^/tools\b", "", message, flags=re.I).strip()
+    # Generic dispatch: `/tools/<tool> <args>` runs any registered tool with the
+    # trailing args (e.g. `/tools/webuntis kid1 digest`). No per-tool command
+    # wiring needed — every registered tool is instantly addressable.
+    if arg.startswith("/"):
+        parts = arg[1:].split(None, 1)
+        name = parts[0]
+        extra = parts[1] if len(parts) > 1 else ""
+        res = tool_runner.run_and_report(name, extra)
+        head = "✅" if res.get("ok") else "⚠️"
+        return f"{head} {res.get('summary') or res.get('error') or name}"
     m = re.match(r"run\s+(\S+)\s*(.*)$", arg, re.I)
     if m:
         name, extra = m.group(1), m.group(2).strip()
