@@ -69,43 +69,81 @@ def _map_names(lst, m) -> str:
     return ", ".join(out)
 
 
-def _timetable(s, base: str, school: str, me: dict, date_arg: str) -> int:
+def _timetable(s, base: str, school: str, me: dict, date_arg: str, days: int = 1) -> int:
     import datetime as dt
+    from collections import defaultdict
     if date_arg == "today":
-        d = dt.date.today()
+        start = dt.date.today()
     elif date_arg == "tomorrow":
-        d = dt.date.today() + dt.timedelta(days=1)
+        start = dt.date.today() + dt.timedelta(days=1)
     else:
-        d = dt.datetime.strptime(date_arg, "%Y%m%d").date()
-    ymd = int(d.strftime("%Y%m%d"))
+        start = dt.datetime.strptime(date_arg, "%Y%m%d").date()
+    end = start + dt.timedelta(days=max(1, days) - 1)
     try:
-        r = s.post(f"{base}/jsonrpc.do", params={"school": school}, timeout=15, json={
-            "id": "aaka", "method": "getTimetable", "jsonrpc": "2.0",
-            "params": {"id": me.get("personId"), "type": me.get("personType"),
-                       "startDate": ymd, "endDate": ymd}})
+        r = s.post(f"{base}/jsonrpc.do", params={"school": school}, timeout=20, json={
+            "id": "aaka", "method": "getTimetable", "jsonrpc": "2.0", "params": {"options": {
+                "element": {"id": me.get("personId"), "type": me.get("personType")},
+                "startDate": int(start.strftime("%Y%m%d")), "endDate": int(end.strftime("%Y%m%d")),
+                "showSubstText": True, "showLsText": True, "showInfo": True,
+                "subjectFields": ["id", "name"], "roomFields": ["id", "name"]}}})
         body = r.json()
     except Exception as e:
         return _fail("network_error", f"timetable fetch failed: {e}")
     if body.get("error"):
         return _fail("api_error", f"getTimetable error: {body['error']}")
     periods = [p for p in (body.get("result") or []) if p.get("startTime")]
-    periods.sort(key=lambda p: p.get("startTime", 0))
-    label = d.strftime("%a %d.%m")
+    rng = f"{start.strftime('%d.%m')}" + (f"–{end.strftime('%d.%m')}" if days > 1 else "")
     if not periods:
-        return _ok(f"📅 No lessons on {label}.")
-    # su/ro come back as [{id}] — resolve names from master data.
+        return _ok(f"📅 No lessons {rng}.")
     subjects = _lookup(s, base, school, "getSubjects")
     rooms = _lookup(s, base, school, "getRooms")
-    lines = []
+
+    by_day = defaultdict(list)
     for p in periods:
-        code = p.get("code", "")  # "cancelled" | "irregular" | ""
-        mark = " ❌ cancelled" if code == "cancelled" else (" ⚠️ changed" if code == "irregular" else "")
-        subj = _map_names(p.get("su"), subjects) or "?"
-        room = _map_names(p.get("ro"), rooms)
-        lines.append(f"{_hhmm(p['startTime'])}–{_hhmm(p['endTime'])} {subj}"
-                     + (f" · {room}" if room else "") + mark)
-    active = len([p for p in periods if p.get("code") != "cancelled"])
-    return _ok(f"📅 {label} — {active} lessons:\n" + "\n".join(lines), "\n".join(lines))
+        by_day[p.get("date")].append(p)
+
+    out = []
+    for ymd in sorted(by_day):
+        dd = dt.datetime.strptime(str(ymd), "%Y%m%d").date()
+        day = sorted(by_day[ymd], key=lambda p: p.get("startTime", 0))
+        # reasons (Kennenlernfahrt, events…) surfaced from substText/lstext
+        reasons = sorted({(p.get("substText") or p.get("lstext") or "").strip()
+                          for p in day} - {""})
+        rtxt = f" — {', '.join(reasons)}" if reasons else ""
+        active = [p for p in day if p.get("code") != "cancelled"]
+        head = f"*{dd.strftime('%a %d.%m')}*"
+        if not active:
+            out.append(f"{head}: ❌ all cancelled{rtxt}")
+            continue
+        out.append(head + (f"  _{', '.join(reasons)}_" if reasons else ""))
+        for p in _merge_day(day, subjects, rooms):
+            mark = " ❌" if p["code"] == "cancelled" else (" ⚠️" if p["code"] == "irregular" else "")
+            rsn = f" — {p['reason']}" if p.get("reason") else ""
+            out.append(f"  {p['t0']}–{p['t1']} {p['subj']}"
+                       + (f" · {p['room']}" if p["room"] else "") + mark + rsn)
+    summary = "📅 " + rng + "\n" + "\n".join(out)
+    return _ok(summary, summary)
+
+
+def _merge_day(day: list, subjects: dict, rooms: dict) -> list:
+    """Resolve names + merge consecutive identical periods (doubles → one range)."""
+    rows = []
+    for p in day:
+        rows.append({
+            "t0": _hhmm(p["startTime"]), "t1": _hhmm(p["endTime"]),
+            "subj": _map_names(p.get("su"), subjects) or "?",
+            "room": _map_names(p.get("ro"), rooms),
+            "code": p.get("code", ""),
+            "reason": (p.get("substText") or p.get("lstext") or "").strip(),
+        })
+    merged = []
+    for r in rows:
+        if (merged and merged[-1]["subj"] == r["subj"] and merged[-1]["room"] == r["room"]
+                and merged[-1]["code"] == r["code"] and merged[-1]["reason"] == r["reason"]):
+            merged[-1]["t1"] = r["t1"]  # extend the block
+        else:
+            merged.append(dict(r))
+    return merged
 
 
 def _creds() -> dict:
@@ -153,7 +191,7 @@ def main() -> int:
     s.cookies.set("schoolname", '"_' + school + '"', domain=server)
 
     if args.mode == "timetable":
-        return _timetable(s, base, school, me, args.date)
+        return _timetable(s, base, school, me, args.date, args.days)
 
     # 2. bearer token for the REST API
     try:
