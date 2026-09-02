@@ -94,6 +94,39 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# ── 3c. Command-feedback rule: commands always answer, groups stay silent ───
+# Explicit /commands must never go silent (unknown → hint); group free-text
+# must NOT trigger "didn't understand" spam. Guards the router fallback block.
+header "Command feedback rule"
+if grep -q "I don't know that command" sensor/router_sensor.py; then
+    ok "unknown-/command hint present (commands never go silent)"
+    PASS=$((PASS + 1))
+else
+    fail "unknown-/command hint MISSING — /bogus would return nothing"
+    FAIL=$((FAIL + 1))
+fi
+if grep -q "silent-drop group free-text" sensor/router_sensor.py; then
+    ok "group free-text silent-drop present (no 'didn't understand' spam in groups)"
+    PASS=$((PASS + 1))
+else
+    fail "group free-text silent-drop MISSING — aaka will spam groups"
+    FAIL=$((FAIL + 1))
+fi
+
+# ── 3d. Tools gate: members run, strangers locked, management admin-only ─────
+# Running/listing/help is open to any recognized member; the old blanket
+# "Only an admin can manage tools" gate wrongly blocked a parent from running
+# a kid's digest.
+header "Tools permission gate"
+if grep -q "Only registered members can use tools" sensor/router_sensor.py \
+   && ! grep -q "Only an admin can manage tools" sensor/router_sensor.py; then
+    ok "tools gate is member-run / stranger-locked (not blanket admin)"
+    PASS=$((PASS + 1))
+else
+    fail "tools gate still blanket-admin — non-admin members can't run tools"
+    FAIL=$((FAIL + 1))
+fi
+
 # VPS sensor must have its own sweeper cron — Mac-side expiry doesn't sync
 # to VPS via vps_sync.py (HWM is on created_at only). Without this cron,
 # stale 'waiting' rows would still accumulate on VPS.

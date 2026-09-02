@@ -838,11 +838,13 @@ def _handle_invite(message: str, sender_id: str) -> str:
 
 def _handle_tools(message: str, sender_id: str, channel_id: str = "",
                   source: str = "", message_id: str = "") -> str:
-    """Admin-only: `/tools` lists registered aaka Tools; `/tools run <name>` runs
-    one on demand and reports the result inline. See docs/aaka-tools.md."""
+    """`/tools` lists registered aaka Tools; `/tools/<tool> <args>` runs one and
+    reports inline. Running/listing/help is open to any recognized family member
+    (e.g. a parent running a kid's digest); registration/enable/disable is
+    admin-only and lives in MCP. Strangers are locked out. See docs/aaka-tools.md."""
     requester = aaka_config.member_by_sender(sender_id)
-    if not requester or not aaka_config.member_is_admin(requester.get("id", "")):
-        return "🔒 Only an admin can manage tools."
+    if not requester:
+        return "🔒 Only registered members can use tools."
     from sensor import tool_runner
     arg = re.sub(r"^/tools\b", "", message, flags=re.I).strip()
     if arg.lower() in ("help", "-h", "?"):
@@ -1883,6 +1885,18 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
             pass
 
     if intent is None:
+        # Feedback rule: an explicit command always earns a reply (silence on a
+        # /command looks broken); free text is answered in a 1:1 DM but stays
+        # silent in a group so aaka never spams "didn't understand" to chatter.
+        is_command = message.lstrip().startswith("/")
+        is_group = bool(channel_id) and channel_id != sender_id
+        if is_command:
+            return _reply(f"{REPLY_PREFIX}❓ I don't know that command. ↪ /menu",
+                          channel_id=channel_id, sender=sender_id,
+                          message_id=message_id, dry_run=dry_run, source=source)
+        if is_group:
+            _log.info("silent-drop group free-text sender=%s channel=%s", sender_id, channel_id)
+            return ""
         return _reply(f"{REPLY_PREFIX}Sorry, I didn't understand that. ↪ /menu", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
 
     # Track engagement (silent — never raises)

@@ -114,6 +114,29 @@ requester's channel. Placement decides: `sensor` tools run inline on the sensor;
 `executor` tools run inline if we *are* the executor, else via the queue. (Scheduled
 runs already go to the right side — each side's cron/launchd runs only its own.)
 
+## Who can run tools
+
+Running, listing, and `help` are open to **any recognized family member** — a
+parent runs a kid's digest without being the admin. Unrecognized senders are
+locked out (`🔒 Only registered members can use tools.`). **Registering,
+enabling, and disabling** a tool stays **admin-only** and lives in MCP
+(`register_tool`/`set_tool_enabled`) — a tool runs code and holds secrets, so it
+is never installed from a chat command.
+
+## Command feedback rule (no group spam, no silent commands)
+
+aaka's reply policy for anything that doesn't match a built-in intent or tool:
+
+- **An explicit `/command` always gets a reply** — even if unknown
+  (`❓ I don't know that command. ↪ /menu`). Silence on a command looks broken.
+- **Free text in a 1:1 DM** gets a gentle nudge (`Sorry, I didn't understand…`).
+- **Free text in a group stays silent** — aaka never spams "didn't understand"
+  to ordinary group chatter; it only answers when addressed (a `/command` or a
+  matched intent). Silent drops are logged (`silent-drop group free-text`).
+
+So a tool command always produces feedback: the run/hand-off ack, the result, or
+the unknown-command hint — never nothing.
+
 ## Reporting & error contract (kills the "went silent" problem)
 
 Every run reports — a run that produces nothing still says so:
