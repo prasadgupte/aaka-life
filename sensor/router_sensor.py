@@ -973,24 +973,34 @@ def _handle_mcp(message: str, sender_id: str) -> str:
     return f"❓ Unknown view `/mcp {arg}`. Try `/mcp` for the list."
 
 
-def _handle_security(sender_id: str) -> str:
-    """Admin-only: run the security self-audit (admin/security_check.py) and
-    report. Read-only — inspects perms, git tracking, and code structure for
-    known exposure classes. Safe to run on the sensor before a deploy."""
+def _handle_security(message: str, sender_id: str) -> str:
+    """Admin-only security tooling. Read-only, safe to run before a deploy:
+      /security          → hardening self-audit (admin/security_check.py)
+      /security surface  → attack-surface inventory (admin/exposure_report.py):
+                           listening ports, public endpoints, token capabilities,
+                           secrets/scraping creds
+      /security help     → this list"""
     requester = aaka_config.member_by_sender(sender_id)
     if not requester or not aaka_config.member_is_admin(requester.get("id", "")):
-        return "🔒 Only an admin can run the security audit."
+        return "🔒 Only an admin can run security tooling."
+    arg = re.sub(r"^/security\b", "", message, flags=re.I).strip().lower()
+    if arg in ("help", "-h", "?"):
+        return ("🔒 *Security*\n"
+                "• `/security` — hardening self-audit (pass/fail)\n"
+                "• `/security surface` — exposure map: ports · endpoints · token powers · secrets\n"
+                "Both are read-only. Run before deploying.")
+    script = "exposure_report.py" if arg in ("surface", "exposure", "risks", "map", "ports") else "security_check.py"
     import subprocess
     try:
         r = subprocess.run(
-            [sys.executable, str(BASE / "admin" / "security_check.py")],
+            [sys.executable, str(BASE / "admin" / script)],
             capture_output=True, text=True, timeout=30,
             env={**os.environ, "AAKA_BASE": str(BASE)},
         )
         out = (r.stdout or r.stderr or "").strip()
-        return out[:3500] if out else "⚠️ security check produced no output."
+        return out[:3800] if out else f"⚠️ {script} produced no output."
     except Exception as e:
-        return f"⚠️ security check failed: {e}"
+        return f"⚠️ {script} failed: {e}"
 
 
 _IBAN_LEN = {
@@ -2022,7 +2032,7 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                       message_id=message_id, dry_run=dry_run, source=source)
 
     if intent == "security_audit":
-        return _reply(_handle_security(sender_id),
+        return _reply(_handle_security(message, sender_id),
                       channel_id=channel_id, sender=sender_id,
                       message_id=message_id, dry_run=dry_run, source=source)
 

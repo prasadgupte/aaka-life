@@ -292,6 +292,23 @@ def security_check() -> dict:
 
 
 @mcp.tool()
+def exposure_report() -> dict:
+    """Attack-surface inventory (admin/exposure_report.py): listening ports (and
+    which are network-reachable), public VPS endpoints, each OAuth token's real
+    capability (calendar write, gmail send, …), and the secrets/scraping-cred
+    inventory (names only). Read-only. Complements security_check()."""
+    import subprocess, json
+    result = subprocess.run(
+        [sys.executable, str(REPO / "admin" / "exposure_report.py"), "--json"],
+        capture_output=True, text=True,
+        env={**os.environ, "AAKA_BASE": str(REPO)},
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return json.loads(result.stdout)
+    return {"error": (result.stderr or "no output")[:500]}
+
+
+@mcp.tool()
 def bot_info() -> dict:
     """Return the assistant's name, members, and timezone."""
     return {

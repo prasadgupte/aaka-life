@@ -110,7 +110,7 @@ def handle(intent: str, message: str, sender: str, channel_id: str, source: str)
             "🛠  /tools · list/run tools    /tools/<tool> help\n"
             "     /members · roster    /invite <name> · onboard (admin)\n"
             "     /mcp · introspection — members/tools/bot/setup (admin)\n"
-            "     /security · self-audit for exposures before deploy (admin)\n"
+            "     /security · hardening self-audit    /security surface · exposure map (admin)\n"
             "📊  /engage · your level & what to try next\n"
             "\n"
             "📬  m · /mail · accounts    m name · messages\n"

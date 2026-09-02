@@ -158,6 +158,13 @@ else
     fail "admin/security_check.py missing"
     FAIL=$((FAIL + 1))
 fi
+if [ -f "$AAKA_BASE/admin/exposure_report.py" ]; then
+    ok "admin/exposure_report.py present (/security surface)"
+    PASS=$((PASS + 1))
+else
+    fail "admin/exposure_report.py missing (/security surface won't work)"
+    FAIL=$((FAIL + 1))
+fi
 
 # VPS sensor must have its own sweeper cron — Mac-side expiry doesn't sync
 # to VPS via vps_sync.py (HWM is on created_at only). Without this cron,
