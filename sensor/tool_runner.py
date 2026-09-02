@@ -121,12 +121,16 @@ def status() -> list:
 
 
 def _secrets_dir(entry: dict) -> str:
+    # Tool secrets live in the canonical vault (/Users/Shared/secrets/<name>/),
+    # totally outside the codebase — per the standing secrets rule. Override the
+    # root with AAKA_SECRETS_ROOT (e.g. on the VPS). Absolute paths pass through.
     s = entry.get("secrets") or ""
     if not s:
         return ""
     if os.path.isabs(s):
         return s
-    return str(_config_dir() / "secrets" / s)
+    root = os.environ.get("AAKA_SECRETS_ROOT", "/Users/Shared/secrets")
+    return str(Path(root) / s)
 
 
 def _log(name: str, record: dict) -> None:

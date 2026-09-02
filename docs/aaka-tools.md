@@ -109,10 +109,11 @@ error) so `/tools` and `tool_logs()` can show history.
 
 ## Auth & the secrets vault
 
-Tool secrets live in `secrets/<tool>/` — **totally outside the codebase**, per the
-standing vault rule; sensor-tool secrets on the VPS, executor-tool secrets on the
-Mac. The framework passes the path as `$AAKA_TOOL_SECRETS`; the tool never embeds
-credentials. On `error: auth_required`, the runner `ask()`s the admin to re-auth
+Tool secrets live in the canonical vault `/Users/Shared/secrets/<tool>/` —
+**totally outside the codebase**, per the standing vault rule (override the root
+with `AAKA_SECRETS_ROOT`, e.g. on the VPS). The framework resolves the manifest's
+`secrets:` name under that root and passes the absolute path as
+`$AAKA_TOOL_SECRETS`; the tool never embeds credentials. On `error: auth_required`, the runner `ask()`s the admin to re-auth
 with instructions, pauses the tool, and resumes on the next scheduled run.
 
 ## Std-built vs pluggable (the boundary)

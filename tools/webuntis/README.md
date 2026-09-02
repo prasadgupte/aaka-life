@@ -6,16 +6,16 @@ token → homework endpoint. First reference tool for the aaka Tools framework
 
 ## Activate (2 steps)
 
-**1. Drop credentials in the vault** (outside git). On the machine that will run
-it (sensor for always-on, or the Mac):
+**1. Drop credentials in the vault** (`/Users/Shared/secrets/`, outside git —
+override the root with `AAKA_SECRETS_ROOT`, e.g. on the VPS):
 
 ```bash
-mkdir -p "$AAKA_CONFIG_DIR/secrets/webuntis"
-cat > "$AAKA_CONFIG_DIR/secrets/webuntis/creds.json" <<'JSON'
+mkdir -p /Users/Shared/secrets/webuntis
+cat > /Users/Shared/secrets/webuntis/creds.json <<'JSON'
 { "server": "yourschool.webuntis.com", "school": "yourschool",
   "user": "<student-or-parent-login>", "password": "<password>" }
 JSON
-chmod 600 "$AAKA_CONFIG_DIR/secrets/webuntis/creds.json"
+chmod 600 /Users/Shared/secrets/webuntis/creds.json
 ```
 
 **2. Register the tool** — in a Claude session (`register_tool` MCP tool):
@@ -44,7 +44,7 @@ homework:
 
 ```bash
 # direct (once creds are in place)
-AAKA_TOOL_SECRETS="$AAKA_CONFIG_DIR/secrets/webuntis" \
+AAKA_TOOL_SECRETS=/Users/Shared/secrets/webuntis \
   venv/bin/python3 tools/webuntis/check.py --days 7
 
 # via the framework (runs + reports through aaka)
