@@ -172,13 +172,27 @@ def main() -> int:
                    headers={"Authorization": f"Bearer {bearer}"},
                    params={"startDate": today.strftime("%Y%m%d"),
                            "endDate": end.strftime("%Y%m%d")})
-        data = (hw.json() or {}).get("data", {})
+        payload = hw.json() or {}
+        data = payload.get("data", {})
     except Exception as e:
         return _fail("api_error", f"homework fetch failed: {e}")
 
-    homeworks = data.get("homeworks", []) or []
+    # Cross-check (your "check against a count"): a valid response has a `data`
+    # object with a `homeworks` list AND a `records` list that tracks homework
+    # items. Distinguish "confirmed zero" from "couldn't read" — never silently
+    # report "no homework" on a malformed/partial response.
+    if not isinstance(data, dict) or "homeworks" not in data:
+        return _fail("read_uncertain",
+                     "⚠️ Couldn't read homework — WebUntis returned an unexpected "
+                     "response (NOT reporting 'none'). Check the tool/endpoint.")
+    homeworks = data.get("homeworks") or []
+    records = data.get("records") or []
+    if not homeworks and records:
+        return _fail("read_uncertain",
+                     f"⚠️ Homework read looks incomplete — {len(records)} lesson "
+                     f"record(s) but 0 homework items parsed. Flagging, not 'none'.")
+
     lessons = {l.get("id"): l for l in (data.get("lessons", []) or [])}
-    # subject lookup: lesson → subject name
     def subject_of(hwk):
         les = lessons.get(hwk.get("lessonId"), {})
         return les.get("subject") or les.get("name") or "?"
@@ -187,9 +201,9 @@ def main() -> int:
     open_hw.sort(key=lambda h: str(h.get("dueDate", "")))
 
     if not open_hw:
-        print(json.dumps({"ok": True, "summary": "📚 No open homework in the next "
-                          f"{args.days} days.", "details": "", "error": None}))
-        return 0
+        n = len(homeworks)
+        note = f" ({n} already completed)" if n else ""
+        return _ok(f"📚 No open homework in the next {args.days} days{note}. (confirmed ✓)")
 
     lines = []
     for h in open_hw:
@@ -199,9 +213,7 @@ def main() -> int:
         lines.append(f"• {subject_of(h)} (due {due_fmt}): {text}")
 
     summary = f"📚 {len(open_hw)} open homework:\n" + "\n".join(lines[:8])
-    print(json.dumps({"ok": True, "summary": summary,
-                      "details": "\n".join(lines), "error": None}))
-    return 0
+    return _ok(summary, "\n".join(lines))
 
 
 if __name__ == "__main__":
