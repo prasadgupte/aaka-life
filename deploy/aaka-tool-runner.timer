@@ -1,0 +1,9 @@
+[Unit]
+Description=Run aaka tool-runner every minute
+
+[Timer]
+OnCalendar=minutely
+Persistent=false
+
+[Install]
+WantedBy=timers.target

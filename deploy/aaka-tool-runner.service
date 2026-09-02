@@ -1,0 +1,12 @@
+[Unit]
+Description=Aaka tool-runner — run due sensor-placed tools
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/aaka-repo
+EnvironmentFile=/opt/aaka-repo/.env
+Environment=AAKA_CONFIG_DIR=/opt/aaka-config
+Environment=AAKA_BASE=/opt/aaka-repo
+Environment=AAKA_ROLE=sensor
+ExecStart=/opt/aaka-repo/venv/bin/python sensor/tool_runner.py --due

@@ -1,0 +1,27 @@
+[Unit]
+Description=Aaka sensor — Telegram router (OpenClaw-free, native)
+Documentation=https://github.com/prasadgupte/aaka-life
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/aaka-repo
+EnvironmentFile=/opt/aaka-repo/.env
+Environment=AAKA_CONFIG_DIR=/opt/aaka-config
+Environment=AAKA_BASE=/opt/aaka-repo
+Environment=AAKA_ROLE=sensor
+Environment=AAKA_CONTEXT=family
+Environment=LLM_PROVIDER=gemini
+Environment=ENABLED_CHANNELS=telegram
+Environment=QUEUE_DB=/opt/aaka-config/data/queue/butler.db
+ExecStart=/opt/aaka-repo/venv/bin/python -u sensor/telegram_multibot.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aaka-sensor
+
+[Install]
+WantedBy=multi-user.target
