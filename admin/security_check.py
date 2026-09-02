@@ -136,9 +136,17 @@ def check_git_secrets() -> None:
         return
     danger = re.compile(r"(^|/)(\.env|credentials\.json|token.*\.json|.*\.pem|.*secret.*|.*\.key)$", re.I)
     allow = re.compile(r"\.(example|template|sample)($|\.)", re.I)
-    bad = [f for f in tracked if danger.search(f) and not allow.search(f)]
+    # config/credentials.json is the INTENTIONAL bundled community OAuth client
+    # (Desktop app, not confidential per RFC 8252) — shipped so users can auth
+    # against the shared app without their own GCP project. Not a leak.
+    intentional = {"config/credentials.json"}
+    bad = [f for f in tracked
+           if danger.search(f) and not allow.search(f) and f not in intentional]
     if bad:
         add("git_secrets", "fail", f"secret-looking files are tracked by git: {', '.join(bad[:8])}")
+    elif "config/credentials.json" in tracked:
+        add("git_secrets", "ok",
+            "no per-user secrets in git (config/credentials.json is the intentional bundled community client)")
     else:
         add("git_secrets", "ok", "no secret files tracked by git")
 

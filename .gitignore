@@ -1,10 +1,11 @@
 **/__pycache__/
 *.pyc
 .env
-# Secrets — OAuth client + tokens live in $AAKA_CONFIG_DIR/tokens (external),
-# never in the repo. Belt-and-suspenders so a stray copy can't be re-added.
-**/credentials.json
-**/credentials.json.*
+# Per-user secrets never belong in the repo. NOTE: config/credentials.json is
+# intentionally committed — it's the *bundled community OAuth client* (Desktop
+# app, not confidential per RFC 8252) so users can auth against the shared app
+# without their own GCP project. Per-user tokens live in $AAKA_CONFIG_DIR/tokens
+# (external) and must never be committed.
 **/token*.json
 *.pem
 *.key
