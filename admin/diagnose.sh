@@ -158,8 +158,8 @@ if [ "$INSTANCE" = "vps" ]; then
 fi
 
 # ── 8. Sensor check (VPS only) ───────────────────────────────────────────────
-if [ "$INSTANCE" = "vps" ]; then
-    header "8. &Away (VPS)"
+if [ "$INSTANCE" = "vps" ] && ! systemctl is-active --quiet aaka-sensor 2>/dev/null; then
+    header "8. &Away (VPS — Docker)"
     if docker ps --format '{{.Names}}' 2>/dev/null | grep -q aaka-sensor; then
         ok "aaka-sensor container running"
         info "Last 10 log lines:"
@@ -1111,4 +1111,31 @@ if [ -f "$AAKA_BASE/admin/security_check.py" ]; then
     fi
 else
     info "admin/security_check.py not present — skipping security audit"
+fi
+
+# ── Native sensor (systemd + cron) ────────────────────────────────────────────
+# When the sensor runs natively (non-Docker), the periodic jobs live in the root
+# crontab, NOT in the container entrypoint. This block catches the failure mode
+# where the service is up but the scheduled jobs (summaries, outbox flush, …)
+# were never installed — i.e. "my 9pm summary never arrived".
+header "Native sensor (systemd + cron)"
+if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files 2>/dev/null | grep -q '^aaka-sensor.service'; then
+    if systemctl is-active --quiet aaka-sensor; then
+        ok "aaka-sensor.service active"
+    else
+        fail "aaka-sensor.service NOT active — journalctl -u aaka-sensor"
+    fi
+    if systemctl is-active --quiet cron 2>/dev/null || systemctl is-active --quiet crond 2>/dev/null; then
+        ok "cron daemon active"
+    else
+        fail "cron daemon NOT active — scheduled summaries/outbox will not run"
+    fi
+    _aaka_crons=$(crontab -l 2>/dev/null | grep -cE 'scheduled_summaries|flush_outbox|scheduled_sender|tool_runner')
+    if [ "${_aaka_crons:-0}" -ge 8 ]; then
+        ok "crontab has ${_aaka_crons} aaka periodic jobs (summaries/outbox/sender/…)"
+    else
+        fail "crontab missing aaka jobs (found ${_aaka_crons:-0}, expect 9) — run: sudo bash admin/install-native.sh"
+    fi
+else
+    info "native sensor not installed here (Docker or Mac executor) — skipping"
 fi
