@@ -198,18 +198,25 @@ def _send(member_id: str, text: str) -> None:
 def report(name: str, entry: dict, result: dict) -> None:
     """Deliver the run result per the manifest (never silent on error)."""
     report_to = entry.get("report_to") or aaka_config.default_actor()
-    bot = ""
+    # Instances attached to a member (e.g. one kid's school) tag the report so a
+    # parent watching several instances knows whose it is.
+    tag = ""
+    mid = entry.get("member")
+    if mid:
+        m = next((x for x in aaka_config.members() if x.get("id") == mid), None)
+        if m:
+            tag = f"👤 *{m.get('name', mid)}* — "
     if result.get("ok"):
-        _send(report_to, result.get("summary") or f"✅ {name}: done.")
+        _send(report_to, tag + (result.get("summary") or f"✅ {name}: done."))
         return
     err = result.get("error")
     on_error = entry.get("on_error", "alert")
     if on_error == "silent":
         return
     admin = next((m["id"] for m in aaka_config.members() if m.get("admin")), report_to)
-    msg = f"⚠️ Tool *{name}* failed ({err}): {result.get('summary', '')}"
+    msg = f"⚠️ {tag}Tool *{name}* failed ({err}): {result.get('summary', '')}"
     if err == "auth_required":
-        msg = (f"🔐 Tool *{name}* needs a re-auth: {result.get('summary', '')}\n"
+        msg = (f"🔐 {tag}Tool *{name}* needs a re-auth: {result.get('summary', '')}\n"
                f"Update its credentials in the vault, then it'll resume next run.")
     _send(admin, msg)
 
