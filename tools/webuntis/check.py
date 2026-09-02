@@ -34,6 +34,80 @@ def _fail(error: str, summary: str, code: int = 1) -> int:
     return code
 
 
+def _ok(summary: str, details: str = "") -> int:
+    print(json.dumps({"ok": True, "summary": summary, "details": details, "error": None}))
+    return 0
+
+
+def _hhmm(t) -> str:
+    t = int(t)
+    return f"{t // 100:02d}:{t % 100:02d}"
+
+
+def _names(lst) -> str:
+    return ", ".join(x.get("name", "?") for x in (lst or []) if isinstance(x, dict))
+
+
+def _lookup(s, base: str, school: str, method: str) -> dict:
+    """Fetch WebUntis master data (getSubjects/getRooms/...) → {id: name}."""
+    try:
+        r = s.post(f"{base}/jsonrpc.do", params={"school": school}, timeout=15,
+                   json={"id": "aaka", "method": method, "jsonrpc": "2.0", "params": {}})
+        return {x["id"]: (x.get("name") or x.get("longName") or "?")
+                for x in (r.json().get("result") or []) if x.get("id") is not None}
+    except Exception:
+        return {}
+
+
+def _map_names(lst, m) -> str:
+    """Map [{id}] → 'name, name' using a lookup dict (falls back to inline name)."""
+    out = []
+    for x in (lst or []):
+        if not isinstance(x, dict):
+            continue
+        out.append(m.get(x.get("id")) or x.get("name") or "?")
+    return ", ".join(out)
+
+
+def _timetable(s, base: str, school: str, me: dict, date_arg: str) -> int:
+    import datetime as dt
+    if date_arg == "today":
+        d = dt.date.today()
+    elif date_arg == "tomorrow":
+        d = dt.date.today() + dt.timedelta(days=1)
+    else:
+        d = dt.datetime.strptime(date_arg, "%Y%m%d").date()
+    ymd = int(d.strftime("%Y%m%d"))
+    try:
+        r = s.post(f"{base}/jsonrpc.do", params={"school": school}, timeout=15, json={
+            "id": "aaka", "method": "getTimetable", "jsonrpc": "2.0",
+            "params": {"id": me.get("personId"), "type": me.get("personType"),
+                       "startDate": ymd, "endDate": ymd}})
+        body = r.json()
+    except Exception as e:
+        return _fail("network_error", f"timetable fetch failed: {e}")
+    if body.get("error"):
+        return _fail("api_error", f"getTimetable error: {body['error']}")
+    periods = [p for p in (body.get("result") or []) if p.get("startTime")]
+    periods.sort(key=lambda p: p.get("startTime", 0))
+    label = d.strftime("%a %d.%m")
+    if not periods:
+        return _ok(f"📅 No lessons on {label}.")
+    # su/ro come back as [{id}] — resolve names from master data.
+    subjects = _lookup(s, base, school, "getSubjects")
+    rooms = _lookup(s, base, school, "getRooms")
+    lines = []
+    for p in periods:
+        code = p.get("code", "")  # "cancelled" | "irregular" | ""
+        mark = " ❌ cancelled" if code == "cancelled" else (" ⚠️ changed" if code == "irregular" else "")
+        subj = _map_names(p.get("su"), subjects) or "?"
+        room = _map_names(p.get("ro"), rooms)
+        lines.append(f"{_hhmm(p['startTime'])}–{_hhmm(p['endTime'])} {subj}"
+                     + (f" · {room}" if room else "") + mark)
+    active = len([p for p in periods if p.get("code") != "cancelled"])
+    return _ok(f"📅 {label} — {active} lessons:\n" + "\n".join(lines), "\n".join(lines))
+
+
 def _creds() -> dict:
     d = os.environ.get("AAKA_TOOL_SECRETS", "")
     path = os.path.join(d, "creds.json") if d else "creds.json"
@@ -43,7 +117,9 @@ def _creds() -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--days", type=int, default=7, help="days ahead to check")
+    ap.add_argument("--mode", choices=["homework", "timetable"], default="homework")
+    ap.add_argument("--days", type=int, default=7, help="days ahead (homework mode)")
+    ap.add_argument("--date", default="tomorrow", help="timetable date: today|tomorrow|YYYYMMDD")
     args = ap.parse_args()
 
     try:
@@ -72,8 +148,12 @@ def main() -> int:
         if code in (-8504, -8509, -8998):
             return _fail("auth_required", f"WebUntis login failed: {body['error'].get('message', code)}")
         return _fail("api_error", f"authenticate error: {body['error']}")
+    me = body.get("result", {}) or {}
     # school context cookie some servers require for the REST API
     s.cookies.set("schoolname", '"_' + school + '"', domain=server)
+
+    if args.mode == "timetable":
+        return _timetable(s, base, school, me, args.date)
 
     # 2. bearer token for the REST API
     try:
