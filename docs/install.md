@@ -44,6 +44,25 @@ VPS is optional. Most users run at Tier 2.
 
 ---
 
+## Exposing a page safely (optional)
+
+By default aaka exposes **nothing** to the internet — the sensor is poll-only (no
+inbound port) and web pages (e.g. the taskboard) bind `127.0.0.1`. You never have
+to secure a VPS you didn't open up.
+
+If you *do* want to reach a page from outside, aaka's portable guard (`webauth.py`)
+protects it **without depending on any proxy**:
+
+- A page server **refuses to bind to a public interface** unless a secret is set —
+  so you can't accidentally expose it unauthenticated (a proxy in front is not
+  enough; a direct hit to the port bypasses it).
+- To allow it: `python3 admin/page_auth.py init` (writes a 600 secret), then start
+  the page with `--host 0.0.0.0`. Sign in by opening it once with `?k=<secret>`.
+- Already behind your own authenticating proxy? Leave the secret unset and bind
+  `127.0.0.1` — the guard stays dormant, no double auth.
+
+---
+
 ## Requirements
 
 - macOS (Apple Silicon or Intel) — or Linux
