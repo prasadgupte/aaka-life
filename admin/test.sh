@@ -94,6 +94,25 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# ── 3g. errors_report must be a local intent (else /errors fails on sensor) ──
+# Regression: errors_report was handled in admin.py but absent from _LOCAL_INTENTS,
+# so /errors + /errors flush hit "not supported on the sensor node".
+header "errors_report routing"
+if grep -n '_LOCAL_INTENTS = ' sensor/router_sensor.py | grep -q 'errors_report'; then
+    ok "errors_report is in _LOCAL_INTENTS (/errors works on sensor)"
+    PASS=$((PASS + 1))
+else
+    fail "errors_report MISSING from _LOCAL_INTENTS — /errors flush will fail on sensor"
+    FAIL=$((FAIL + 1))
+fi
+if grep -q '_WARN_CATEGORIES' sensor/error_digest.py; then
+    ok "digest demotes delivery categories to warnings"
+    PASS=$((PASS + 1))
+else
+    fail "error_digest missing _WARN_CATEGORIES — Telegram noise will inflate Total"
+    FAIL=$((FAIL + 1))
+fi
+
 # ── 3c. Command-feedback rule: commands always answer, groups stay silent ───
 # Explicit /commands must never go silent (unknown → hint); group free-text
 # must NOT trigger "didn't understand" spam. Guards the router fallback block.

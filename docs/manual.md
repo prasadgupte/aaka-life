@@ -179,6 +179,13 @@ Persistent store of sensor errors — survives across digest runs so nothing is 
 
 **Daily digest** (07:30 UTC, auto-sent) reports only unacknowledged errors. Use `/errors flush` after reviewing to get a clean next digest. Week-over-week trending is tracked in `error_events` SQLite table.
 
+**Breaking errors vs delivery warnings.** The digest separates *breaking* errors
+(router dispatch failures, poller crashes — counted in the **Total**) from
+*delivery warnings* (`tg_delivery`/`tg_other`: Telegram 429 rate-limits + transient
+getUpdates network blips). Warnings are shown muted and **not** counted, and a
+digest containing *only* warnings is suppressed — so you're pinged for things that
+actually break, not for delivery noise. `/errors` always shows the full list.
+
 ---
 
 ## Engagement report
