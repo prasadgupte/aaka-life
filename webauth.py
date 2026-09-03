@@ -93,16 +93,34 @@ def make_cookie() -> str:
     return _sign(int(time.time()) + _TTL)
 
 
-_LOGIN_HTML = """<!doctype html><html><head><meta charset=utf-8>
+# On-brand, self-contained (no external assets — a guard page must render even if
+# everything else is gated). Uses the canonical aaka palette (see
+# executor/webui/brand/tokens.css) + the & logo mark. {err} placeholder is filled
+# via str.replace (so CSS braces need no escaping).
+_LOGIN_HTML = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>aaka · sign in</title>
-<style>body{{font-family:system-ui,sans-serif;background:#0f0f10;color:#eee;display:grid;
-place-items:center;height:100vh;margin:0}}form{{background:#1a1a1c;padding:2.2rem 2rem;border-radius:14px;
-box-shadow:0 8px 30px #0008;text-align:center;max-width:20rem}}h2{{margin:.2rem 0 .1rem}}
-p{{color:#aaa;font-size:.9rem;margin:.3rem 0 1.2rem}}input{{padding:.65rem;border-radius:9px;border:1px solid #333;
-background:#000;color:#eee;font-size:1rem;width:100%;box-sizing:border-box}}button{{margin-top:1rem;padding:.65rem 1.5rem;
-border:0;border-radius:9px;background:#f97316;color:#111;font-weight:700;cursor:pointer;width:100%}}
-.e{{color:#f66;font-size:.85rem;margin-top:.8rem}}</style></head><body><form method=get>
-<h2>🔒 aaka</h2><p>Enter your access key to continue.</p>
+<style>
+:root{--teal:#00B4A2;--ink:#1E2030;--slate:#556170;--bg:#FFF5F0;--surface:#fff;--sand:#F0DDD4;--berry:#e0456b}
+*{box-sizing:border-box}
+body{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);
+display:grid;place-items:center;min-height:100vh;margin:0}
+.card{background:var(--surface);border:1px solid var(--sand);border-radius:20px;
+box-shadow:0 10px 40px rgba(30,32,48,.10);padding:2.4rem 2rem;width:min(92vw,22rem);text-align:center}
+.logo{width:56px;height:56px;border-radius:16px;background:var(--teal);display:grid;place-items:center;
+margin:0 auto .9rem;box-shadow:0 4px 14px rgba(0,180,162,.35)}
+.logo svg{width:40px;height:40px}
+.wm{font-weight:800;font-size:1.5rem;letter-spacing:-.5px;margin:0}
+p{color:var(--slate);font-size:.9rem;margin:.35rem 0 1.3rem}
+input{width:100%;padding:.7rem .8rem;border:1px solid var(--sand);border-radius:11px;background:#fff;
+color:var(--ink);font-size:1rem}
+input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(0,180,162,.15)}
+button{width:100%;margin-top:.9rem;padding:.72rem;border:0;border-radius:11px;background:var(--teal);
+color:#fff;font-weight:700;font-size:1rem;cursor:pointer}button:hover{filter:brightness(1.05)}
+.e{color:var(--berry);font-size:.85rem;margin-top:.8rem}
+</style></head><body><form method=get class=card>
+<div class=logo><svg viewBox="0 0 100 100"><text x=50 y=80 font-size=86 font-family="Georgia,serif"
+font-weight=bold text-anchor=middle fill=white>&amp;</text></svg></div>
+<h1 class=wm>aaka</h1><p>Enter your access key to continue.</p>
 <input name=k type=password autofocus placeholder="access key">
 <button>Sign in</button>{err}</form></body></html>"""
 
@@ -129,10 +147,10 @@ def install_guard(app, open_paths=("/health",)):
                 resp = await call_next(request)  # serve + set cookie (no redirect)
                 resp.set_cookie(COOKIE, make_cookie(), httponly=True, samesite="lax", max_age=_TTL)
                 return resp
-            return HTMLResponse(_LOGIN_HTML.format(err="<div class=e>Wrong key — try again.</div>"),
+            return HTMLResponse(_LOGIN_HTML.replace("{err}", "<div class=e>Wrong key — try again.</div>"),
                                 status_code=401)
         if _valid_cookie(request.cookies.get(COOKIE, "")):
             return await call_next(request)
-        return HTMLResponse(_LOGIN_HTML.format(err=""), status_code=401)
+        return HTMLResponse(_LOGIN_HTML.replace("{err}", ""), status_code=401)
 
     return app
