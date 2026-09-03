@@ -824,16 +824,24 @@ def _handle_invite(message: str, sender_id: str) -> str:
         target = aaka_config.add_dynamic_member(arg)
         created = True
     from sensor import wa_onboard
-    code = wa_onboard.create_invite(target["id"], target.get("name", arg))
-    url, text = wa_onboard.invite_link(code, target.get("name", arg))
-    made = f"👤 Added *{target.get('name', arg)}* as a new member.\n" if created else ""
-    if url:
-        return (f"{made}✅ Invite ready. Send them this link:\n\n"
-                f"{url}\n\n"
-                f"They tap it, hit send, and I'll welcome them automatically. Code `{code}` (valid 7 days).")
-    return (f"{made}✅ Invite code for {target.get('name', arg)}: `{code}` (valid 7 days).\n\n"
-            f"Ask them to WhatsApp me: “{text}”. (Couldn't build a wa.me link — "
-            f"WhatsApp session not connected, so I don't know my own number yet.)")
+    nm = target.get("name", arg)
+    code = wa_onboard.create_invite(target["id"], nm)
+    wa_url, text = wa_onboard.invite_link(code, nm)
+    tg_url = wa_onboard.tg_invite_link(code, nm)
+    made = f"👤 Added *{nm}* as a new member.\n" if created else ""
+    lines = [f"{made}✅ Invite ready for *{nm}* — code `{code}` (valid 7 days)."]
+    if tg_url:
+        lines.append(f"\n📨 *Telegram* (one tap): {tg_url}")
+    if wa_url:
+        lines.append(f"💬 *WhatsApp* (one tap): {wa_url}")
+    elif not tg_url:
+        # neither link could be built — fall back to plain instructions
+        lines.append(f"\nAsk them to message me: “{text}”.")
+    if tg_url or wa_url:
+        lines.append("\nThey tap a link, hit send, and I greet them by name + today's plan.")
+    if not wa_url and tg_url:
+        lines.append("_(WhatsApp link needs the sidecar connected — Telegram works now.)_")
+    return "\n".join(lines)
 
 
 def _handle_tools(message: str, sender_id: str, channel_id: str = "",

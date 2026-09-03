@@ -186,3 +186,45 @@ def invite_link(code: str, name: str = "") -> tuple[str, str]:
         url = f"https://wa.me/{num}?text={urllib.parse.quote(text)}"
         return url, text
     return "", text
+
+
+def tg_bot_username() -> str | None:
+    """aaka's Telegram bot @username (no @) for t.me deep links. Env override
+    `TELEGRAM_BOT_USERNAME`, else getMe — cached to disk so we don't call the
+    API on every invite. None if it can't be resolved."""
+    env = os.environ.get("TELEGRAM_BOT_USERNAME", "").lstrip("@").strip()
+    if env:
+        return env
+    cache = _cfg_dir() / "data" / "tg_bot_username.txt"
+    try:
+        if cache.exists():
+            c = cache.read_text().strip().lstrip("@")
+            if c:
+                return c
+    except Exception:
+        pass
+    tok = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if not tok:
+        return None
+    try:
+        with urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/getMe", timeout=4) as r:
+            data = json.loads(r.read() or b"{}")
+        un = ((data.get("result") or {}).get("username") or "").strip()
+        if un:
+            try:
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                cache.write_text(un)
+            except Exception:
+                pass
+            return un
+    except Exception:
+        return None
+    return None
+
+
+def tg_invite_link(code: str, name: str = "") -> str:
+    """https://t.me/<bot>?start=<code>. Tapping it delivers `/start <code>` to
+    the bot, which the signup path binds like any coded message. Empty string if
+    the bot username can't be resolved. (Codes are alnum → valid ?start= param.)"""
+    un = tg_bot_username()
+    return f"https://t.me/{un}?start={code}" if un else ""
