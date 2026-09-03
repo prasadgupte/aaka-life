@@ -56,7 +56,12 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/")
 def index():
     from fastapi.responses import HTMLResponse
-    html = (STATIC_DIR / "index.html").read_text().replace("__BASE__", BASE_PATH)
+    # cache-bust assets on content change (mtime) so a refresh always gets fresh CSS/JS
+    ver = str(int(max((STATIC_DIR / "style.css").stat().st_mtime,
+                      (STATIC_DIR / "app.js").stat().st_mtime)))
+    html = ((STATIC_DIR / "index.html").read_text()
+            .replace("__BASE__", BASE_PATH)
+            .replace("__V__", ver))
     return HTMLResponse(html)
 
 
