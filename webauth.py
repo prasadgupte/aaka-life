@@ -115,7 +115,7 @@ input{width:100%;padding:.7rem .8rem;border:1px solid var(--sand);border-radius:
 color:var(--ink);font-size:1rem}
 input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(0,180,162,.15)}
 button{width:100%;margin-top:.9rem;padding:.72rem;border:0;border-radius:11px;background:var(--teal);
-color:#fff;font-weight:700;font-size:1rem;cursor:pointer}button:hover{filter:brightness(1.05)}
+color:var(--ink);font-weight:700;font-size:1rem;cursor:pointer}button:hover{filter:brightness(1.04)}
 .e{color:var(--berry);font-size:.85rem;margin-top:.8rem}
 </style></head><body><form method=get class=card>
 <div class=logo><svg viewBox="0 0 100 100"><text x=50 y=80 font-size=86 font-family="Georgia,serif"

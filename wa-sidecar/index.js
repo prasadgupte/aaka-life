@@ -503,7 +503,7 @@ const PAIR_PAGE = `<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Link WhatsApp · aaka</title>
 <style>
-  :root{--teal:#12b5a6;--ink:#0f1419;--muted:#6b7784;--bg:#f7f9fa}
+  :root{--teal:#00B4A2;--ink:#1E2030;--muted:#556170;--bg:#FFF5F0;--sand:#F0DDD4}  /* aaka canonical (tokens.css) */
   *{box-sizing:border-box}body{margin:0;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     background:var(--bg);color:var(--ink);display:flex;min-height:100vh;align-items:center;justify-content:center}
   .card{background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(15,20,25,.10);padding:32px;max-width:420px;width:92%;text-align:center}

@@ -1,35 +1,35 @@
-/* Aaka Taskboard — dark UI, pg-design tokens */
+/* Aaka Taskboard — dark UI, aaka brand tokens (executor/webui/brand/tokens.css) */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* Surfaces */
-  --bg:         #0f0e17;
-  --bg-raised:  #1a1826;
-  --bg-card:    #201e2e;
-  --bg-hover:   #28263a;
-  --bg-active:  #302d45;
+  /* Surfaces — aaka dark (Dimmed Aurora) */
+  --bg:         #161520;  /* --aaka-night */
+  --bg-raised:  #1E1D2C;  /* --aaka-dusk */
+  --bg-card:    #242338;  /* --aaka-elevated */
+  --bg-hover:   #2A2940;  /* --aaka-border-d */
+  --bg-active:  #322F4A;
 
   /* Borders */
-  --border:     rgba(255,255,255,0.08);
-  --border-md:  rgba(255,255,255,0.13);
+  --border:     rgba(255,255,255,0.09);
+  --border-md:  rgba(255,255,255,0.15);
 
-  /* Text */
-  --text:       #e8e6f0;
-  --text-2:     #9b97b0;
-  --text-3:     #5e5a72;
+  /* Text — AA on --bg: text ~15:1, text-2 ~4.8:1, text-3 ~3.6:1 */
+  --text:       #F0F0F0;  /* --aaka-light */
+  --text-2:     #8890A0;  /* --aaka-fog */
+  --text-3:     #6E7488;  /* was #5e5a72 = 2.3:1, failed AA */
 
-  /* Accent palette */
-  --coral:      #e04e4e;
-  --coral-bg:   rgba(224,78,78,0.12);
-  --coral-dim:  rgba(224,78,78,0.06);
-  --mint:       #00d2a0;
-  --mint-bg:    rgba(0,210,160,0.10);
-  --amber:      #fdcb6e;
-  --amber-bg:   rgba(253,203,110,0.10);
-  --violet:     #6c5ce7;
-  --violet-bg:  rgba(108,92,231,0.12);
-  --sky:        #0ea5e9;
-  --sky-bg:     rgba(14,165,233,0.10);
+  /* Accent palette — mapped to aaka accents */
+  --coral:      #FF6B8A;  /* --aaka-berry */
+  --coral-bg:   rgba(255,107,138,0.14);
+  --coral-dim:  rgba(255,107,138,0.06);
+  --mint:       #00B4A2;  /* --aaka-teal */
+  --mint-bg:    rgba(0,180,162,0.14);
+  --amber:      #FFBA49;  /* --aaka-sunshine */
+  --amber-bg:   rgba(255,186,73,0.12);
+  --violet:     #7B68EE;  /* --aaka-iris */
+  --violet-bg:  rgba(123,104,238,0.16);
+  --sky:        #4CC7E6;  /* distinct 5th category, AA on dark */
+  --sky-bg:     rgba(76,199,230,0.12);
 
   /* Typography */
   --font-head:  "Space Grotesk", system-ui, sans-serif;
@@ -200,15 +200,16 @@ body {
 
 .chip.active {
   border-color: transparent;
-  color: #fff;
+  color: #161520;          /* ink on the light accents → AA (white failed: berry 2.6:1) */
   font-weight: 600;
 }
 
 .chip.due-overdue.active  { background: var(--coral);  }
-.chip.due-today.active    { background: #d97706;       }
+.chip.due-today.active    { background: var(--amber);  }
 .chip.due-week.active     { background: var(--violet); }
-.chip.due-later.active    { background: var(--text-3); }
-.chip.due-nodate.active   { background: var(--text-3); }
+/* low-priority buckets: neutral surface + light text (grey bg + ink was weak) */
+.chip.due-later.active    { background: var(--bg-active); color: var(--text); border-color: var(--border-md); }
+.chip.due-nodate.active   { background: var(--bg-active); color: var(--text); border-color: var(--border-md); }
 .chip.due-all.active      { background: var(--bg-active); color: var(--text); border-color: var(--border-md); }
 .chip.done.active         { background: var(--bg-active); color: var(--text); border-color: var(--border-md); }
 
@@ -263,7 +264,7 @@ body {
 }
 
 .task-row.overdue { border-left: 3px solid var(--coral); padding-left: 10px; }
-.task-row.today   { border-left: 3px solid #d97706;      padding-left: 10px; }
+.task-row.today   { border-left: 3px solid var(--amber); padding-left: 10px; }
 .task-row.done-row { opacity: 0.45; }
 .task-row.task-selected { background: var(--violet-bg); border-color: rgba(108,92,231,0.25); }
 
