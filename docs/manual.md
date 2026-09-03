@@ -147,13 +147,21 @@ doesn't proxy the protocol; both front-ends call the same underlying functions,
 so the data never drifts.
 
 ```
-/mcp             — list the introspection views
-/mcp members     — family roster · role · admin · source (yaml|invite)
-                   · handles, with ✅ = recognized (reachable on some channel)
-/mcp tools       — registered tools · enabled · schedule (same as /tools)
-/mcp bot         — assistant name · timezone · member count
-/mcp setup       — setup status across tiers
+/mcp                        — list the introspection views
+/mcp members                — family roster · role · admin · source (yaml|invite)
+                              · handles, with ✅ = recognized (reachable on some channel)
+/mcp members invite <name>  — mint a one-time code + wa.me link to onboard someone
+/mcp members add <name>     — create a member (no code yet)
+/mcp tools                  — registered tools · enabled · schedule (same as /tools)
+/mcp bot                    — assistant name · timezone · member count
+/mcp setup                  — setup status across tiers
 ```
+
+**Delightful first contact:** when an invited person sends their code, aaka binds
+their handle and replies greeting them **by name + a gist of today** from the family
+calendar (weather, today's events, birthdays) — so the very first message already
+feels personal and useful. `invite` here is the same flow as the top-level `/invite`
+command; use whichever you like.
 
 `who` is an alias for `/mcp members`. Registering/enabling/disabling tools or
 members stays out of this read surface — that's admin-only via MCP (`register_tool`,

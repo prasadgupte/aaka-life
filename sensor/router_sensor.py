@@ -908,15 +908,32 @@ def _handle_mcp(message: str, sender_id: str) -> str:
     requester = aaka_config.member_by_sender(sender_id)
     if not requester or not aaka_config.member_is_admin(requester.get("id", "")):
         return "🔒 Only an admin can view introspection."
-    arg = re.sub(r"^/mcp\b", "", message, flags=re.I).strip().lower()
-    if arg in ("", "help", "-h", "?"):
-        return ("🔎 *Introspection* (read-only)\n"
-                "• `/mcp members` — family roster · roles · bound handles\n"
+    raw = re.sub(r"^/mcp\b", "", message, flags=re.I).strip()
+    _toks = raw.split(None, 1)
+    sub = (_toks[0].lower() if _toks else "")
+    rest = (_toks[1].strip() if len(_toks) > 1 else "")
+    if sub in ("", "help", "-h", "?"):
+        return ("🔎 *Introspection*\n"
+                "• `/mcp members` — roster · roles · bound handles\n"
+                "• `/mcp members invite <name>` — mint a code + link to onboard someone\n"
+                "• `/mcp members add <name>` — create a member (no code yet)\n"
                 "• `/mcp tools` — registered tools · enabled · schedule\n"
-                "• `/mcp bot` — assistant name · timezone · member count\n"
-                "• `/mcp setup` — setup status across tiers\n"
-                "Same data as the MCP read tools, surfaced in chat.")
-    if arg in ("members", "who"):
+                "• `/mcp bot` · `/mcp setup`\n"
+                "When an invited person messages, I greet them by name + today's gist.")
+    if sub in ("members", "who"):
+        # Subcommands: onboard someone. `invite` mints a code + link (reuses the
+        # /invite flow, admin-gated); `add` just creates the member.
+        if rest:
+            verb, _, who = rest.partition(" ")
+            who = who.strip()
+            if verb.lower() == "invite" and who:
+                return _handle_invite(f"/invite {who}", sender_id)
+            if verb.lower() == "add" and who:
+                m = aaka_config.add_dynamic_member(who)
+                nm = m.get("name", who)
+                return (f"👤 Added *{nm}* (`{m.get('id')}`).\n"
+                        f"Send them a link: `/mcp members invite {nm}`")
+            return ("❓ Usage: `/mcp members invite <name>` or `/mcp members add <name>`.")
         from sensor import wa_onboard
         lines = ["👥 *Members* — ✅ recognized (has a bound handle)"]
         for m in aaka_config.members():
@@ -937,14 +954,14 @@ def _handle_mcp(message: str, sender_id: str) -> str:
             htxt = " · ".join(handles) if handles else "_no handle — not recognized yet_"
             lines.append(f"{recog} *{m.get('name', mid)}* `{mid}`{admin} · {m.get('role') or '—'} · {src}\n   📡 {htxt}")
         return "\n".join(lines)
-    if arg == "tools":
+    if sub == "tools":
         return _handle_tools("/tools", sender_id)
-    if arg == "bot":
+    if sub == "bot":
         ms = aaka_config.members()
         return (f"{aaka_config.bot_emoji()} *{aaka_config.bot_name()}*\n"
                 f"🕒 {aaka_config.timezone()}\n"
                 f"👥 {len(ms)} members")
-    if arg == "setup":
+    if sub == "setup":
         import subprocess
         try:
             r = subprocess.run(
@@ -970,7 +987,7 @@ def _handle_mcp(message: str, sender_id: str) -> str:
         else:
             lines.append(str(data)[:800])
         return "\n".join(lines)
-    return f"❓ Unknown view `/mcp {arg}`. Try `/mcp` for the list."
+    return f"❓ Unknown view `/mcp {sub}`. Try `/mcp` for the list."
 
 
 def _handle_security(message: str, sender_id: str) -> str:
@@ -1476,6 +1493,18 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                 welcome = wa_onboard.try_signup(sender_id, sender_name, message)
                 if welcome:
                     _log.info("signup source=%s sender=%s — bound via invite code", source, sender_id)
+                    # Delight the first contact: now that their handle is bound,
+                    # append today's gist from the family calendar. Best-effort —
+                    # never let it break the welcome.
+                    try:
+                        _nm = aaka_config.member_by_sender(sender_id)
+                        if _nm:
+                            _gist = _build_today_schedule(_nm["id"], sender=sender_id,
+                                                          include_tasks=False)
+                            if _gist and _gist.strip() and "No calendar data" not in _gist:
+                                welcome = f"{welcome}\n\n———\n*Here's what today looks like:*\n\n{_gist}"
+                    except Exception as _ge:  # pragma: no cover - defensive
+                        _log.warning("welcome today-gist failed: %s", _ge)
                     return welcome
             except Exception as _e:  # pragma: no cover - defensive
                 _log.warning("invite signup check failed: %s", _e)
