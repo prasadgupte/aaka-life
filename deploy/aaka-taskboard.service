@@ -1,0 +1,23 @@
+[Unit]
+Description=Aaka Taskboard (localhost:8002, behind Caddy /aaka/board 2FA)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/aaka-repo
+EnvironmentFile=/opt/aaka-repo/.env
+Environment=AAKA_CONFIG_DIR=/opt/aaka-config
+Environment=AAKA_BASE=/opt/aaka-repo
+Environment=TASKBOARD_BASE_PATH=/aaka/board
+Environment=TASKBOARD_PORT=8002
+ExecStart=/opt/aaka-repo/venv/bin/python taskboard/serve.py --host 127.0.0.1 --port 8002
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aaka-taskboard
+
+[Install]
+WantedBy=multi-user.target
