@@ -93,10 +93,28 @@ def make_cookie() -> str:
     return _sign(int(time.time()) + _TTL)
 
 
+_LOGIN_HTML = """<!doctype html><html><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>aaka · sign in</title>
+<style>body{{font-family:system-ui,sans-serif;background:#0f0f10;color:#eee;display:grid;
+place-items:center;height:100vh;margin:0}}form{{background:#1a1a1c;padding:2.2rem 2rem;border-radius:14px;
+box-shadow:0 8px 30px #0008;text-align:center;max-width:20rem}}h2{{margin:.2rem 0 .1rem}}
+p{{color:#aaa;font-size:.9rem;margin:.3rem 0 1.2rem}}input{{padding:.65rem;border-radius:9px;border:1px solid #333;
+background:#000;color:#eee;font-size:1rem;width:100%;box-sizing:border-box}}button{{margin-top:1rem;padding:.65rem 1.5rem;
+border:0;border-radius:9px;background:#f97316;color:#111;font-weight:700;cursor:pointer;width:100%}}
+.e{{color:#f66;font-size:.85rem;margin-top:.8rem}}</style></head><body><form method=get>
+<h2>🔒 aaka</h2><p>Enter your access key to continue.</p>
+<input name=k type=password autofocus placeholder="access key">
+<button>Sign in</button>{err}</form></body></html>"""
+
+
 def install_guard(app, open_paths=("/health",)):
     """Add the request gate to a FastAPI/Starlette app. No-op when no secret is
-    set (localhost mode). Idempotent-safe to call once at import time."""
-    from starlette.responses import PlainTextResponse, RedirectResponse
+    set (localhost mode). Idempotent-safe to call once at import time.
+
+    UX: unauthenticated requests get a small sign-in page; a correct key sets a
+    30-day signed cookie and serves the request (no redirect — subpath-safe under
+    a strip_prefix proxy). `?k=<key>` also works as a one-tap magic link."""
+    from starlette.responses import HTMLResponse
 
     @app.middleware("http")
     async def _guard(request, call_next):
@@ -105,18 +123,16 @@ def install_guard(app, open_paths=("/health",)):
             return await call_next(request)
         if request.url.path in open_paths:
             return await call_next(request)
-        # Magic-link entry: ?k=<secret> once → set a signed cookie, strip the param.
         k = request.query_params.get("k", "")
-        if k and hmac.compare_digest(k, secret):
-            resp = RedirectResponse(url=request.url.path, status_code=303)
-            resp.set_cookie(COOKIE, make_cookie(), httponly=True, samesite="lax", max_age=_TTL)
-            return resp
+        if k:
+            if hmac.compare_digest(k, secret):
+                resp = await call_next(request)  # serve + set cookie (no redirect)
+                resp.set_cookie(COOKIE, make_cookie(), httponly=True, samesite="lax", max_age=_TTL)
+                return resp
+            return HTMLResponse(_LOGIN_HTML.format(err="<div class=e>Wrong key — try again.</div>"),
+                                status_code=401)
         if _valid_cookie(request.cookies.get(COOKIE, "")):
             return await call_next(request)
-        return PlainTextResponse(
-            "🔒 aaka: authentication required.\n"
-            "Open this page with ?k=<your key> once to sign in.",
-            status_code=401,
-        )
+        return HTMLResponse(_LOGIN_HTML.format(err=""), status_code=401)
 
     return app
