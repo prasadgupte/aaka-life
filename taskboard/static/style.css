@@ -43,6 +43,21 @@
   --r-full: 9999px;
 }
 
+/* Light theme (aaka Coral-Fresh) — opt in via <html data-theme="light">.
+ * Only surfaces/text/borders flip; accents (teal/berry/…) work on both modes. */
+:root[data-theme="light"] {
+  --bg:         #FFF5F0;  /* --aaka-coral */
+  --bg-raised:  #FFFFFF;  /* --aaka-white */
+  --bg-card:    #FFFFFF;
+  --bg-hover:   #FFEDE5;  /* --aaka-peach */
+  --bg-active:  #F0DDD4;  /* --aaka-sand */
+  --border:     rgba(30,32,48,0.10);
+  --border-md:  rgba(30,32,48,0.18);
+  --text:       #1E2030;  /* --aaka-ink,  ~14:1 on coral */
+  --text-2:     #556170;  /* --aaka-slate, ~6:1 */
+  --text-3:     #737C8C;  /* muted, ~3.8:1 */
+}
+
 html, body { height: 100%; }
 
 body {
@@ -135,6 +150,19 @@ body {
   cursor: pointer;
   transition: opacity 0.15s;
 }
+
+.btn-theme {
+  background: var(--bg-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 15px;
+  line-height: 1;
+  padding: 6px 9px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-theme:hover { background: var(--bg-active); }
 
 .btn-add:hover { opacity: 0.88; }
 
