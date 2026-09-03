@@ -94,6 +94,31 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# ── 3h. Portable page guard: refuse public bind without a secret ─────────────
+# webauth.py must block an unauthenticated public exposure (the :18789-class
+# footgun) and stay dormant on localhost.
+header "Portable web-page guard"
+if AAKA_CONFIG_DIR=/tmp/aaka_guard_test python3 -c "
+import sys; sys.path.insert(0,'$AAKA_BASE'); import webauth
+try: webauth.assert_safe_bind('0.0.0.0'); sys.exit(1)   # should raise
+except SystemExit as e:
+    sys.exit(0 if 'unauthenticated' in str(e) else 1)
+" 2>/dev/null; then
+    ok "webauth refuses public bind without a secret (anti-footgun)"
+    PASS=$((PASS + 1))
+else
+    fail "webauth allowed a public bind with no secret — pages could be exposed unauthed"
+    FAIL=$((FAIL + 1))
+fi
+if AAKA_CONFIG_DIR=/tmp/aaka_guard_test python3 -c "
+import sys; sys.path.insert(0,'$AAKA_BASE'); import webauth; webauth.assert_safe_bind('127.0.0.1')" 2>/dev/null; then
+    ok "webauth allows localhost bind (dormant by default)"
+    PASS=$((PASS + 1))
+else
+    fail "webauth blocked a localhost bind — should be the safe default"
+    FAIL=$((FAIL + 1))
+fi
+
 # ── 3g. errors_report must be a local intent (else /errors fails on sensor) ──
 # Regression: errors_report was handled in admin.py but absent from _LOCAL_INTENTS,
 # so /errors + /errors flush hit "not supported on the sensor node".
