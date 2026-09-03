@@ -30,6 +30,10 @@ from taskboard.api import router
 import webauth
 
 STATIC_DIR = Path(__file__).parent / "static"
+# When served behind a reverse-proxy subpath (e.g. Caddy /aaka/board with
+# strip_prefix), set TASKBOARD_BASE_PATH so relative assets + the API base
+# resolve under it. Empty = served at root (local default).
+BASE_PATH = os.environ.get("TASKBOARD_BASE_PATH", "").rstrip("/")
 
 app = FastAPI(title="Aaka Taskboard", version="1")
 
@@ -51,7 +55,9 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    from fastapi.responses import HTMLResponse
+    html = (STATIC_DIR / "index.html").read_text().replace("__BASE__", BASE_PATH)
+    return HTMLResponse(html)
 
 
 @app.get("/health")
