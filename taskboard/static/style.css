@@ -322,7 +322,7 @@ body {
 .task-check.checked { background: var(--mint); border-color: var(--mint); }
 .task-check.checked::after {
   content: "✓";
-  color: #fff;
+  color: #161520;          /* ink on teal (white was 2.6:1, below the 3:1 UI min) */
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
