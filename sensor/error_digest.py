@@ -232,23 +232,41 @@ _LABELS = {
 }
 
 
+# Delivery failures are non-breaking noise (the sensor keeps running): a bad
+# recipient, a rate-limit, a transient 5xx. They're shown as muted warnings and,
+# on their own, never trigger a digest — the digest is for breaking/actionable
+# errors (dispatch, crashes). See /errors for the full list any time.
+_WARN_CATEGORIES = {"tg_delivery", "tg_other"}
+
+
 def _format_digest_from_db(size_warnings: list[str]) -> str | None:
-    """Format digest message from unacknowledged DB events. Returns None if clean."""
+    """Format digest from unacknowledged DB events. Returns None unless there's a
+    breaking error or a size warning — pure delivery noise is not worth a ping."""
     summary = get_unacked_summary()
-    lines = []
-    total = 0
+    err_lines, warn_lines, err_total, warn_total = [], [], 0, 0
     for entry in summary:
         label = _LABELS.get(entry["category"], entry["category"])
         n = entry["count"]
-        lines.append(f"• {label}: {n}")
-        total += n
+        if entry["category"] in _WARN_CATEGORIES:
+            warn_lines.append(f"• {label}: {n}")
+            warn_total += n
+        else:
+            err_lines.append(f"• {label}: {n}")
+            err_total += n
     if size_warnings:
-        lines.append(f"• Logs ≥{MAX_FILE_MB}MB (no rotation): {', '.join(size_warnings)}")
-    if not lines:
+        err_lines.append(f"• Logs ≥{MAX_FILE_MB}MB (no rotation): {', '.join(size_warnings)}")
+    # Suppress the digest when nothing is breaking — only delivery warnings.
+    if not err_lines:
         return None
     date_str = datetime.date.today().isoformat()
-    body = "\n".join(lines)
-    return f"*Sensor Error Digest* ({date_str})\n\n{body}\n\nTotal: {total} issues\n_Reply /errors flush to clear_"
+    parts = ["⛔ *Errors:*", *err_lines]
+    if warn_lines:
+        parts += ["", "⚠️ _Warnings (delivery — non-breaking):_", *warn_lines]
+    body = "\n".join(parts)
+    tail = f"Total: {err_total} error(s)"
+    if warn_total:
+        tail += f" · {warn_total} warning(s)"
+    return f"*Sensor Error Digest* ({date_str})\n\n{body}\n\n{tail}\n_Reply /errors flush to clear_"
 
 
 def main():

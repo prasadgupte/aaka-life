@@ -103,7 +103,7 @@ from sensor.intent_registry import match_intent, dispatch_local as _dispatch_loc
 _INTENT_PATTERNS = []  # no longer the canonical source; see intent_registry.py
 
 # Intents the Sensor can fully resolve itself (no queue write needed)
-_LOCAL_INTENTS = {"today_schedule", "weekly_schedule", "health_check", "menu", "members_list", "list_tags", "tag_manage", "list_tasks", "snooze_task", "edit_task", "delete_task", "llm_call", "buy_list", "birthday_list", "read_note", "engage_report", "pdf_tool", "approve_sender", "deny_sender"}
+_LOCAL_INTENTS = {"today_schedule", "weekly_schedule", "health_check", "menu", "members_list", "list_tags", "tag_manage", "list_tasks", "snooze_task", "edit_task", "delete_task", "llm_call", "buy_list", "birthday_list", "read_note", "engage_report", "pdf_tool", "approve_sender", "deny_sender", "errors_report"}
 # Intents that need Executor involvement
 _QUEUE_INTENTS = {"add_event", "add_event_batch", "fix_event", "edit_event", "route_tags", "block_cal", "drop_file", "file_sync", "linkedin_post", "mail_fetch", "mail_view", "pw_manage", "confirm_approval", "keep_original"}
 
