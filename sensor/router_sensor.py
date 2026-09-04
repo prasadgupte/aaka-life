@@ -955,7 +955,7 @@ def _handle_mcp(message: str, sender_id: str) -> str:
         return ("🔎 *Introspection*\n"
                 "• `/mcp members` — roster · roles · bound handles\n"
                 "• `/mcp members invite <name>` — mint a code + link to onboard someone\n"
-                "• `/mcp members add <name>` — create a member (no code yet)\n"
+                "• `/mcp agents` — registered + dispatchable (`/ask`) agents\n"
                 "• `/mcp tools` — registered tools · enabled · schedule\n"
                 "• `/mcp bot` · `/mcp setup`\n"
                 "When an invited person messages, I greet them by name + today's gist.")
@@ -992,6 +992,33 @@ def _handle_mcp(message: str, sender_id: str) -> str:
             recog = "✅" if handles else "⚪️"
             htxt = " · ".join(handles) if handles else "_no handle — not recognized yet_"
             lines.append(f"{recog} *{m.get('name', mid)}* `{mid}`{admin} · {m.get('role') or '—'} · {src}\n   📡 {htxt}")
+        return "\n".join(lines)
+    if sub == "agents":
+        # Dispatchable via /ask (runs locally) + push-registered (send you messages).
+        try:
+            from gateway.dispatch import agents as _disp
+            disp = _disp()
+        except Exception:
+            disp = {}
+        push = []
+        try:
+            from aaka_queue.queue import _connect
+            push = _connect().execute(
+                "SELECT id, display_name FROM agent_registry ORDER BY id").fetchall()
+        except Exception:
+            pass
+        lines = ["🤖 *Agents*", "\n*Dispatchable* — `/ask <id> …` (runs locally):"]
+        for aid, d in sorted(disp.items()):
+            lines.append(f"  • `{aid}` → {d}")
+        if not disp:
+            lines.append("  (none)")
+        lines.append("\n*Push-registered* — can message you:")
+        for row in push:
+            aid, name = row[0], row[1]
+            lines.append(f"  • `{aid}` — {name}" + (" · 📨 dispatchable" if aid in disp else ""))
+        if not push:
+            lines.append("  (none)")
+        lines.append("\nMake one dispatchable: add `id: <dir>` to `config/agents.yaml`.")
         return "\n".join(lines)
     if sub == "tools":
         return _handle_tools("/tools", sender_id)
