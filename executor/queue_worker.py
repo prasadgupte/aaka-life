@@ -729,6 +729,46 @@ def _exec_tool_run(payload: dict) -> dict:
     return {"status": "done", "tool": name, "ok": res.get("ok")}
 
 
+def _exec_agent_dispatch(payload: dict) -> dict:
+    """Page an allowlisted local agent (headless Claude Code session) and deliver
+    its summary + any files it produced. Handed off from a sensor-side `/ask`.
+    Text + attachments are sent directly (egress) so they arrive in order."""
+    import os as _os
+    from gateway import dispatch, egress
+    channel_id = payload.get("channel_id", payload.get("sender", ""))
+    source = payload.get("source", "telegram")
+    agent = payload.get("agent", "")
+    res = dispatch.run_agent(agent, payload.get("request", ""),
+                             who=payload.get("who", "the user"))
+    text = (res.get("text") or res.get("error") or "(no response)").strip()
+    n = len(res.get("attachments") or [])
+    head = "📎" if n else ("⚠️" if not res.get("ok") else "✅")
+
+    def _send_text(t: str) -> None:
+        try:
+            egress.send(egress.text(recipient=channel_id, channel=source, content=t,
+                                    source="agent_dispatch",
+                                    reply_to=payload.get("message_id")))
+        except Exception:
+            from aaka_queue.queue import write_outbox
+            write_outbox(channel_id=channel_id, sender=payload.get("sender", ""),
+                         text=t, source=source,
+                         reply_to_message_id=payload.get("message_id"))
+
+    _send_text(REPLY_PREFIX + f"{head} *{agent}*:\n{text}")
+    if n and source == "telegram":
+        for p in res["attachments"]:
+            try:
+                egress.send(egress.document(recipient=channel_id, channel=source,
+                                            file_path=p, source="agent_dispatch"))
+            except Exception as e:
+                _send_text(REPLY_PREFIX + f"(couldn't attach {_os.path.basename(p)}: {e})")
+    elif n:
+        _send_text(REPLY_PREFIX + f"({n} file(s) ready — attachments are Telegram-only for now)")
+    return {"status": "done", "agent": agent, "ok": res.get("ok"),
+            "attachments": n, "cost": res.get("cost")}
+
+
 def _exec_agent_job(payload: dict) -> dict:
     """Dispatch an agent's scheduled job.
 
@@ -896,6 +936,7 @@ _DISPATCHERS = {
     "gmail_attachment_file": lambda p: _exec_gmail_attachment_file(p),
     "agent_job":             _exec_agent_job,
     "tool_run":              _exec_tool_run,
+    "agent_dispatch":        _exec_agent_dispatch,
     "confirm_approval": _exec_confirm_approval,
     "linkedin_post":  _exec_linkedin_post,
     "mail_fetch":     _exec_mail_fetch,

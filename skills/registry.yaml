@@ -149,6 +149,13 @@ skills:
     enabled: true
     requires_confirmation: false
     entrypoint: null
+  agent_dispatch:
+    intent: agent_dispatch
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null   # handled by _exec_agent_dispatch in queue_worker._DISPATCHERS
   fix_event:
     intent: fix_event
     type: native

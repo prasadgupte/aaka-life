@@ -908,6 +908,37 @@ def _handle_tools(message: str, sender_id: str, channel_id: str = "",
     return "\n".join(lines)
 
 
+def _handle_ask(message: str, sender_id: str, channel_id: str = "",
+                source: str = "", message_id: str = "") -> str:
+    """Admin-only: `/ask <agent> <request>` → page a local agent (headless Claude
+    Code session in its dir) and report back with any files it makes. Runs on the
+    executor (agent context + files live there), so hand off via the queue and ack
+    immediately — grounded agent runs take ~a minute. See gateway/dispatch.py."""
+    requester = aaka_config.member_by_sender(sender_id)
+    if not requester or not aaka_config.member_is_admin(requester.get("id", "")):
+        return "🔒 Only an admin can dispatch agents."
+    arg = re.sub(r"^/ask\b", "", message, flags=re.I).strip()
+    parts = arg.split(None, 1)
+    if len(parts) < 2:
+        try:
+            from gateway.dispatch import agents
+            known = ", ".join(sorted(agents()))
+        except Exception:
+            known = "fa"
+        return (f"Usage: `/ask <agent> <request>`\n"
+                f"e.g. `/ask fa the trip packing list, send me the file`\n"
+                f"Agents: {known}")
+    agent, request = parts[0], parts[1]
+    from aaka_queue.queue import write_item
+    write_item(intent="agent_dispatch", raw_message=message, sender=sender_id,
+               channel_id=channel_id or sender_id, source=source or "telegram",
+               payload={"agent": agent, "request": request,
+                        "who": requester.get("name", "the user"),
+                        "sender": sender_id, "channel_id": channel_id or sender_id,
+                        "source": source or "telegram", "message_id": message_id})
+    return f"⏳ Asking *{agent}* on the home machine — I'll report back (usually under a minute)."
+
+
 def _handle_mcp(message: str, sender_id: str) -> str:
     """Admin-only read-only introspection from chat — the same views the MCP
     read tools expose (members, tools, bot, setup). Chat is not an MCP client, so
@@ -2065,6 +2096,11 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
 
     if intent == "mcp_view":
         return _reply(_handle_mcp(message, sender_id),
+                      channel_id=channel_id, sender=sender_id,
+                      message_id=message_id, dry_run=dry_run, source=source)
+
+    if intent == "agent_dispatch":
+        return _reply(_handle_ask(message, sender_id, channel_id, source, message_id),
                       channel_id=channel_id, sender=sender_id,
                       message_id=message_id, dry_run=dry_run, source=source)
 
