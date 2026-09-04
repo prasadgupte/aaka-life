@@ -18,8 +18,22 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
+
+
+def _claude_bin() -> str:
+    """Resolve the claude CLI — launchd runs with a minimal PATH, so fall back to
+    common install locations before giving up."""
+    b = shutil.which("claude")
+    if b:
+        return b
+    for c in ("/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+              os.path.expanduser("~/.local/bin/claude")):
+        if os.path.exists(c):
+            return c
+    return "claude"
 
 # Allowlist: agent-id → working dir. Extend via $AAKA_CONFIG_DIR/config/agents.yaml
 # ({id: {dir: ...}} or {id: dir}). Only dirs listed here can be dispatched.
@@ -66,7 +80,7 @@ def run_agent(agent_id: str, request: str, who: str = "the user",
     outbox = f"/tmp/aaka_dispatch/{aid}"
     Path(outbox).mkdir(parents=True, exist_ok=True)
     guard = _GUARDRAIL.format(who=who, outbox=outbox)
-    cmd = ["claude", "-p", request, "--append-system-prompt", guard,
+    cmd = [_claude_bin(), "-p", request, "--append-system-prompt", guard,
            "--model", model, "--dangerously-skip-permissions", "--output-format", "json"]
     try:
         proc = subprocess.run(cmd, cwd=d, capture_output=True, text=True, timeout=timeout)
