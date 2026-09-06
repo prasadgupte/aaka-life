@@ -45,11 +45,15 @@ SCOPE_CAP = {
     "photoslibrary.readonly": ("read photos", False),
     "photospicker.mediaitems.readonly": ("read picked photos", False),
 }
+# VPS public host — read from env so the real hostname never lands in the public
+# repo. Set AAKA_VPS_PUBLIC_HOST in $AAKA_CONFIG_DIR/.env for the real value; the
+# committed default is a placeholder.
+VPS_PUBLIC_HOST = os.environ.get("AAKA_VPS_PUBLIC_HOST", "<your-vps-host>")
 # VPS Caddy-exposed routes (public HTTPS) — from the registry
 PUBLIC_ENDPOINTS = [
-    ("your-vps-host.example/play/*", "Playlist app", "TOTP 2FA"),
-    ("your-vps-host.example/auth/*", "TOTP auth service", "none"),
-    ("your-vps-host.example :18789 (internal)", "Aaka sensor", "OpenClaw-only / not public"),
+    (f"{VPS_PUBLIC_HOST}/play/*", "Playlist app", "TOTP 2FA"),
+    (f"{VPS_PUBLIC_HOST}/auth/*", "TOTP auth service", "none"),
+    (f"{VPS_PUBLIC_HOST} :18789 (internal)", "Aaka sensor", "OpenClaw-only / not public"),
 ]
 
 
