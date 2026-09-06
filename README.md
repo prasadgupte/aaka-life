@@ -1,6 +1,25 @@
-# Aaka
+<div align="center">
 
-**Local-first family calendar assistant on macOS, delivered over WhatsApp and Telegram.**
+<a href="https://aaka.life">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://aaka.life/brand/aaka-wordmark-dark.png">
+    <img alt="aaka.life" src="https://aaka.life/brand/aaka-wordmark.png" width="300">
+  </picture>
+</a>
+
+### An AI assistant for your family — private by design, no token-burn
+
+**Local-first family calendar assistant, delivered over WhatsApp &amp; Telegram.**
+
+[aaka.life](https://aaka.life) · [Install](#install) · [What it can do](#what-it-can-do) · [Architecture](#architecture-away--home)
+
+![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-7B68EE)
+![Local-first · no cloud](https://img.shields.io/badge/local--first-no%20cloud-00B4A2)
+![Platform: macOS](https://img.shields.io/badge/platform-macOS-1E2030)
+
+</div>
+
+---
 
 Aaka helps a small group — your household, your immediate family, or your team —
 share a calendar, agree on commitments, and stop losing things in chat. You text
@@ -21,26 +40,16 @@ Google Calendar and a local SQLite queue.
 
 Two processes, one repo:
 
-```
-   ┌──────────────────┐         ┌──────────────────────┐
-   │  Telegram / WA   │         │   Google Calendar    │
-   └────────┬─────────┘         └──────────▲───────────┘
-            │                              │
-            ▼                              │
-   ┌──────────────────┐   queue   ┌────────┴───────────┐
-   │  sensor (VPS)    │ ────────► │  executor (Mac)    │
-   │  &away           │  SQLite   │  &home             │
-   │  - no secrets    │           │  - OAuth tokens    │
-   │  - triage intent │           │  - calendar writes │
-   └──────────────────┘           └────────────────────┘
-```
+<div align="center">
+  <img alt="aaka architecture: an Away satellite on a ~$5/mo VPS receives messages and queues actions over SQLite; Home on your Mac holds the OAuth tokens and writes your calendar. The side-effect-free satellite can't read your data." src="https://aaka.life/brand/architecture.png" width="720">
+</div>
 
-- **&Away (sensor)** runs natively on your Mac (pure Python — no Docker), or on a
+- **Away (sensor)** runs natively on your Mac (pure Python — no Docker), or on a
   VPS in Docker when you want always-on. It receives messages, triages
   intent, and writes to a SQLite queue. No Google API calls, no personal
   credentials. Even if the VPS is compromised, your calendar isn't writable
   from it (token scopes are read-only).
-- **&Home (executor)** runs natively on your Mac. It polls the queue, performs
+- **Home (executor)** runs natively on your Mac. It polls the queue, performs
   side-effects (calendar writes, file moves), and sends replies. Holds the
   OAuth tokens; never exposed to the internet.
 - The split exists so the surface you put on the internet (chat) is separated
@@ -127,8 +136,8 @@ config.
 
 ```
 aaka-repo/
-├── sensor/               &Away — VPS-side: receive, triage, queue
-├── executor/             &Home — Mac-side: poll queue, execute, reply
+├── sensor/               Away — VPS-side: receive, triage, queue
+├── executor/             Home — Mac-side: poll queue, execute, reply
 ├── gateway/              channel-agnostic adapter (Telegram + WhatsApp via OpenClaw)
 │   └── agent_api.py      FastAPI agent pub/sub gateway (port 18790)
 ├── skills/               intent handlers (calendar, tasks, drop, notes, mail, ...)
