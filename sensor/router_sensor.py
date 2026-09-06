@@ -365,6 +365,16 @@ def _format_complete_task_preview(payload: dict) -> str:
 
 # ── Vault routing helpers ──────────────────────────────────────────────────────
 
+def _signal_linked_mode() -> bool:
+    """True when the Signal account is a LINKED device on the operator's own
+    account rather than a dedicated registered number (SIGNAL_LINKED_MODE=true).
+
+    Linking is the WhatsApp-style model: aaka has no account of its own, so it
+    both sees and replies as the operator. That makes silence on unmatched text
+    a safety property, not a UX choice — see the intent-is-None branch."""
+    return os.environ.get("SIGNAL_LINKED_MODE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _is_allowed_channel(sender_id: str, channel_id: str) -> bool:
     """
     Allow if sender is a known family member (DM) OR channel matches a known group.
@@ -2155,6 +2165,17 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
             pass
 
     if intent is None:
+        # Linked-device Signal: aaka shares the operator's OWN Signal account,
+        # so every personal conversation they have also lands here. Answering
+        # unmatched free text would make aaka interject — as the operator — in
+        # chats that have nothing to do with it ("Sorry, I didn't understand
+        # that" in the middle of a real conversation). In linked mode only
+        # explicit commands earn a reply; everything else is silent. Shortcuts
+        # (d/w/t/b…) are unaffected: they expand and match an intent earlier, so
+        # they never reach this branch.
+        if source == "signal" and _signal_linked_mode() and not message.lstrip().startswith("/"):
+            _log.info("signal linked-mode: silent on free text sender=%s", sender_id)
+            return ""
         # Feedback rule: an explicit command always earns a reply (silence on a
         # /command looks broken); free text is answered in a 1:1 DM but stays
         # silent in a group so aaka never spams "didn't understand" to chatter.

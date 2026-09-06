@@ -100,6 +100,7 @@ aaka-repo/                          ← repo root
 | `ENABLED_CHANNELS` | `telegram` | Comma list of channels to run: `telegram,whatsapp,slack,signal` |
 | `SIGNAL_CLI_URL` | `http://127.0.0.1:18794` | signal-cli JSON-RPC daemon base URL (an SSH tunnel is fine) |
 | `SIGNAL_ACCOUNT` | — | aaka's own Signal number (+E.164). Use a **dedicated** number, not a linked personal account |
+| `SIGNAL_LINKED_MODE` | `false` | `true` when aaka is a **linked device** on the operator's own Signal account rather than its own registered number. Linked mode answers `/commands` and shortcuts only and stays silent on free text, so aaka never interjects in their personal chats. Set by `admin/setup_signal.sh link`. |
 | `SIGNAL_GROUP_ID` | — | base64 groupId of the family Signal group (`listGroups`) — the Signal `WHATSAPP_GROUP_JID` |
 | `SIGNAL_ATTACHMENTS_DIR` | `~/.local/share/signal-cli/attachments` | Where signal-cli stores received attachments |
 | `SIGNAL_POLL_MODE` | `sse` | `sse` = stream `/api/v1/events`; `rpc` = poll the `receive` method |

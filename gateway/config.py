@@ -48,6 +48,15 @@ SIGNAL_CLI_URL: str = os.environ.get("SIGNAL_CLI_URL", "http://127.0.0.1:18794")
 # aaka's own Signal number (+E.164). Required for a multi-account daemon, and
 # used to build the signal.me invite link.
 SIGNAL_ACCOUNT: str = os.environ.get("SIGNAL_ACCOUNT", "")
+
+# Linked device vs dedicated number. True when aaka is a SECOND DEVICE on the
+# operator's own Signal account (admin/setup_signal.sh link) rather than its own
+# registered number. In that mode aaka sees the operator's entire Signal traffic
+# and replies as them, so the router stays silent on anything that is not an
+# explicit command — see router_sensor._signal_linked_mode().
+SIGNAL_LINKED_MODE: bool = os.environ.get("SIGNAL_LINKED_MODE", "").strip().lower() in (
+    "1", "true", "yes", "on"
+)
 # Optional base64 groupId of the family Signal group (see `listGroups`), the
 # Signal counterpart of WHATSAPP_GROUP_JID / TELEGRAM_GROUP_ID.
 SIGNAL_GROUP_ID: str = os.environ.get("SIGNAL_GROUP_ID", "")

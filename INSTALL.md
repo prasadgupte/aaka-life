@@ -210,6 +210,10 @@ Skip this phase if you don't need WhatsApp.
 
 Skip if you don't need Signal.
 
+> **Shortcut:** `bash admin/setup_signal.sh` does everything below — it asks
+> whether to link to your own account or register a dedicated number, renders
+> the QR, handles the captcha, and writes the `.env` keys.
+
 Signal needs **signal-cli** (a Java binary) plus a **dedicated phone number**.
 Register a number for aaka rather than linking aaka to your own Signal account:
 linking would make aaka *be* your account — it would see all your private

@@ -353,6 +353,65 @@ def test_subscribe_receive_wrapper_shape():
           p is not None and p.text == "wrapped")
 
 
+# ── Linked-device mode (SIGNAL_LINKED_MODE) ───────────────────────────────────
+#
+# Linking makes aaka a second device on the operator's OWN Signal account, so
+# their entire personal traffic arrives here. Unmatched free text must therefore
+# be met with silence, or aaka interjects (as them) in real conversations.
+#
+# These read router_sensor.py from disk rather than importing it: importing the
+# router loads the live config, which would make the test depend on the machine.
+
+_ROUTER_SRC = (Path(__file__).resolve().parent / "router_sensor.py").read_text()
+
+
+def _linked_mode_predicate():
+    """Compile just _signal_linked_mode() out of the router source."""
+    import ast as _ast
+    tree = _ast.parse(_ROUTER_SRC)
+    fn = next((n for n in tree.body
+               if isinstance(n, _ast.FunctionDef) and n.name == "_signal_linked_mode"), None)
+    if fn is None:
+        return None
+    ns = {"os": os}
+    exec(compile(_ast.Module(body=[fn], type_ignores=[]), "<router>", "exec"), ns)
+    return ns["_signal_linked_mode"]
+
+
+def test_linked_mode_env_parsing():
+    pred = _linked_mode_predicate()
+    check("router defines _signal_linked_mode()", pred is not None)
+    if pred is None:
+        return
+    prev = os.environ.get("SIGNAL_LINKED_MODE")
+    try:
+        for val in ("1", "true", "TRUE", "yes", "on"):
+            os.environ["SIGNAL_LINKED_MODE"] = val
+            check(f"linked mode ON for {val!r}", pred() is True)
+        for val in ("", "false", "0", "no", "off"):
+            os.environ["SIGNAL_LINKED_MODE"] = val
+            check(f"linked mode OFF for {val!r}", pred() is False)
+        os.environ.pop("SIGNAL_LINKED_MODE", None)
+        check("linked mode OFF when unset", pred() is False)
+    finally:
+        if prev is None:
+            os.environ.pop("SIGNAL_LINKED_MODE", None)
+        else:
+            os.environ["SIGNAL_LINKED_MODE"] = prev
+
+
+def test_linked_mode_guard_is_wired_into_the_fallback():
+    """The guard must sit in the intent-is-None branch, before the
+    'didn't understand' reply, and must apply only to the signal channel."""
+    idx_guard = _ROUTER_SRC.find('_signal_linked_mode() and not message.lstrip().startswith("/")')
+    idx_sorry = _ROUTER_SRC.find("Sorry, I didn't understand that")
+    check("guard present in router", idx_guard != -1)
+    check("guard precedes the free-text fallback",
+          idx_guard != -1 and idx_sorry != -1 and idx_guard < idx_sorry)
+    check("guard scoped to the signal channel",
+          'source == "signal" and _signal_linked_mode()' in _ROUTER_SRC)
+
+
 def main():
     test_dm_routes_with_signal_channel()
     test_group_message()
@@ -367,6 +426,8 @@ def main():
     test_pdf_command_is_intercepted()
     test_sse_parsing_against_a_mock_daemon()
     test_subscribe_receive_wrapper_shape()
+    test_linked_mode_env_parsing()
+    test_linked_mode_guard_is_wired_into_the_fallback()
     print()
     if _FAILURES:
         print(f"FAILED: {len(_FAILURES)} check(s)")

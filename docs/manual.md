@@ -550,7 +550,19 @@ show up as its own contact in the family chat, which is how the bot is supposed
 to work. `signal-cli link -n aaka` (scan the QR from Signal → Linked Devices) is
 a fine five-minute test; it is not a way to run this.
 
-Setup, in short — the full version is `INSTALL.md → Phase 5b`:
+**One command does the whole thing:**
+
+```bash
+bash admin/setup_signal.sh
+```
+
+It asks which model you want, runs the link or the registration (rendering the
+QR, walking you through the captcha), writes the `.env` keys, and tells you what
+to run next. Choosing `link` also sets `SIGNAL_LINKED_MODE=true`, which keeps
+aaka silent on anything that is not an explicit command — necessary, because on
+a linked device your private conversations arrive here too.
+
+The manual equivalent — the full version is `INSTALL.md → Phase 5b`:
 
 ```bash
 brew install signal-cli                       # Mac; VPS: apt install openjdk-21-jre-headless
