@@ -16,6 +16,19 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Pull WA_INBOUND_SECRET (and anything else) from the repo .env, without
+# clobbering values already in the environment. Both ends of /inbound must
+# agree on the secret or every forwarded message 401s.
+REPO_ENV="$(dirname "$HERE")/.env"
+if [ -f "$REPO_ENV" ]; then
+  while IFS='=' read -r _k _v; do
+    case "$_k" in ''|\#*) continue ;; esac
+    _v="${_v%\"}"; _v="${_v#\"}"
+    if [ -z "$(eval "echo \${$_k:-}")" ]; then export "$_k=$_v"; fi
+  done < "$REPO_ENV"
+fi
+
 export AAKA_CONFIG_DIR="${AAKA_CONFIG_DIR:-/Users/Shared/aaka-repo-config}"
 export WA_AUTH_DIR="${WA_AUTH_DIR:-$AAKA_CONFIG_DIR/whatsapp-auth}"
 export WA_SIDECAR_PORT="${WA_SIDECAR_PORT:-18792}"

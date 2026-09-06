@@ -53,3 +53,5 @@ docs/plan.md
 features/
 BACKLOG.md
 INSIGHTS.md
+# Claude Code session state + agent worktrees (never product code)
+.claude/

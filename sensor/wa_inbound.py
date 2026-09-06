@@ -28,6 +28,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+# Native runs get their config from <repo>/.env (launchd/uvicorn source nothing).
+# Without this, WA_INBOUND_SECRET set in .env would be invisible here while the
+# sidecar picked it up, and every inbound POST would 401. Existing env wins.
+try:
+    from tools.load_env import load_env  # noqa: E402
+
+    load_env(REPO_ROOT)
+except Exception:
+    pass
+
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.responses import JSONResponse, Response  # noqa: E402
 

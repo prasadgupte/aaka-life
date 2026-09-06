@@ -278,6 +278,10 @@ SSHBLOCK
                 ( cd "$REPO_DIR/wa-sidecar" && npm install >/dev/null 2>&1 ) \
                     && ok "wa-sidecar deps installed" || warn "npm install failed in wa-sidecar — install manually"
             fi
+            # Shared secret for POST /inbound — both plists must carry the SAME
+            # value or the sidecar's forwards 401. Read from the canonical .env;
+            # empty is valid and keeps the old no-auth localhost behaviour.
+            _WA_SECRET="$(grep -E '^WA_INBOUND_SECRET=' "$REPO_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\042\047 ')"
             for wa in wasidecar wasidecar_receiver; do
                 WA_SRC="$REPO_DIR/executor/com.aaka.$wa.plist"
                 WA_DST="$HOME/Library/LaunchAgents/com.aaka.$wa.plist"
@@ -286,6 +290,7 @@ SSHBLOCK
                         -e "s|\${AAKA_CONFIG_DIR}|$AAKA_CONFIG_DIR|g" \
                         -e "s|\${NODE_BIN}|$NODE_BIN|g" \
                         -e "s|\${PYTHON_BIN}|$PYTHON_BIN|g" \
+                        -e "s|\${WA_INBOUND_SECRET}|$_WA_SECRET|g" \
                         "$WA_SRC" > "$WA_DST"
                     launchctl unload "$WA_DST" 2>/dev/null || true
                     launchctl load "$WA_DST"

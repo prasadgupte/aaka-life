@@ -23,6 +23,12 @@ sys.path.insert(0, str(REPO_ROOT))
 _TMP_CONFIG = Path(tempfile.mkdtemp(prefix="aaka-wa-inbound-test-"))
 (_TMP_CONFIG / "logs").mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("AAKA_CONFIG_DIR", str(_TMP_CONFIG))
+# The receiver loads <repo>/.env at import (the uvicorn plist is its production
+# entry point, so it cannot defer that to main()). Pin the auth variable BEFORE
+# importing it: load_env never overwrites a key that is already set, so this
+# keeps the default state "no secret" no matter what the operator's .env holds.
+# Tests that exercise the gate patch it explicitly.
+os.environ["WA_INBOUND_SECRET"] = ""
 
 from starlette.testclient import TestClient  # noqa: E402
 

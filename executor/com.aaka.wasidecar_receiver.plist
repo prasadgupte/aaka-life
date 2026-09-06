@@ -26,6 +26,8 @@
 
   <key>EnvironmentVariables</key>
   <dict>
+    <key>WA_INBOUND_SECRET</key>
+    <string>${WA_INBOUND_SECRET}</string>
     <key>AAKA_CONFIG_DIR</key>
     <string>${AAKA_CONFIG_DIR}</string>
     <key>AAKA_BASE</key>
