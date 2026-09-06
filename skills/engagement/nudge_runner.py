@@ -32,6 +32,20 @@ log = logging.getLogger("nudge_runner")
 
 import aaka_config
 
+# Order in which we reach a member when several handles are configured. The
+# outbox `source` we write is the channel name, so sensor/flush_outbox.py picks
+# the matching egress adapter.
+_CHANNEL_PREFERENCE = ("telegram", "whatsapp", "signal")
+
+
+def _preferred_channel(member: dict) -> "tuple[str, str]":
+    """(handle, channel) for the first channel this member is reachable on."""
+    for channel in _CHANNEL_PREFERENCE:
+        handle = aaka_config.member_handle(member or {}, channel)
+        if handle:
+            return handle, channel
+    return "", _CHANNEL_PREFERENCE[0]
+
 
 def _send_to_member(member_id: str, text: str, dry_run: bool = False) -> bool:
     """Send message to a member via their preferred channel."""
@@ -40,9 +54,7 @@ def _send_to_member(member_id: str, text: str, dry_run: bool = False) -> bool:
         log.warning("unknown member: %s", member_id)
         return False
 
-    # Prefer Telegram, then WhatsApp
-    target = m_obj.get("telegram") or m_obj.get("whatsapp") or ""
-    channel = "telegram" if m_obj.get("telegram") else "whatsapp"
+    target, channel = _preferred_channel(m_obj)
 
     if not target:
         log.warning("no channel for member %s", member_id)
@@ -139,8 +151,7 @@ def run_for_member(member_id: str, dry_run: bool = False) -> None:
             None,
         )
         if owner:
-            target = owner.get("telegram") or owner.get("whatsapp") or ""
-            channel = "telegram" if owner.get("telegram") else "whatsapp"
+            target, channel = _preferred_channel(owner)
             if dry_run:
                 log.info("[DRY-RUN] admin_alert → %s: %s", owner.get("id"), text)
                 sent = True

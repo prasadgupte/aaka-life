@@ -424,8 +424,29 @@ def target_calendar_id(sender_member_id: str, calendar_tag: str = "") -> str:
     return calendar_id()
 
 
+# Per-channel member fields. Each channel accepts more than one spelling because
+# the setup wizard, aaka.yaml.example and the older hand-written configs disagree
+# (e.g. the sample writes `whatsapp_phone` while the code always read `whatsapp`).
+# First non-empty wins; every listed alias is matched by member_by_sender().
+CHANNEL_FIELDS: dict = {
+    "telegram": ("telegram_id", "telegram"),
+    "whatsapp": ("whatsapp", "whatsapp_phone"),
+    "signal":   ("signal", "signal_number"),
+}
+
+
+def member_handle(member: dict, channel: str) -> str:
+    """The handle a member is reachable at on `channel` ("" when none)."""
+    for field in CHANNEL_FIELDS.get(channel, ()):
+        val = member.get(field)
+        if val not in (None, ""):
+            return str(val).strip()
+    return ""
+
+
 def member_by_sender(sender: str) -> dict | None:
-    """Resolve E.164 phone, WhatsApp JID, email, or Telegram ID → member dict. Returns None if unrecognised."""
+    """Resolve E.164 phone, WhatsApp JID, Signal number/uuid, email, or Telegram
+    ID → member dict. Returns None if unrecognised."""
     if not sender:
         return None
     s = sender.strip().lower()
@@ -436,15 +457,12 @@ def member_by_sender(sender: str) -> dict | None:
     elif s.endswith("@lid"):
         _wa_norm = s  # device-linked JID — no E.164 equivalent
     for m in members():
-        wa = (m.get("whatsapp") or "").strip().lower()
-        if wa and (s == wa or _wa_norm == wa):
-            return m
+        for channel in CHANNEL_FIELDS:
+            # str() so an unquoted YAML int still matches a string ID.
+            handle = str(member_handle(m, channel)).strip().lower()
+            if handle and (s == handle or _wa_norm == handle):
+                return m
         if s == (m.get("email") or "").strip().lower():
-            return m
-        # Accept both field names: `telegram_id` (what setup writes) and `telegram`
-        # (legacy/samples). str() so an unquoted YAML int still matches a string ID.
-        tg = m.get("telegram_id") or m.get("telegram") or ""
-        if s == str(tg).strip().lower():
             return m
     # Dynamic allowlist (populated by the /invite onboarding flow) — maps a
     # WhatsApp handle (@lid or +E.164) → member id, without editing aaka.yaml.
