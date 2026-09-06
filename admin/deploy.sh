@@ -399,7 +399,17 @@ SSHBLOCK
                     warn "WhatsApp plist not found: $WA_SRC"
                 fi
             done
-            info "WhatsApp always-on: sidecar :18792 + receiver :18793. Pair once at http://127.0.0.1:18792/"
+            # Open the sidecar's pairing page rather than printing a URL and
+            # hoping. Its QR rotates, so the page is the reliable way to pair.
+            WA_PAIR_URL="http://127.0.0.1:${WA_SIDECAR_PORT:-18792}/"
+            info "WhatsApp always-on: sidecar :18792 + receiver :18793."
+            if [ -z "${AAKA_NO_BROWSER:-}" ] && command -v open &>/dev/null; then
+                # Give launchd a moment to actually bring the sidecar up first.
+                ( sleep 3; open "$WA_PAIR_URL" >/dev/null 2>&1 ) &
+                info "Opening the pairing page: $WA_PAIR_URL"
+            else
+                info "Pair once at $WA_PAIR_URL"
+            fi
         fi
     else
         info "WhatsApp not in ENABLED_CHANNELS — skipping sidecar services (Telegram-only install)."

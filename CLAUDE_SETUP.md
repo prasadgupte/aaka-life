@@ -346,8 +346,10 @@ every private conversation they have, and it can't appear as a separate contact
 in the family chat, which is the whole model. Linking is fine for a five-minute
 test (`signal-cli link -n aaka` prints a QR); it is not how to run this.
 
-**Use `bash admin/setup_signal.sh`.** It prompts for link-vs-register, renders
-the QR, handles the captcha, and writes `.env`. Drive it for the user rather
+**Use `bash admin/setup_signal.sh`.** It prompts for link-vs-register, opens a
+browser pairing page (`admin/signal_pair.py`, port 18795, loopback) whose code
+refreshes itself so the user cannot miss the window, handles the captcha for the
+register path, and writes `.env`. Drive it for the user rather
 than reproducing its steps by hand; only fall back to raw signal-cli if it fails.
 
 **You install; the user only does what needs a human.** Exactly two steps

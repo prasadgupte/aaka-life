@@ -2882,6 +2882,9 @@ check "wa_onboard: invite mint → signup binds handle → recognized (one-time)
 # ── Signal channel (signal-cli JSON-RPC daemon) ───────────────────────────────
 header "Signal — outbound adapter (mock signal-cli daemon)"
 check "signal channel: send/reaction/options/split against a mock JSON-RPC daemon" \
+
+check "signal pairing page: endpoints, loopback bind, QR data URI" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' admin/test_signal_pair.py"
     bash -c "cd '$REPO_DIR' && '$PYTHON' gateway/channels/signal_cli_test.py"
 
 header "Signal — inbound poller (mock SSE stream)"

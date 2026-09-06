@@ -41,8 +41,9 @@ set_env() {
   ok "$k set in $(basename "$ENV_FILE")"
 }
 
-# Render a link URI as a QR: a PNG to scan from the phone, plus an ASCII copy
-# for people working over SSH with no way to open an image.
+# Fallback QR renderer. The link path uses admin/signal_pair.py (a browser page
+# that refreshes the code and shows live status); this stays for headless hosts
+# where no browser can be opened — call it with a URI to print a scannable code.
 show_qr() {
   local uri="$1" png="${2:-/tmp/aaka-signal-link.png}"
   "$PY" - "$uri" "$png" <<'PYQR' 2>/dev/null || { echo; echo "  Link URI (paste into a QR generator):"; echo "  $uri"; return 0; }
@@ -87,28 +88,21 @@ fi
 case "$MODE" in
 link)
   header "Linking aaka to your Signal account"
-  info "A QR code will appear. On your phone: Signal → Settings →"
-  info "Linked Devices → Link New Device → scan it."
+  # Browser page rather than a terminal QR: Signal's link code expires after a
+  # couple of minutes, and a page that mints a fresh one (and shows live status)
+  # removes the race the terminal flow puts on the user. Same shape as the
+  # WhatsApp sidecar's pairing page.
+  PAIR_PORT="${SIGNAL_PAIR_PORT:-18795}"
+  info "Opening the pairing page at http://127.0.0.1:$PAIR_PORT/ …"
+  info "Scan it from Signal → Settings → Linked Devices → +"
   echo
-  LINK_OUT="$(mktemp)"
-  signal-cli link -n "aaka" > "$LINK_OUT" 2>&1 &
-  LINK_PID=$!
-  # The URI is the first line; it appears within a second or two.
-  for _ in $(seq 1 20); do
-    URI="$(head -1 "$LINK_OUT" 2>/dev/null || true)"
-    [ -n "${URI:-}" ] && break
-    sleep 1
-  done
-  if [ -z "${URI:-}" ]; then
-    fail "signal-cli produced no link URI"; kill "$LINK_PID" 2>/dev/null || true; exit 1
+  if "$PY" "$HERE/signal_pair.py" --port "$PAIR_PORT" --name aaka; then
+    ACCOUNT="$(signal-cli listAccounts 2>/dev/null | grep -oE '\+[0-9]+' | head -1 || true)"
+    [ -n "$ACCOUNT" ] && ok "linked to $ACCOUNT" || warn "linked, but could not read the account number"
+  else
+    fail "Linking did not complete."
+    exit 1
   fi
-  show_qr "$URI"
-  echo
-  info "Waiting for you to scan (Ctrl-C to abort)…"
-  wait "$LINK_PID" || { fail "Linking failed:"; cat "$LINK_OUT" >&2; exit 1; }
-  cat "$LINK_OUT"
-  ACCOUNT="$(signal-cli listAccounts 2>/dev/null | grep -oE '\+[0-9]+' | head -1 || true)"
-  [ -n "$ACCOUNT" ] && ok "linked to $ACCOUNT" || warn "linked, but could not read the account number"
   # Linked mode is a safety switch, not a preference: aaka shares the operator's
   # account, so it must stay silent on anything that is not an explicit command.
   set_env SIGNAL_LINKED_MODE "true"

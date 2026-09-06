@@ -556,9 +556,12 @@ a fine five-minute test; it is not a way to run this.
 bash admin/setup_signal.sh
 ```
 
-It asks which model you want, runs the link or the registration (rendering the
-QR, walking you through the captcha), writes the `.env` keys, and tells you what
-to run next. Choosing `link` also sets `SIGNAL_LINKED_MODE=true`, which keeps
+It asks which model you want, then **opens a pairing page in your browser** —
+the same idea as the WhatsApp sidecar's page. Signal's link code expires after a
+couple of minutes, so the page mints a fresh one whenever it lapses and shows
+live status; there is no race to scan in time. For registration it walks you
+through the captcha instead. Either way it writes the `.env` keys and tells you
+what to run next. Choosing `link` also sets `SIGNAL_LINKED_MODE=true`, which keeps
 aaka silent on anything that is not an explicit command — necessary, because on
 a linked device your private conversations arrive here too.
 
