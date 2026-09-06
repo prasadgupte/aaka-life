@@ -441,6 +441,14 @@ def set_tool_enabled(name: str, enabled: bool) -> dict:
 
 
 @mcp.tool()
+def remove_tool(name: str) -> dict:
+    """Unregister a tool (poller/watchdog) — removes it from the manifest so it
+    no longer runs or schedules. The clean counterpart to register_tool."""
+    from sensor import tool_runner
+    return {"ok": tool_runner.remove(name), "removed": name}
+
+
+@mcp.tool()
 def tool_logs(name: str, n: int = 10) -> dict:
     """Recent run records for a tool (start ts, ok, error, summary, ms)."""
     from sensor import tool_runner
