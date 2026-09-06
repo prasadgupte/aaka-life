@@ -15,7 +15,9 @@ Out of scope: denial-of-service against a personal instance, issues in third-par
 
 ## Reporting a vulnerability
 
-Email: **prasadgupte@gmail.com** with subject `[aaka security]`.
+Please report privately via GitHub's **Private Vulnerability Reporting**: open the
+**Security** tab of this repository → **"Report a vulnerability"**. Your report stays
+confidential until a fix is released.
 
 Please include:
 1. What the vulnerability is
