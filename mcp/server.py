@@ -298,8 +298,11 @@ def exposure_report() -> dict:
     capability (calendar write, gmail send, …), and the secrets/scraping-cred
     inventory (names only). Read-only. Complements security_check()."""
     import subprocess, json
+    script = REPO / "admin" / "exposure_report.py"
+    if not script.exists():
+        return {"error": "exposure_report.py is a local-only ops tool, not bundled with aaka."}
     result = subprocess.run(
-        [sys.executable, str(REPO / "admin" / "exposure_report.py"), "--json"],
+        [sys.executable, str(script), "--json"],
         capture_output=True, text=True,
         env={**os.environ, "AAKA_BASE": str(REPO)},
     )

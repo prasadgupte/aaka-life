@@ -44,3 +44,12 @@ docs/260421_vps_hardening.md
 docs/archive/
 # Personal pre-commit block patterns (never commit)
 .githooks/patterns.local
+
+# Local-only: ops tooling + internal strategy — never ship in the product repo
+admin/exposure_report.py
+docs/internal/
+docs/gtm/
+docs/plan.md
+features/
+BACKLOG.md
+INSIGHTS.md

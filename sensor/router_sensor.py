@@ -1073,10 +1073,15 @@ def _handle_security(message: str, sender_id: str) -> str:
                 "• `/security surface` — exposure map: ports · endpoints · token powers · secrets\n"
                 "Both are read-only. Run before deploying.")
     script = "exposure_report.py" if arg in ("surface", "exposure", "risks", "map", "ports") else "security_check.py"
+    script_path = BASE / "admin" / script
+    if not script_path.exists():
+        # exposure_report.py is a local-only ops tool (not shipped in the repo).
+        return (f"ℹ️ `{script}` isn't part of this install — it's a local ops tool, "
+                "not bundled with aaka. Run it from your own copy if you keep one.")
     import subprocess
     try:
         r = subprocess.run(
-            [sys.executable, str(BASE / "admin" / script)],
+            [sys.executable, str(script_path)],
             capture_output=True, text=True, timeout=30,
             env={**os.environ, "AAKA_BASE": str(BASE)},
         )

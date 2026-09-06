@@ -9,7 +9,7 @@ live in the CLI, and a place the setup flow can point to. Reinforces "your infra
 |---|---|---|
 | **Console** (try commands) | `executor/webui/` — real `channel="web"` chat, SSE stream, uploads | Reskin to the aaka brand + make it *look like* the aaka.life widget (suggested commands, tap-to-send, streamed replies) |
 | **Tasks** | `taskboard/` — existing board + API | Reskin to brand; embed as a tab |
-| **Status & logs** | NEW (small) | `setup_check --json` as a **capability board** (ties to onboarding-redesign) + tails of `telegram_poller` / queue logs. Read-only. |
+| **Status & logs** | NEW (small) | `setup_check --json` as a **capability board** (the setup "what's working / what's next" view) + tails of `telegram_poller` / queue logs. Read-only. |
 | **Design system** | `aaka-site/brand/` (tokens/components/global CSS) | Vendor into `webui/brand/` as the single shared source — CSS-only, no build step |
 
 ## Architecture
@@ -33,5 +33,5 @@ Multi-user, remote access, auth, WhatsApp pairing UI, write-actions in Status.
 
 ## Ties to other threads
 - The **Console** is the real version of the aaka.life demo widget.
-- The **Status capability board** is exactly the onboarding-redesign "what's on / what's next" board —
+- The **Status capability board** is exactly the setup "what's on / what's next" board —
   so Claude *and* the user see the same live status. One build serves both.
