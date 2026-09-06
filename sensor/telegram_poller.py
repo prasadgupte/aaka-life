@@ -37,6 +37,8 @@ try:
     load_env(BASE)
 except Exception:
     pass
+from sensor import pdf_command  # noqa: E402  (after sys.path setup above)
+
 CONFIG_DIR = Path(os.environ.get("AAKA_CONFIG_DIR", "/config"))
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 # Multi-bot: one poller process per bot, each with its own AAKA_BOT_ID + token.
@@ -52,17 +54,10 @@ _OUR_OFFSET_FILE = CONFIG_DIR / "data" / _OFFSET_NAME
 
 POLL_TIMEOUT = 30  # seconds for Telegram long-poll
 
-# ── PDF merge staging ──────────────────────────────────────────────────────────
-# Maps chat_id → list of {"path": str, "filename": str, "ts": float}
-# Populated whenever a PDF/image is downloaded. `/pdf merge` consumes and clears it.
-_pdf_merge_stage: dict = {}
-_PDF_STAGE_TTL = 600  # seconds (10 min) before staged files expire
-
-_PDF_MIME_TYPES = {
-    "application/pdf", "image/jpeg", "image/png", "image/gif",
-    "image/webp", "image/bmp", "image/tiff", "image/heic", "image/heif",
-}
-_PDF_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif", ".webp", ".heic", ".heif"}
+# ── PDF commands ───────────────────────────────────────────────────────────────
+# The /pdf handler is channel-agnostic and lives in sensor/pdf_command.py so the
+# Telegram and Signal pollers share one implementation. It is wired up below,
+# after _send_reply/_send_document are defined.
 
 
 # ── Telegram API helpers ────────────────────────────────────────────────────────
@@ -295,278 +290,25 @@ def _extract_media(msg: dict) -> "tuple[str, str, str] | None":
 
 # ── PDF command handler ────────────────────────────────────────────────────────
 
+_PDF = pdf_command.PdfCommands(
+    channel="telegram",
+    media_dir=_MEDIA_DIR,
+    send_reply=_send_reply,
+    send_document=_send_document,
+    log=_log,
+)
+
+
 def _stage_for_pdf_merge(chat_id: str, media_path: str, filename: str,
                          mime_type: str) -> None:
     """Record a downloaded file in the per-chat PDF merge stage."""
-    ext = Path(filename).suffix.lower()
-    is_pdf = mime_type == "application/pdf" or ext == ".pdf"
-    is_img = mime_type in _PDF_MIME_TYPES or ext in _PDF_IMAGE_EXTS
-    if not (is_pdf or is_img):
-        return
-    now = time.time()
-    # Expire old entries first
-    _pdf_merge_stage[chat_id] = [
-        e for e in _pdf_merge_stage.get(chat_id, [])
-        if now - e["ts"] < _PDF_STAGE_TTL
-    ]
-    _pdf_merge_stage[chat_id].append({"path": media_path, "filename": filename, "ts": now})
-    _log.info("pdf_stage chat=%s staged %s (%d total)", chat_id, filename,
-              len(_pdf_merge_stage[chat_id]))
-
-
-def _pdf_drop_file(result_path: str, tags: list, sender_id: str,
-                   chat_id: str, message_id: int) -> str:
-    """Stage a PDF result file and queue it as drop_file for vault routing.
-
-    Returns a confirmation string like '📎 Saved → result.pdf #receipts'.
-    """
-    import uuid as _uuid
-    import json as _json
-    import shutil as _shutil
-    sys.path.insert(0, str(BASE))
-    from aaka_queue.queue import write_item, update_status
-    from tools.file_utils import sanitize_filename
-
-    config_dir = CONFIG_DIR
-    staging_id = _uuid.uuid4().hex[:12]
-    staging_dir = config_dir / "data" / "staging" / staging_id
-    staging_dir.mkdir(parents=True, exist_ok=True)
-
-    filename = Path(result_path).name
-    safe_name = sanitize_filename(filename)
-    dest = staging_dir / safe_name
-    _shutil.copy2(result_path, str(dest))
-
-    # Resolve namespace from sender (mirrors router_sensor logic)
-    try:
-        import aaka_config as _cfg
-        member = _cfg.member_by_sender(sender_id)
-        namespace = member["id"] if member else "user"
-    except Exception:
-        namespace = "user"
-
-    payload = {
-        "tags": tags,
-        "media_staging_path": f"staging/{staging_id}/{safe_name}",
-        "mime_type": "application/pdf",
-        "original_filename": filename,
-        "file_size_bytes": dest.stat().st_size,
-        "caption": " ".join(f"#{t}" for t in tags),
-        "namespace": namespace,
-        "message_id": str(message_id),
-        "source": "telegram",
-    }
-    item_id = write_item(
-        intent="drop_file", raw_message="pdf save",
-        sender=sender_id, channel_id=chat_id,
-        source="telegram", payload=payload,
-    )
-    update_status(item_id, "confirmed")
-
-    tag_str = " ".join(f"#{t}" for t in tags) if tags else ""
-    return f"📎 Saved → {safe_name} {tag_str} `#{item_id[:8]}`"
+    _PDF.stage(chat_id, media_path, filename, mime_type)
 
 
 def _handle_pdf_command(chat_id: str, message_id: int, text: str,
                         media_path: "str | None", media_filename: str = "") -> bool:
-    """Handle /pdf (and p shortcut) commands.
-
-    Returns True if the command was handled (caller should skip router dispatch).
-    Returns False if this is not a PDF command.
-    """
-    import re as _re
-
-    # Normalise: expand single-letter alias "p " → "/pdf "
-    t = text.strip()
-    if _re.match(r"^p\s", t, _re.IGNORECASE):
-        t = "/pdf " + t[2:].strip()
-
-    if not _re.match(r"^/pdf\b", t, _re.IGNORECASE):
-        return False
-
-    # Parse command and optional argument
-    # /pdf [command] [args...]
-    parts = t.split(None, 2)  # ["/pdf", command?, args?]
-    command = parts[1].lower() if len(parts) > 1 else "help"
-    args = parts[2].strip() if len(parts) > 2 else ""
-
-    import re as _re2
-
-    # Parse save flag and optional tags: "save" or "save #receipts #work"
-    _save_match = _re2.search(r'\bsave(?:\s+((?:#\w+\s*)+))?\b', args, _re2.I)
-    save_mode = bool(_save_match)
-    save_tags = []
-    if _save_match and _save_match.group(1):
-        save_tags = [t.lstrip("#") for t in _save_match.group(1).split()]
-    # Strip save clause from args so spec parsers don't see it
-    args_clean = _re2.sub(r'\bsave(?:\s+(?:#\w+\s*)+)?\b', '', args, flags=_re2.I).strip()
-
-    # Detect trailing `ocr` chain keyword: runs OCR on every PDF the primary
-    # command would deliver. Strip from args so subcommand parsers don't see it.
-    ocr_chain = bool(_re2.search(r'\bocr\b', args_clean, _re2.I))
-    if ocr_chain:
-        args_clean = _re2.sub(r'\bocr\b', '', args_clean, flags=_re2.I).strip()
-
-    _log.info("pdf_cmd chat=%s cmd=%r args=%r save=%s tags=%s ocr=%s media=%s",
-              chat_id, command, args_clean, save_mode, save_tags, ocr_chain, media_path)
-
-    def _deliver(file_path: str, caption: str, tags: list = None) -> None:
-        """Send file back to Telegram OR stage it for vault via /drop.
-        If `ocr` was requested AND the file is a PDF, runs OCR after delivery
-        and sends the resulting .txt as a follow-up document.
-        """
-        if save_mode:
-            t = tags or save_tags or []
-            msg = _pdf_drop_file(file_path, t, sender_id=chat_id,
-                                 chat_id=chat_id, message_id=message_id)
-            _send_reply(chat_id, msg, reply_to=message_id)
-        else:
-            _send_document(chat_id, file_path, caption=caption, reply_to=message_id)
-
-        if ocr_chain and file_path.lower().endswith(".pdf"):
-            try:
-                r = _pdf_ocr(file_path)
-                _send_document(chat_id, r["text_file"],
-                               caption=f"OCR: {r['ocr_pages']}/{r['pages']} pages, "
-                                       f"{r['chars']} chars",
-                               reply_to=message_id)
-            except Exception as e:
-                _send_reply(chat_id, f"⚠️ OCR failed: {e}", reply_to=message_id)
-
-    try:
-        sys.path.insert(0, str(BASE))
-        from tools.pdf_tool import (
-            compress, extract, split, merge, delete_pages, delete_blank_pages,
-            ocr as _pdf_ocr, help_text,
-        )
-
-        _pdf_out = _MEDIA_DIR / "pdf_output"
-        _pdf_out.mkdir(parents=True, exist_ok=True)
-
-        def _require_media() -> str:
-            if not media_path or not Path(media_path).exists():
-                raise ValueError("Please attach a PDF file to use this command.")
-            return media_path
-
-        if command == "help":
-            _send_reply(chat_id, help_text(), reply_to=message_id)
-
-        elif command == "compress":
-            src = _require_media()
-            stem = Path(src).stem
-            out = str(_pdf_out / f"{stem}_compressed.pdf")
-            q_match = _re2.search(r'\bq(?:uality)?=(\d+)\b', args_clean, _re2.I)
-            d_match = _re2.search(r'\bdpi=(\d+)\b', args_clean, _re2.I)
-            kw = {}
-            if q_match:
-                kw["quality"] = max(1, min(95, int(q_match.group(1))))
-            if d_match:
-                kw["dpi"] = int(d_match.group(1))
-            r = compress(src, out, **kw)
-            imgs = f", {r['images_processed']} images" if r['images_processed'] else ""
-            _deliver(r["output"],
-                     f"Compressed: {r['original_kb']} KB → {r['compressed_kb']} KB{imgs}")
-
-        elif command == "extract":
-            src = _require_media()
-            r = extract(src, str(_pdf_out))
-            _deliver(r["text_file"], f"Extracted {r['pages']} pages")
-
-        elif command == "ocr":
-            src = _require_media()
-            stem = Path(src).stem
-            out = str(_pdf_out / f"{stem}_text.txt")
-            # Allow `p ocr lang=eng+deu` (rare)
-            lang_match = _re2.search(r'\blang(?:uage)?=([\w+]+)', args_clean, _re2.I)
-            language = lang_match.group(1) if lang_match else "eng"
-            r = _pdf_ocr(src, out, language=language)
-            _deliver(r["text_file"],
-                     f"OCR: {r['ocr_pages']}/{r['pages']} pages, {r['chars']} chars")
-
-        elif command == "split":
-            if not args_clean:
-                raise ValueError("Usage: /pdf split <spec>  e.g. /pdf split 2s or /pdf split 1,5,9")
-            src = _require_media()
-            r = split(src, args_clean, str(_pdf_out))
-            if save_mode:
-                for path in r["outputs"]:
-                    _pdf_drop_file(path, save_tags, sender_id=chat_id,
-                                   chat_id=chat_id, message_id=message_id)
-                _send_reply(chat_id,
-                    f"📎 Saved {r['count']} parts to vault.",
-                    reply_to=message_id)
-            else:
-                _send_reply(chat_id, f"Split into {r['count']} files — sending…",
-                            reply_to=message_id)
-                for path in r["outputs"]:
-                    _send_document(chat_id, path)
-
-        elif command == "merge":
-            now = time.time()
-            entries = [
-                e for e in _pdf_merge_stage.get(chat_id, [])
-                if now - e["ts"] < _PDF_STAGE_TTL and Path(e["path"]).exists()
-            ]
-            if not entries:
-                _send_reply(chat_id,
-                    "No files staged for merge.\n"
-                    "Send your PDFs/images first, then /pdf merge.",
-                    reply_to=message_id)
-            else:
-                paths = [e["path"] for e in entries]
-                stem = Path(paths[0]).stem
-                out = str(_pdf_out / f"{stem}_merged.pdf")
-                r = merge(paths, out)
-                _deliver(r["output"],
-                         f"Merged {len(paths)} files → {r['pages']} pages")
-                _pdf_merge_stage.pop(chat_id, None)
-
-        elif command == "delete":
-            if not args_clean:
-                raise ValueError("Usage: /pdf delete <spec>  e.g. /pdf delete 3-5 or /pdf delete 2s")
-
-            # Subcommand: "delete blank-pages [dont-return]"
-            first_tok = args_clean.split(None, 1)[0].lower()
-            if first_tok in ("blank-pages", "blanks", "blank"):
-                rest = args_clean[len(first_tok):].lower()
-                dont_return = bool(_re2.search(r'\b(dont[-]?return|no[-]?blanks)\b', rest))
-                src = _require_media()
-                stem = Path(src).stem
-                out = str(_pdf_out / f"{stem}_trimmed.pdf")
-                blanks_out = str(_pdf_out / f"{stem}_blanks.pdf")
-                r = delete_blank_pages(src, out, blanks_out, write_blanks=not dont_return)
-                pages = r["blank_pages"]
-                pages_str = ",".join(map(str, pages)) if 0 < len(pages) <= 20 else ""
-                cap_main = (
-                    f"Removed {r['removed']} blank pages, {r['remaining']} remaining"
-                    + (f" (pages: {pages_str})" if pages_str else "")
-                )
-                _deliver(r["output"], cap_main)
-                if r["blanks_output"]:
-                    _deliver(r["blanks_output"],
-                             "Removed pages — verify they were blank")
-            else:
-                src = _require_media()
-                stem = Path(src).stem
-                out = str(_pdf_out / f"{stem}_trimmed.pdf")
-                r = delete_pages(src, args_clean, out)
-                _deliver(r["output"],
-                         f"Removed {r['removed']} pages, {r['remaining']} remaining")
-
-        else:
-            _send_reply(chat_id,
-                f"Unknown PDF command: {command!r}\n\n" + help_text(),
-                reply_to=message_id)
-
-    except (ValueError, FileNotFoundError) as e:
-        _send_reply(chat_id, f"⚠️ {e}", reply_to=message_id)
-    except ImportError:
-        _send_reply(chat_id, "⚠️ pymupdf not installed on this node.", reply_to=message_id)
-    except Exception as e:
-        _log.error("pdf_cmd error: %s", e, exc_info=True)
-        _send_reply(chat_id, f"⚠️ PDF error: {e}", reply_to=message_id)
-
-    return True
+    """Handle /pdf (and the `p` shortcut). True = handled, skip router dispatch."""
+    return _PDF.handle(chat_id, message_id, text, media_path, media_filename)
 
 
 # ── Per-update handler ─────────────────────────────────────────────────────────
@@ -633,12 +375,7 @@ def _handle_update(update: dict) -> None:
     # Intercept /pdf commands (and single-letter alias "p ") before the router.
     # PDF ops need to send files back via sendDocument — not possible from the
     # router subprocess which communicates via stdout text only.
-    import re as _re
-    _is_pdf_cmd = bool(
-        _re.match(r"^/pdf\b", text, _re.IGNORECASE)
-        or _re.match(r"^p\s", text, _re.IGNORECASE)
-    )
-    if _is_pdf_cmd:
+    if pdf_command.is_pdf_command(text):
         _handle_pdf_command(chat_id, message_id, text, media_path,
                             media_filename or "")
         return
