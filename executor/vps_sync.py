@@ -342,22 +342,33 @@ def _push_to_vps(cfg: SyncConfig, table: str, rows: list[dict],
 
 def _push_tools_manifest(cfg: SyncConfig) -> int:
     """Mirror the Mac tool manifest → VPS so MCP-registered sensor tools/watchdogs
-    actually run there. The Mac is the single source of truth: run-script paths are
-    rewritten from the Mac repo root to the VPS repo root (a sensor tool's script must
-    live under aaka-repo, which git-deploys to the VPS). On the VPS the tool_runner
-    --due cron runs the sensor-placed entries; executor entries are carried for /tools
-    listing but never run there. Only pushes when the manifest actually changed."""
+    actually run there. The Mac is the single source of truth.
+
+    Least-privilege: the VPS is the internet-facing box, so it only gets what it
+    needs. **Sensor-placed** entries are sent in full (it runs them) with run-script
+    paths rewritten from the Mac repo root to the VPS repo root — a sensor tool's
+    script must live under aaka-repo, which git-deploys to the VPS. **Executor-placed**
+    entries are redacted to display/routing fields only (name, placement, schedule,
+    enabled, kind); their run paths, commands, args and secret-dir names — Mac
+    architecture — are stripped so a filesystem leak on the VPS reveals nothing about
+    the home machine. The sensor uses `placement` to hand executor tools off to the
+    Mac (which holds the full manifest); it never runs them itself. Pushes on change."""
     import yaml, base64, hashlib
     from sensor import tool_runner
     man = tool_runner.load_manifest()
     if not man:
         return 0
+    SAFE_EXEC_FIELDS = {"placement", "schedule", "enabled", "kind"}
     out = {}
     for name, e in man.items():
         e = dict(e)
-        if e.get("run"):
-            e["run"] = e["run"].replace("/Users/Shared/aaka-repo", "/opt/aaka-repo")
-        out[name] = e
+        if e.get("placement", "executor") == "sensor":
+            if e.get("run"):
+                e["run"] = e["run"].replace("/Users/Shared/aaka-repo", "/opt/aaka-repo")
+            out[name] = e
+        else:
+            # Executor tool: send only what the VPS needs to list + route a hand-off.
+            out[name] = {k: v for k, v in e.items() if k in SAFE_EXEC_FIELDS}
     body = yaml.safe_dump(out, default_flow_style=False, allow_unicode=True, sort_keys=True)
     h = hashlib.sha256(body.encode()).hexdigest()
     if _get_hwm("tools_manifest_hash") == h:
