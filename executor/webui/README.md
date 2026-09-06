@@ -18,11 +18,11 @@ Both share the same Telegram-faithful CSS.
 
 ```bash
 # Demo mode (Ash-Kaa sample family, sample DB):
-/Users/Shared/aaka-repo/venv/bin/python3 \
+venv/bin/python3 \
     executor/webui/server.py --config samples/demo --port 18791
 
 # Live mode (your real config):
-/Users/Shared/aaka-repo/venv/bin/python3 \
+venv/bin/python3 \
     executor/webui/server.py --config /Users/Shared/aaka-repo-config --port 18791
 
 # Then:

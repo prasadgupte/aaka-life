@@ -1,12 +1,13 @@
 """
-LinkedIn post skill — delegates to /Users/Shared/linkedin-tool/linkedin.py.
+LinkedIn post skill — delegates to a private LinkedIn tool (path via AAKA_LINKEDIN_TOOL).
 Called by executor when a linkedin_post queue item is confirmed + ready.
 """
 
+import os
 import sys
 from pathlib import Path
 
-LINKEDIN_TOOL = Path("/Users/Shared/tools/linkedin-tool")
+LINKEDIN_TOOL = os.environ.get("AAKA_LINKEDIN_TOOL", "")
 
 
 def post(text: str, image_path: str | None = None, visibility: str = "PUBLIC", schedule_at: str | None = None) -> dict:
@@ -14,8 +15,15 @@ def post(text: str, image_path: str | None = None, visibility: str = "PUBLIC", s
 
     schedule_at: ISO 8601 UTC string (e.g. "2026-05-18T09:00:00Z") to schedule
                  the post instead of publishing immediately.
+
+    Requires AAKA_LINKEDIN_TOOL to point at a local checkout of the private
+    linkedin-tool. Without it, returns a clear "not configured" result instead
+    of failing an import.
     """
-    sys.path.insert(0, str(LINKEDIN_TOOL))
+    if not LINKEDIN_TOOL:
+        return {"error": "linkedin tool not configured (set AAKA_LINKEDIN_TOOL)"}
+    tool_path = str(Path(LINKEDIN_TOOL))
+    sys.path.insert(0, tool_path)
     try:
         import linkedin as li
         if image_path:
@@ -25,4 +33,4 @@ def post(text: str, image_path: str | None = None, visibility: str = "PUBLIC", s
         post_id = result.get("id", result.get("X-RestLi-Id", "unknown"))
         return {"post_id": post_id, "text": text, "image": image_path, "scheduled": bool(schedule_at)}
     finally:
-        sys.path.remove(str(LINKEDIN_TOOL))
+        sys.path.remove(tool_path)

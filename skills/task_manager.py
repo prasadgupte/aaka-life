@@ -8,15 +8,19 @@ Designed to run on both sensor (VPS) and executor (Mac) sides.
 
 import os
 import sqlite3
+import sys
 import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = Path(os.environ.get("AAKA_BASE") or Path(__file__).resolve().parent.parent)
+if str(BASE) not in sys.path:
+    sys.path.insert(0, str(BASE))
+import aaka_config
 
 _DEFAULT_DB = str(
-    Path(os.environ.get("AAKA_CONFIG_DIR", "/Users/Shared/aaka-repo-config"))
+    Path(os.environ.get("AAKA_CONFIG_DIR") or aaka_config.CONFIG_DIR)
     / "data" / "queue" / "butler.db"
 )
 

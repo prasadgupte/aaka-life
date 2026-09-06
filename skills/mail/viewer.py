@@ -23,7 +23,7 @@ BASE = Path(
 sys.path.insert(0, str(BASE))
 import aaka_config
 
-ACCOUNTS_CONFIG = Path("/Users/Shared/secrets/mail-fetch/accounts.yaml")
+ACCOUNTS_CONFIG = aaka_config.secrets_root() / "mail-fetch" / "accounts.yaml"
 MAIL_DATA_DIR = aaka_config.DATA_DIR / "mail"
 
 
@@ -149,7 +149,7 @@ def list_accounts() -> str:
     """Summary of all accounts: name, message count, last fetch time."""
     names = _load_account_names()
     if not names:
-        return "No mail accounts configured.\nEdit /Users/Shared/secrets/mail-fetch/accounts.yaml"
+        return f"No mail accounts configured.\nEdit {ACCOUNTS_CONFIG}"
 
     lines = ["📬 *Mail accounts*\n"]
     for name in names:

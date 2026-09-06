@@ -350,7 +350,7 @@ def execute(payload: dict) -> dict:
         skip_compress: bool
         file_count: int
     """
-    config_dir = Path(os.environ.get("AAKA_CONFIG_DIR", "/Users/Shared/aaka-repo-config"))
+    config_dir = Path(os.environ.get("AAKA_CONFIG_DIR") or aaka_config.CONFIG_DIR)
 
     # Opportunistic recycle bin cleanup (fast: just checks folder names vs date)
     try:

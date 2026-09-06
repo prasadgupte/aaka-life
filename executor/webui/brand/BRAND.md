@@ -1,6 +1,6 @@
 # Aaka — Brand (implementation)
 
-Strategic spec lives in `aaka-repo/docs/gtm/06_brand.md`. This file is the **distilled implementation guide**: what to do in code, not the inspiration history.
+Strategic spec lives in the aaka-site repo (`brand/BRAND.md`). This file is the **distilled implementation guide**: what to do in code, not the inspiration history.
 
 ---
 

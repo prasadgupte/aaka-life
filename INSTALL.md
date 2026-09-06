@@ -37,7 +37,7 @@ Ask the user for each item before beginning Phase 1.
 | VPS IP address | Your hosting provider's control panel | Always-on (optional, Tier 3) |
 | Family members | Name, Telegram ID, role (`admin`/`member`), short namespace | aaka.yaml |
 | Calendar ID(s) | Google Calendar → Settings → click calendar name → "Calendar ID" | Calendar reads (optional, Tier 1) |
-| WhatsApp phone | Your number in E.164, e.g. `+491514509...@s.whatsapp.net` (optional) | WhatsApp channel |
+| WhatsApp phone | Your number in E.164, e.g. `491700000000@s.whatsapp.net` (optional) | WhatsApp channel |
 | WhatsApp group JID | From openclaw logs after first WA link, e.g. `120363...@g.us` (optional) | WhatsApp group |
 
 Once you have all required items, write them to `/tmp/aaka-setup.json`:
@@ -60,7 +60,7 @@ Once you have all required items, write them to `/tmp/aaka-setup.json`:
       "id": "alice",
       "name": "Alice",
       "telegram_id": "123456789",
-      "whatsapp_phone": "+491514509...",
+      "whatsapp_phone": "+491700000000",
       "role": "admin",
       "namespace": "alice",
       "email": "alice@example.com"

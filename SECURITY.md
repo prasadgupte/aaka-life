@@ -26,6 +26,37 @@ Please include:
 
 Response target: 5 business days for acknowledgement, 30 days for a fix or mitigation.
 
+## What each half can see
+
+Aaka splits into an always-on **Away** half (the VPS sensor) and a **Home** half
+(the Mac executor, where OAuth tokens live). A third party — whichever LLM
+provider you configure — sees a narrow slice for text extraction only. This
+table is the concrete answer to "who can see my data":
+
+| Data class | Away / VPS sensor | Home / Mac executor | Your chosen LLM |
+|---|---|---|---|
+| Calendar (read) | Yes — read-only mirror (`today.md`, `weekly.md`, `weekly_events.json`, `today_<member>.md`), rsynced by `executor/calendar_sync_and_push.sh` | Yes — full read/write via Google Calendar API | No |
+| Calendar (write) / Google OAuth token | No — holds no OAuth token, cannot write the calendar | Yes — the only place calendar writes happen | No |
+| Tasks (`tasks.json`) | Yes | Yes | No |
+| Lists (shopping etc.) | Yes | Yes | No |
+| Notes | Yes | Yes | No |
+| Dropped-file staging | Yes — staged on inbound, synced onward | Yes | No |
+| Password store | No | Yes | No |
+| Mail accounts (POP3/IMAP, Gmail) | No | Yes | No |
+| Family vault (filed documents) | No | Yes | No |
+| Telegram bot token | Yes — in `.env` | Yes — in `.env`/tokens | No |
+| LLM API key | Yes — in `.env` | Yes — in `.env`/tokens | No (the key authenticates *to* the LLM, isn't sent as content) |
+| Inbound message content (every message) | Yes — the sensor sees every inbound message to triage intent | Yes | No — only the sentence(s) explicitly sent for extraction (below) |
+| Text sent to the LLM | N/A (sent, not stored) | N/A | Yes — only the free-text passed for extraction (`add_event`, `add_task`), the explicit `llm` intent, and whatever a registered agent sends via `/v1/llm` |
+| Aaka telemetry/analytics | None exists | None exists | N/A |
+
+Default LLM is Gemini; Anthropic and a local `claude-cli` are also supported.
+Whichever you choose, it never reads the calendar, tasks, notes, vault, or any
+stored data directly — it only receives the specific text passed in for
+extraction (or what an agent explicitly sends to `/v1/llm`), as a one-shot API
+call with no memory of prior messages. Zero-token reads (`d`, `w`, `t`, lists,
+notes) never touch the LLM.
+
 ## Known design decisions
 
 - **Channel gate** — unknown Telegram senders get a one-line reply with their user ID and no other data. Group messages from unknown senders are silently dropped.

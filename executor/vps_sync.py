@@ -18,6 +18,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+BASE = Path(os.environ.get("AAKA_BASE") or Path(__file__).resolve().parent.parent)
+if str(BASE) not in sys.path:
+    sys.path.insert(0, str(BASE))
+import aaka_config
+
 
 @dataclasses.dataclass
 class SyncConfig:
@@ -46,7 +51,7 @@ def load_config() -> "SyncConfig | None":
     vps_db = os.environ.get("VPS_DB_PATH", "")
     if not vps_host or not vps_db:
         return None
-    config_dir = os.environ.get("AAKA_CONFIG_DIR", "/Users/Shared/aaka-repo-config")
+    config_dir = os.environ.get("AAKA_CONFIG_DIR") or str(aaka_config.CONFIG_DIR)
     # Derive VPS config root: /opt/aaka-config/data/queue/butler.db → /opt/aaka-config
     vps_root = str(Path(vps_db).parent.parent.parent)
     return SyncConfig(

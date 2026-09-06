@@ -9,7 +9,13 @@ All sends still route through gateway.egress so they are audited and rate-limite
 """
 import json
 import os
+import sys
 from pathlib import Path
+
+BASE = Path(os.environ.get("AAKA_BASE") or Path(__file__).resolve().parent.parent)
+if str(BASE) not in sys.path:
+    sys.path.insert(0, str(BASE))
+import aaka_config
 
 
 def send(
@@ -20,7 +26,7 @@ def send(
 ) -> None:
     """Send a message via the egress gateway. Raises on failure."""
     if not chat_id:
-        config_dir = os.environ.get("AAKA_CONFIG_DIR", "/Users/Shared/aaka-repo-config")
+        config_dir = os.environ.get("AAKA_CONFIG_DIR") or str(aaka_config.CONFIG_DIR)
         creds_path = Path(config_dir) / "tokens" / "message_send.json"
         creds = json.loads(creds_path.read_text())
         chat_id = creds.get("default_chat_id", "")

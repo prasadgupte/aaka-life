@@ -101,6 +101,11 @@ QUEUE_DIR     = DATA_DIR / "queue"
 LOGS_DIR      = CONFIG_DIR / "logs"
 
 
+def secrets_root() -> Path:
+    """Root dir for per-project secrets (AAKA_SECRETS_ROOT, default ~/.aaka/secrets)."""
+    return Path(os.environ.get("AAKA_SECRETS_ROOT") or Path.home() / ".aaka" / "secrets")
+
+
 # ── Config loader ─────────────────────────────────────────────────────────────
 
 @lru_cache(maxsize=1)

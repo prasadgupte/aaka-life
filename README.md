@@ -56,7 +56,7 @@ Two processes, one repo:
   from the surface that holds the secrets (OAuth, password store, Drive).
 
 The queue, config, and tokens live in a directory **outside the repo**
-(`$AAKA_CONFIG_DIR`, default `/Users/Shared/aaka-repo-config`). Nothing
+(`$AAKA_CONFIG_DIR`, default `~/.aaka`). Nothing
 sensitive is in git.
 
 ---

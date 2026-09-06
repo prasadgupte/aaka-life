@@ -52,7 +52,7 @@ def execute(payload: dict) -> dict:
     if not attachments:
         return {"filed": 0, "skipped": 0, "attachments": [], "note": "no attachments"}
 
-    config_dir = Path(os.environ.get("AAKA_CONFIG_DIR", "/Users/Shared/aaka-repo-config"))
+    config_dir = Path(os.environ.get("AAKA_CONFIG_DIR") or aaka_config.CONFIG_DIR)
     staging_root = config_dir / "data" / "staging" / "gmail_att" / message_id
     staging_root.mkdir(parents=True, exist_ok=True)
 

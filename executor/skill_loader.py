@@ -26,6 +26,8 @@ import yaml
 BASE = Path(os.environ.get("AAKA_BASE") or Path(__file__).resolve().parent.parent)
 sys.path.insert(0, str(BASE))
 
+import aaka_config
+
 
 # ── Custom exceptions ──────────────────────────────────────────────────────────
 
@@ -188,7 +190,7 @@ class SkillLoader:
     def _is_blocked_sender(self, sender: str) -> bool:
         """Check if sender is in the blocked_senders.json list."""
         import json as _json
-        config_dir = Path(os.environ.get("AAKA_CONFIG_DIR", "/Users/Shared/aaka-repo-config"))
+        config_dir = Path(os.environ.get("AAKA_CONFIG_DIR") or aaka_config.CONFIG_DIR)
         path = config_dir / "data" / "blocked_senders.json"
         if not path.exists():
             return False

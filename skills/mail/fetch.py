@@ -4,7 +4,7 @@ Mail fetch skill — POP3/IMAP fetch engine.
 Fetches new mail from configured accounts and stores locally in Maildir format.
 Credentials are resolved from the password store (tools/password_store.py).
 
-Account config: /Users/Shared/secrets/mail-fetch/accounts.yaml
+Account config: $AAKA_SECRETS_ROOT/mail-fetch/accounts.yaml (default ~/.aaka/secrets/mail-fetch/accounts.yaml)
 
 Usage (cron):
     python3 skills/mail/cron_fetch.py
@@ -36,7 +36,7 @@ import aaka_config
 
 log = logging.getLogger("mail.fetch")
 
-ACCOUNTS_CONFIG = Path("/Users/Shared/secrets/mail-fetch/accounts.yaml")
+ACCOUNTS_CONFIG = aaka_config.secrets_root() / "mail-fetch" / "accounts.yaml"
 MAIL_DATA_DIR = aaka_config.DATA_DIR / "mail"
 
 

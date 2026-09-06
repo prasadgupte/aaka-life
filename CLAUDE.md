@@ -25,7 +25,7 @@ aaka-repo/                          ← repo root
 │   │   └── agent.toml.example      ← zeroclaw config template
 │   └── openclaw/
 │       └── agent.yaml.example      ← openclaw config template
-├── aaka_config.py                  ← config loader (AAKA_CONFIG_DIR default: /Users/Shared/aaka-repo-config)
+├── aaka_config.py                  ← config loader (AAKA_CONFIG_DIR default: ~/.aaka)
 ├── llm.py                          ← calls gateway/adapter.call_llm()
 ├── message_send.py                 ← calls gateway/adapter.send_message()
 ├── sensor/
@@ -43,7 +43,7 @@ aaka-repo/                          ← repo root
 │   ├── install.md                  ← bootstrap guide (served at aaka.life/install)
 │   ├── setup.md                    ← confirmed VPS setup steps (built incrementally)
 │   ├── manual.md                   ← use cases + how to use
-│   └── zeroclaw-migration.md       ← full migration notes
+│   └── openclaw-removal.md         ← channel architecture (Telegram/WhatsApp/LLM seams, how a channel plugs in)
 ├── mcp/
 │   └── server.py                   ← MCP server — Claude-as-interface (auto-loaded via .mcp.json)
 ├── .mcp.json                       ← Claude Code MCP config (auto-loads mcp/server.py)
@@ -82,7 +82,7 @@ aaka-repo/                          ← repo root
 | Var | Default | Purpose |
 |---|---|---|
 | `AAKA_CONTEXT` | `family` | Semantic label (calendar display etc.) — does NOT affect paths |
-| `AAKA_CONFIG_DIR` | `/Users/Shared/aaka-repo-config` | Root for all runtime data |
+| `AAKA_CONFIG_DIR` | `~/.aaka` | Root for all runtime data |
 | `AAKA_BASE` | `Path(__file__).parent` | Repo root |
 | `GATEWAY_BACKEND` | `openclaw` | Gateway backend: `openclaw` \| `zeroclaw` |
 | `CLAW_BIN` | same as GATEWAY_BACKEND | Binary name override |
@@ -403,3 +403,27 @@ For intents that are sensor-direct (VPS executes immediately, no queue): note `(
 
 The `/menu` command is the single most-read piece of documentation — keep it tight but complete.
 If the menu is getting long, group commands; don't silently drop entries.
+
+<!-- est:backlog v1 -->
+## Backlog protocol — how work reaches this repo
+
+Work is filed in two git-tracked files here: `INSIGHTS.md` (raw signal) and `BACKLOG.md`
+(curated items — `idea → ready → in-progress → in-review → shipped/dropped`). One CLI owns both:
+`python3 /Users/Shared/tools/backlog/backlog.py <verb>` — this repo's name is **`aaka-repo`**.
+
+- **Only `ready` items are agent-eligible.** Never start an `idea`; ask PG to promote it first.
+- Starting one: `backlog.py set aaka-repo <id> --status in-progress`.
+- PR open: `backlog.py set aaka-repo <id> --status in-review --pr <url>`.
+- Ship via a PR: `gh pr create` against `prasadgupte/aaka-life`, then record the URL.
+- Anything you notice but don't act on: `backlog.py insight add aaka-repo "<text>" --source <who>`.
+- Blocks are anchor-delimited (`<!-- item:<id> -->`); edit the text freely, keep the anchors.
+
+**End a dispatched run with exactly one machine-readable line, alone on its own line:**
+
+```
+EST-DONE repo=aaka-repo item=<id> pr=<url|none> summary=<one line>
+```
+
+`est dispatch reap` (in `/Users/Shared/vps-deploy`) parses that line to write the status back and
+close the session. No line = the item stays `in-progress` and a human has to reconcile it.
+<!-- /est:backlog -->

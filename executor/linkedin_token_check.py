@@ -9,8 +9,10 @@ from pathlib import Path
 
 BASE = Path(os.environ.get("AAKA_BASE", Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(BASE))
+import aaka_config
 
-TOKEN_FILE = Path("/Users/Shared/secrets/linkedin-tool/tokens.json")
+TOKEN_FILE = aaka_config.secrets_root() / "linkedin-tool" / "tokens.json"
+LINKEDIN_TOOL_DIR = os.environ.get("AAKA_LINKEDIN_TOOL", "")
 WARN_DAYS = 14
 
 
@@ -31,10 +33,15 @@ def main():
 
     # Send Telegram warning
     from message_send import send
+    auth_hint = (
+        f"`python3 {LINKEDIN_TOOL_DIR}/auth.py`"
+        if LINKEDIN_TOOL_DIR
+        else "the linkedin-tool auth script (set AAKA_LINKEDIN_TOOL)"
+    )
     msg = (
         f"⚠️ *LinkedIn token expires in {days_left} day(s)* ({expiry_date}).\n\n"
         f"Re-authorize by running:\n"
-        f"`python3 /Users/Shared/tools/linkedin-tool/auth.py`\n"
+        f"{auth_hint}\n"
         f"or visit the OAuth URL directly."
     )
     send(msg)

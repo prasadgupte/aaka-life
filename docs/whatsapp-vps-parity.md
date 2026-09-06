@@ -17,7 +17,7 @@ adds a second deployment topology.
 
 - The session-pairing pain we hit was the Baileys **7.0.0-rc handshake bug**, not
   an IP ban — home and work IPs failed identically; `6.17.16` fixed both. So the
-  "datacenter IP" worry is largely moot here, and the 1blu VPS IP is not a
+  "datacenter IP" worry is largely moot here, and your VPS provider's IP is not a
   WhatsApp-flagged cloud range (AWS/GCP are). **Gate it empirically:** run
   `node wa-sidecar/netcheck.js` on the VPS first — if the raw WS holds and a QR
   issues, we're clear to proceed.

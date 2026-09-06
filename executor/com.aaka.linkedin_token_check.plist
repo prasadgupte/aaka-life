@@ -15,6 +15,10 @@
         <string>/Users/Shared/aaka-repo-config</string>
         <key>AAKA_BASE</key>
         <string>/Users/Shared/aaka-repo</string>
+        <key>AAKA_SECRETS_ROOT</key>
+        <string>/Users/Shared/secrets</string>
+        <key>AAKA_LINKEDIN_TOOL</key>
+        <string>/Users/Shared/tools/linkedin-tool</string>
     </dict>
     <key>StartCalendarInterval</key>
     <dict>

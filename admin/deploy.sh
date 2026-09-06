@@ -87,7 +87,7 @@ if [ "$INSTANCE" = "vps" ]; then
         read -rp "  TELEGRAM_GROUP_ID:   " tg_group
         read -rp "  GEMINI_API_KEY:      " gemini
         read -rp "  WHATSAPP_PHONE (e.g. 491700000000@s.whatsapp.net): " wa_phone
-        read -rp "  WHATSAPP_GROUP_JID (e.g. 120363424460011185@g.us):  " wa_group
+        read -rp "  WHATSAPP_GROUP_JID (e.g. 120363000000000000@g.us):  " wa_group
         cat > "$CANONICAL_ENV" <<ENVEOF
 TELEGRAM_BOT_TOKEN=${tok}
 TELEGRAM_GROUP_ID=${tg_group}

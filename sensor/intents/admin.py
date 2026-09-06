@@ -60,7 +60,7 @@ def handle(intent: str, message: str, sender: str, channel_id: str, source: str)
         status = f"🟢 {aaka_config.bot_emoji()} {aaka_config.bot_name()} healthy.\n\nRecent log:\n" + "\n".join(lines)
         try:
             import json as _json, time as _time
-            _li_tokens = Path("/Users/Shared/secrets/linkedin-tool/tokens.json")
+            _li_tokens = aaka_config.secrets_root() / "linkedin-tool" / "tokens.json"
             if _li_tokens.exists():
                 _t = _json.loads(_li_tokens.read_text())
                 _expiry = _t.get("saved_at", 0) + _t.get("expires_in", 0)

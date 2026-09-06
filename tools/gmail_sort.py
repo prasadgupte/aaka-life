@@ -96,7 +96,7 @@ def _load_api_key() -> str:
     key = os.environ.get("AAKA_AGENT_KEY", "")
     if key:
         return key
-    env_path = Path("/Users/Shared/secrets/aaka-repo/gmail-sorter.env")
+    env_path = aaka_config.secrets_root() / "aaka-repo" / "gmail-sorter.env"
     if env_path.exists():
         for line in env_path.read_text().splitlines():
             if line.startswith("AAKA_AGENT_KEY="):

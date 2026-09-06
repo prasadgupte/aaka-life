@@ -38,7 +38,7 @@ via MCP — no hand-editing):
 
 ```yaml
 homework:
-  run: /Users/Shared/tools/homework/check.py   # script | module | agent invocation
+  run: ~/tools/homework/check.py   # script | module | agent invocation
   placement: sensor            # sensor | executor  (see Placement)
   browser: remote              # none | remote | local  (only if it scrapes)
   schedule: "0 7 * * *"        # cron; omit for on-demand only
@@ -150,9 +150,9 @@ error) so `/tools` and `tool_logs()` can show history.
 
 ## Auth & the secrets vault
 
-Tool secrets live in the canonical vault `/Users/Shared/secrets/<tool>/` —
-**totally outside the codebase**, per the standing vault rule (override the root
-with `AAKA_SECRETS_ROOT`, e.g. on the VPS). The framework resolves the manifest's
+Tool secrets live in the canonical vault `$AAKA_SECRETS_ROOT/<tool>/` —
+**totally outside the codebase**, per the standing vault rule (`AAKA_SECRETS_ROOT`
+defaults to `~/.aaka/secrets`; set explicitly per install, e.g. on the VPS). The framework resolves the manifest's
 `secrets:` name under that root and passes the absolute path as
 `$AAKA_TOOL_SECRETS`; the tool never embeds credentials. On `error: auth_required`, the runner `ask()`s the admin to re-auth
 with instructions, pauses the tool, and resumes on the next scheduled run.
@@ -167,10 +167,10 @@ with instructions, pauses the tool, and resumes on the next scheduled run.
 - **Graduation:** a broadly-useful tool can be promoted into a core skill later.
 - Litmus test: *would every family want it?* → skill. *Specific to yours?* → tool.
 
-## How this organizes `/Users/Shared/tools/`
+## How this organizes `~/tools/`
 
 Two layers, cleanly separated:
-- **Capability libraries** (`/Users/Shared/tools/<x>/`) — agent-agnostic utilities
+- **Capability libraries** (`~/tools/<x>/`) — agent-agnostic utilities
   (md2pdf, pdf-filler, family-pii, google-workspace, wa-backup). Unchanged; shared
   by any agent.
 - **aaka Tool registration** — a `tools.yaml` entry that *points at* a capability +

@@ -20,9 +20,13 @@ import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+BASE = Path(os.environ.get("AAKA_BASE") or Path(__file__).resolve().parent.parent)
+sys.path.insert(0, str(BASE))
+import aaka_config
+
 
 def _config_dir() -> Path:
-    return Path(os.environ.get("AAKA_CONFIG_DIR", "/Users/Shared/aaka-repo-config"))
+    return Path(os.environ.get("AAKA_CONFIG_DIR") or aaka_config.CONFIG_DIR)
 
 
 def _logs_dir() -> Path:
