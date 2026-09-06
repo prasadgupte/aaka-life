@@ -8,6 +8,7 @@ mint → sign up (bind handle) → recognized via dynamic allowlist → one-time
 Run: /Users/Shared/aaka-repo/venv/bin/python3 sensor/test_wa_onboard.py
 """
 import os
+import time
 import sys
 import tempfile
 from pathlib import Path
@@ -66,6 +67,35 @@ def main():
     # one-time
     check("code cannot be reused", wa_onboard.try_signup("other@lid", "x", f"code {code}") is None)
     check("garbage text is not a signup", wa_onboard.try_signup("z@lid", "z", "hello there") is None)
+
+    # ── SEC-4: invite codes must resist online guessing ──────────────────────
+    check("code length is 8", len(code) == 8 and wa_onboard._CODE_LEN == 8)
+    check("invite TTL is 24h", wa_onboard._INVITE_TTL_S == 24 * 3600)
+    inv = wa_onboard._load_invites()[code]
+    check("minted expiry honours the 24h TTL",
+          inv["expires_ts"] - int(time.time()) <= 24 * 3600 + 5)
+
+    # Only ONE candidate token is tested per message, even when the text is
+    # stuffed with plausible-looking tokens.
+    stuffed = " ".join("AAAAAAAA BBBBBBBB CCCCCCCC DDDDDDDD".split())
+    check("only the first plausible token is tested",
+          wa_onboard._find_code(stuffed) == "AAAAAAAA")
+    check("tokens with out-of-alphabet chars are skipped",
+          wa_onboard._find_code("00000000 AAAAAAAA") == "AAAAAAAA")
+
+    # Failed-attempt throttle: 5 bad codes in the window, then silence.
+    guesser = "bruteforce@lid"
+    live = wa_onboard.create_invite("sam", "Sam")
+    for i in range(wa_onboard._MAX_FAILS):
+        wa_onboard.try_signup(guesser, "g", "QQQQQQQQ")
+    check("throttle engages after 5 failed codes", wa_onboard._throttled(guesser))
+    check("a VALID code is ignored once throttled",
+          wa_onboard.try_signup(guesser, "g", f"code {live}") is None)
+    check("attempts file written",
+          (Path(os.environ["AAKA_CONFIG_DIR"]) / "data" / "wa_invite_attempts.json").exists())
+    # A different sender is unaffected.
+    check("throttle is per-sender",
+          wa_onboard.try_signup("clean@lid", "c", f"code {live}") is not None)
 
     print()
     if _FAIL:

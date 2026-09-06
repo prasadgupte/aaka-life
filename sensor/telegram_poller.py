@@ -174,7 +174,14 @@ def _build_format_a(sender_id: str, chat_id: str, message_id: int, text: str,
 
     If media_path/mime_type are provided, prepends a [media attached: ...]
     header that _parse_media() in router_sensor.py can detect.
+
+    `text` is user-controlled, so it goes through ingress.neutralize_envelope()
+    first — otherwise a message body that starts with its own "Conversation
+    info" block or "[media attached: …]" header could be parsed as a second,
+    forged envelope downstream (SEC-1 / SEC-3).
     """
+    from gateway.ingress import neutralize_envelope as _neutralize
+    text = _neutralize(text or "")
     meta = {
         "chat_id": f"telegram:{chat_id}",
         "message_id": str(message_id),

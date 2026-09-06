@@ -121,7 +121,7 @@ _QUEUE_INTENTS = {"add_event", "add_event_batch", "fix_event", "edit_event", "ro
 #   ```
 #   Sender (untrusted metadata):
 #   ```json
-#   {"label": "P G (123456789)", "id": "123456789", ...}
+#   {"label": "A B (123456789)", "id": "123456789", ...}
 #   ```
 #   /menu                                                             ← actual message
 #   /tmp/openclaw/.../image.jpg                                       ← optional media path
@@ -829,7 +829,9 @@ def _handle_invite(message: str, sender_id: str) -> str:
     wa_url, text = wa_onboard.invite_link(code, nm)
     tg_url = wa_onboard.tg_invite_link(code, nm)
     made = f"👤 Added *{nm}* as a new member.\n" if created else ""
-    lines = [f"{made}✅ Invite ready for *{nm}* — code `{code}` (valid 7 days)."]
+    _ttl_h = max(1, wa_onboard._INVITE_TTL_S // 3600)
+    _ttl = f"{_ttl_h // 24} days" if _ttl_h >= 48 else f"{_ttl_h} hours"
+    lines = [f"{made}✅ Invite ready for *{nm}* — code `{code}` (valid {_ttl})."]
     if tg_url:
         lines.append(f"\n📨 *Telegram* (one tap): {tg_url}")
     if wa_url:
@@ -1205,13 +1207,24 @@ def _handle_pay(
 
     try:
         from tools.epc_qr import generate_epc_qr as _gen_qr
+        # Private, unpredictable output path. `/tmp/epc-qr-<iban-tail>.png` was
+        # world-readable AND guessable from the IBAN — a local user could read
+        # (or pre-plant) the payment QR another member is about to scan (SEC-11).
+        import tempfile as _tf
+        _qr_dir = Path(os.environ.get("AAKA_CONFIG_DIR", "/config")) / "data" / "tmp"
+        try:
+            _qr_dir.mkdir(parents=True, exist_ok=True)
+            os.chmod(_qr_dir, 0o700)
+            _qr_tmp = _tf.mkdtemp(prefix="epc-qr-", dir=str(_qr_dir))
+        except OSError:
+            _qr_tmp = _tf.mkdtemp(prefix="aaka-epc-qr-")
         qr_path = _gen_qr(
             name=pay["name"],
             iban=pay["iban"],
             amount=pay["amount"],
             reference=pay["reference"],
             bic=pay["bic"],
-            output_path=f"/tmp/epc-qr-{pay['iban'][-6:]}.png",
+            output_path=f"{_qr_tmp}/epc-qr.png",
         )
     except Exception as exc:
         return _reply(f"⚠️ QR generation failed: {exc}", channel_id=channel_id,
@@ -1233,6 +1246,13 @@ def _handle_pay(
     except Exception as exc:
         return _reply(f"⚠️ Couldn't send QR: {exc}", channel_id=channel_id,
                       sender=sender, message_id=message_id, dry_run=dry_run, source=source)
+    finally:
+        # The QR encodes a payment instruction — don't leave it on disk.
+        try:
+            import shutil as _sh
+            _sh.rmtree(_qr_tmp, ignore_errors=True)
+        except Exception:
+            pass
 
     # Return empty — the photo is the reply
     return ""
@@ -3510,8 +3530,13 @@ def route(raw_input: str, dry_run: bool = False) -> str:
 
 # ── HTTP serve mode ───────────────────────────────────────────────────────────
 
-def serve(host: str = "0.0.0.0", port: int = 18789):
-    """Run a minimal HTTP server that accepts POST /route with a JSON body."""
+def serve(host: str = "127.0.0.1", port: int = 18789):
+    """Run a minimal HTTP server that accepts POST /route with a JSON body.
+
+    Binds loopback by default: POST /route hands raw text straight to route(),
+    which trusts an anchored Format A envelope for sender identity — so anyone
+    who can reach this port can act as any member. Pass --host explicitly (and
+    put an authenticating proxy in front) if you really need it exposed."""
     from http.server import HTTPServer, BaseHTTPRequestHandler
 
     class Handler(BaseHTTPRequestHandler):
@@ -3567,10 +3592,14 @@ if __name__ == "__main__":
                         help="Start HTTP server on port 18789")
     parser.add_argument("--port", type=int, default=18789,
                         help="Port for --serve mode (default: 18789)")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="Bind address for --serve mode (default: 127.0.0.1). "
+                             "/route trusts the envelope's sender — only expose it "
+                             "behind an authenticating proxy.")
     args = parser.parse_args()
 
     if args.serve:
-        serve(port=args.port)
+        serve(host=args.host, port=args.port)
         sys.exit(0)
 
     text = args.message or (sys.stdin.read() if not sys.stdin.isatty() else "")

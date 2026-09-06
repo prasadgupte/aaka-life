@@ -43,6 +43,11 @@ STATIC_DIR = WEBUI_DIR / "static"
 CASSETTE_DIR = WEBUI_DIR / "cassettes"
 MANIFEST = CASSETTE_DIR / "manifest.json"
 
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import webauth  # noqa: E402  (repo-root module; needs the sys.path insert above)
+
 # Single lock around env mutation + sensor.route call (route is blocking and
 # reads AAKA_CONFIG_DIR globally).
 _route_lock = threading.Lock()
@@ -130,13 +135,19 @@ def _format_a_wrap(
 ) -> str:
     """Build a Format-A sensor input.
 
-    The sensor parses:
-      - `[media attached: <path> (<mime>)]` (search anywhere in raw)
-      - ```json {...} ``` metadata block
-      - everything after the last ``` is the user message
+    The sensor parses (gateway/ingress.py::normalize):
+      - an optional `[media attached: <path> (<mime>)]` header at offset 0
+      - the ```json {...} ``` metadata block, anchored at the start of the input
+      - everything after the closing ``` is the user message
 
     We tag channel='web' so source flows through the queue and outbox.
+
+    `message_text` is user input, so it is run through
+    ingress.neutralize_envelope() — a body starting with its own envelope /
+    media header must not be parseable as a forged envelope (SEC-1 / SEC-3).
     """
+    from gateway.ingress import neutralize_envelope as _neutralize
+    message_text = _neutralize(message_text or "")
     cid = _channel_id_for(group, session_id)
     meta = {
         "channel": "web",
@@ -179,6 +190,11 @@ def _validate_member(member_id: str) -> str:
 
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Aaka WebUI")
+
+# Portable app-level guard (mirrors taskboard/serve.py): dormant on localhost /
+# no secret; enforces a signed cookie (magic-link ?k=) once a page secret is
+# configured. Survives a bypassed reverse proxy. SEC-6.
+webauth.install_guard(app, open_paths=("/healthz", "/health"))
 
 
 @app.on_event("startup")
@@ -474,6 +490,9 @@ def main() -> int:
         os.environ["QUEUE_DB"] = str(config_dir / "data" / "queue" / "butler.db")
     State.config_dir = config_dir
     State.mode = _detect_mode(config_dir)
+
+    # Anti-footgun: refuse a public bind unless a page secret is configured.
+    webauth.assert_safe_bind(args.host)
 
     import uvicorn
     uvicorn.run(

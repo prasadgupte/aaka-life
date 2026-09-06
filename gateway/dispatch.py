@@ -8,8 +8,26 @@ aaka dispatches TO an agent on demand.
 Grounding is the whole point — the agent reads its real files (verified in
 testing: an agent pulled a real school-trip packing list straight from the case
 file, not invented). The guardrail forbids inventing facts and destructive
-actions; `--dangerously-skip-permissions` is required for headless tool use, so
-dispatch is admin-only + dir-allowlisted.
+actions.
+
+Permissions (SEC-5). Headless runs used to pass `--dangerously-skip-permissions`,
+which bypasses EVERY permission check — an arbitrary Bash/Write primitive driven
+by a chat message. It is replaced by two hard, non-prompting limits:
+
+  • `--permission-mode dontAsk` — nothing can escalate by asking; a tool outside
+    the allowlist is simply denied instead of stalling the headless run.
+  • `--allowedTools` — an explicit read-only set (Read/Glob/Grep/WebFetch/
+    WebSearch/TodoWrite/NotebookRead) plus `Write(<outbox>/**)` so the agent can
+    still produce the file it attaches. Bash, Edit and unscoped Write are absent,
+    so they are denied.
+
+`claude --help` on this host confirms the flag names: `--allowedTools`,
+`--disallowedTools`, `--permission-mode <acceptEdits|auto|bypassPermissions|
+manual|dontAsk|plan>`. There is no read-only permission mode, hence the
+allowlist. Dispatch stays admin-only + dir-allowlisted regardless.
+
+The agent registry has NO built-in entries — dispatchable dirs come only from
+$AAKA_CONFIG_DIR/config/agents.yaml on the operator's own machine.
 
 Usage: run_agent("fa", "the trip packing list, send the file", who="the admin")
 """
@@ -20,6 +38,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -35,11 +54,20 @@ def _claude_bin() -> str:
             return c
     return "claude"
 
-# Allowlist: agent-id → working dir. Extend via $AAKA_CONFIG_DIR/config/agents.yaml
-# ({id: {dir: ...}} or {id: dir}). Only dirs listed here can be dispatched.
-_DEFAULT_AGENTS: dict[str, str] = {
-    "fa": "/Users/Shared/family-admin",
-}
+# Allowlist: agent-id → working dir. Populated ONLY from
+# $AAKA_CONFIG_DIR/config/agents.yaml ({id: {dir: ...}} or {id: dir}).
+# Intentionally empty: a shipped default would hand every install a dispatchable
+# directory it never opted into (SEC-5).
+_DEFAULT_AGENTS: dict[str, str] = {}
+
+# Read-only tool set for headless dispatch. Write is scoped to the outbox at
+# call time (see _tool_allowlist); Bash/Edit/MultiEdit are deliberately absent.
+_READONLY_TOOLS = ("Read", "Glob", "Grep", "NotebookRead", "WebFetch", "WebSearch", "TodoWrite")
+
+
+def _tool_allowlist(outbox: str) -> str:
+    """Comma-separated --allowedTools value: read-only tools + outbox-only Write."""
+    return ",".join([*_READONLY_TOOLS, f"Write({outbox}/**)"])
 
 _GUARDRAIL = (
     "You are invoked HEADLESSLY by aaka to answer a chat request from {who}. "
@@ -51,6 +79,28 @@ _GUARDRAIL = (
     "file for the user, write it under {outbox} and end your reply with one line per file, exactly: "
     "ATTACH: <absolute path>"
 )
+
+
+def _outbox_dir(aid: str) -> str:
+    """Private scratch dir the dispatched agent may write into.
+
+    Not /tmp/aaka_dispatch/<id>: a world-writable, predictable path lets any
+    local user pre-create or swap the files we then send to the user (SEC-11).
+    Prefers $AAKA_CONFIG_DIR/data/tmp/dispatch/<id> at mode 700; falls back to a
+    private mkdtemp when no config dir is configured."""
+    cfg = os.environ.get("AAKA_CONFIG_DIR", "").strip()
+    if cfg:
+        root = Path(cfg) / "data" / "tmp" / "dispatch"
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            os.chmod(root, 0o700)
+            d = root / re.sub(r"[^a-z0-9_-]", "_", aid)
+            d.mkdir(exist_ok=True)
+            os.chmod(d, 0o700)
+            return str(d)
+        except OSError:
+            pass
+    return tempfile.mkdtemp(prefix=f"aaka-dispatch-{aid}-")
 
 
 def agents() -> dict[str, str]:
@@ -77,11 +127,13 @@ def run_agent(agent_id: str, request: str, who: str = "the user",
                 "text": f"I don't have an agent '{agent_id}'. Known: {', '.join(sorted(reg))}.",
                 "attachments": []}
 
-    outbox = f"/tmp/aaka_dispatch/{aid}"
-    Path(outbox).mkdir(parents=True, exist_ok=True)
+    outbox = _outbox_dir(aid)
     guard = _GUARDRAIL.format(who=who, outbox=outbox)
     cmd = [_claude_bin(), "-p", request, "--append-system-prompt", guard,
-           "--model", model, "--dangerously-skip-permissions", "--output-format", "json"]
+           "--model", model,
+           "--permission-mode", "dontAsk",
+           "--allowedTools", _tool_allowlist(outbox),
+           "--output-format", "json"]
     try:
         proc = subprocess.run(cmd, cwd=d, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:

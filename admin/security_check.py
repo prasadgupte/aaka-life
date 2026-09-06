@@ -197,8 +197,103 @@ def check_queue_perms() -> None:
             add("queue_perms", "ok", "queue DB is not group/other-writable")
 
 
+# ── 9. Envelope trust: metadata regexes must be anchored (SEC-1) ──────────────
+def check_envelope_anchoring() -> None:
+    """An envelope sets sender_id, which drives the channel gate + admin gates.
+    It may only be honoured at offset 0 of raw_text — a .search() lets any
+    message body forge its own sender."""
+    src = (BASE / "gateway" / "ingress.py").read_text(errors="ignore")
+    bad = []
+    for name in ("_FORMAT_A_RE", "_FORMAT_B_WA_RE"):
+        m = re.search(rf"{name}\s*=\s*re\.compile\(\s*\n?\s*r?['\"](.{{0,6}})", src)
+        if not m or not m.group(1).startswith("\\A"):
+            bad.append(name)
+    if re.search(r"_FORMAT_(A_RE|B_WA_RE)\.search\(", src):
+        bad.append("normalize() uses .search() on an envelope regex")
+    if re.search(r"_FORMAT_A_MEDIA_RE\.search\(", src):
+        bad.append("media header parsed with .search() (arbitrary-path read)")
+    if bad:
+        add("envelope_anchoring", "fail",
+            "inbound envelope parsing is not anchored: " + "; ".join(bad))
+    else:
+        add("envelope_anchoring", "ok",
+            "Format A/B envelopes + media header are anchored at offset 0 (no sender spoofing)")
+    if "def is_allowed_media_path" in src:
+        add("media_allowlist", "ok",
+            "media paths are restricted to trusted transport dirs (ingress.is_allowed_media_path)")
+    else:
+        add("media_allowlist", "fail",
+            "gateway/ingress.py has no media-path allowlist — [media attached: <any path>] is copyable")
+
+
+# ── 10. wa_inbound must not parse the user's own text as an envelope ──────────
+def check_wa_inbound_trust() -> None:
+    p = BASE / "sensor" / "wa_inbound.py"
+    if not p.exists():
+        return
+    src = p.read_text(errors="ignore")
+    if "trust_envelope=False" in src:
+        add("wa_inbound_trust", "ok",
+            "wa_inbound calls ingress with trust_envelope=False (body can't forge sender)")
+    else:
+        add("wa_inbound_trust", "fail",
+            "sensor/wa_inbound.py passes raw WhatsApp text to ingress with envelope parsing ON")
+    if "neutralize_envelope" in src:
+        add("envelope_neutralize", "ok",
+            "wa_inbound neutralises user text before re-wrapping it in an envelope")
+    else:
+        add("envelope_neutralize", "fail",
+            "wa_inbound._wa_envelope does not neutralise user text (forgeable second envelope)")
+
+
+# ── 11. Headless Claude dispatch is permission-limited (SEC-5) ────────────────
+def check_dispatch_permissions() -> None:
+    p = BASE / "gateway" / "dispatch.py"
+    if not p.exists():
+        return
+    src = p.read_text(errors="ignore")
+    problems = []
+    # Quoted = actually in the argv list (prose/docstring mentions use backticks).
+    if re.search(r"""["']--dangerously-skip-permissions["']""", src):
+        problems.append("passes --dangerously-skip-permissions")
+    if "--allowedTools" not in src:
+        problems.append("no --allowedTools allowlist")
+    m = re.search(r"_DEFAULT_AGENTS[^=]*=\s*\{([^}]*)\}", src, re.S)
+    if m and m.group(1).strip():
+        problems.append("_DEFAULT_AGENTS ships a hardcoded dispatchable dir")
+    if problems:
+        add("dispatch_permissions", "fail", "gateway/dispatch.py: " + "; ".join(problems))
+    else:
+        add("dispatch_permissions", "ok",
+            "/ask dispatch runs read-only (--allowedTools + --permission-mode dontAsk), registry from agents.yaml only")
+    qw = BASE / "executor" / "queue_worker.py"
+    if qw.exists():
+        if "_dispatch_dir_allowed" in qw.read_text(errors="ignore"):
+            add("agent_job_cwd", "ok",
+                "agent_job project_path is restricted to the agents.yaml registry")
+        else:
+            add("agent_job_cwd", "fail",
+                "executor/queue_worker.py runs `claude -p` in ANY project_path from a job payload")
+
+
+# ── 12. Page servers refuse an unauthenticated public bind (SEC-6) ────────────
+def check_page_bind_guard() -> None:
+    for rel in ("taskboard/serve.py", "executor/webui/server.py", "executor/console/server.py"):
+        p = BASE / rel
+        if not p.exists():
+            continue
+        src = p.read_text(errors="ignore")
+        missing = [n for n in ("webauth.install_guard", "webauth.assert_safe_bind") if n not in src]
+        if missing:
+            add("page_bind_guard", "fail", f"{rel} is missing {', '.join(missing)}")
+        else:
+            add("page_bind_guard", "ok", f"{rel} installs the webauth guard + safe-bind check")
+
+
 CHECKS = [check_ingress, check_env_perms, check_secret_perms, check_git_secrets,
-          check_shell_exec, check_admin_gates, check_arg_sanitization, check_queue_perms]
+          check_shell_exec, check_admin_gates, check_arg_sanitization, check_queue_perms,
+          check_envelope_anchoring, check_wa_inbound_trust, check_dispatch_permissions,
+          check_page_bind_guard]
 
 
 def run() -> dict:

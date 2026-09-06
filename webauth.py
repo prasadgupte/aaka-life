@@ -14,6 +14,12 @@ The three states (independent of any proxy you may also run):
 For a Caddy-gated deployment you simply don't set the app secret: the page binds
 127.0.0.1, the proxy authenticates, and this guard stays dormant (no double-auth).
 The guard is what makes exposure safe for installers who DON'T have a proxy.
+
+Caveat — the `?k=<secret>` magic link puts the secret in the URL, so it lands in
+proxy access logs, browser history, and any Referer header the page emits. It is
+a convenience for the first tap only: the response immediately sets a signed
+cookie, and subsequent requests should drop the query param. Treat a leaked
+access log as a leaked key and re-run `admin/page_auth.py init`.
 """
 from __future__ import annotations
 
@@ -145,7 +151,13 @@ def install_guard(app, open_paths=("/health",)):
         if k:
             if hmac.compare_digest(k, secret):
                 resp = await call_next(request)  # serve + set cookie (no redirect)
-                resp.set_cookie(COOKIE, make_cookie(), httponly=True, samesite="lax", max_age=_TTL)
+                # secure=True only over https — an http://localhost dev session
+                # would silently never receive a Secure cookie. Honour the proxy's
+                # X-Forwarded-Proto so a TLS-terminating Caddy still gets Secure.
+                fwd = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+                https = (fwd or request.url.scheme) == "https"
+                resp.set_cookie(COOKIE, make_cookie(), httponly=True, samesite="lax",
+                                secure=https, max_age=_TTL)
                 return resp
             return HTMLResponse(_LOGIN_HTML.replace("{err}", "<div class=e>Wrong key — try again.</div>"),
                                 status_code=401)

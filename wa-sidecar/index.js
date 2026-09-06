@@ -18,6 +18,8 @@
  *   WA_AUTH_DIR      auth state dir  (default: $AAKA_CONFIG_DIR/whatsapp-auth or ./whatsapp-auth)
  *   WA_SIDECAR_PORT  HTTP API port   (default: 18792)
  *   WA_RECEIVER_URL  inbound forward  (default: http://127.0.0.1:18793/inbound)
+ *   WA_INBOUND_SECRET  shared secret sent as X-Aaka-Secret (optional; must match
+ *                      the same env var on sensor/wa_inbound.py when set)
  *   WA_MEDIA_DIR     inbound media    (default: <auth-parent>/wa-media)
  *   WA_PAIRING_NUMBER  E.164 digits to link by pairing code instead of QR (optional)
  *
@@ -49,6 +51,10 @@ const WA_AUTH_DIR =
 const WA_SIDECAR_PORT = parseInt(process.env.WA_SIDECAR_PORT || '18792', 10);
 const WA_RECEIVER_URL =
   process.env.WA_RECEIVER_URL || 'http://127.0.0.1:18793/inbound';
+// Optional shared secret for the inbound POST. When set, it is sent as
+// `X-Aaka-Secret` and sensor/wa_inbound.py requires a match (401 otherwise).
+// Unset on both sides = current behaviour (localhost trust).
+const WA_INBOUND_SECRET = (process.env.WA_INBOUND_SECRET || '').trim();
 // Optional: link by pairing code instead of QR. Set to the E.164 digits of the
 // WhatsApp number being linked (country code + number, NO '+', spaces stripped).
 // When set (and not yet registered), the sidecar requests an 8-char pairing code
@@ -381,16 +387,18 @@ function postInbound(body) {
     const data = Buffer.from(JSON.stringify(body), 'utf8');
     const u = new URL(WA_RECEIVER_URL);
     const client = u.protocol === 'https:' ? require('https') : require('http');
+    const headers = {
+      'Content-Type': 'application/json',
+      'Content-Length': data.length,
+    };
+    if (WA_INBOUND_SECRET) headers['X-Aaka-Secret'] = WA_INBOUND_SECRET;
     const req = client.request(
       {
         hostname: u.hostname,
         port: u.port,
         path: u.pathname + u.search,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': data.length,
-        },
+        headers,
       },
       (res) => {
         res.resume(); // drain

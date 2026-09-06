@@ -14,8 +14,9 @@ Flow:
      because we bind whatever handle actually arrives.
 
 Stores (config dir, never git):
-  data/wa_invites.json    {code: {member_id, name, expires_ts, consumed}}
-  data/wa_allowlist.json  {handle_lower: member_id}   (shared with aaka_config)
+  data/wa_invites.json          {code: {member_id, name, expires_ts, consumed}}
+  data/wa_allowlist.json        {handle_lower: member_id}  (shared with aaka_config)
+  data/wa_invite_attempts.json  {handle_lower: {first_ts, fails, last_ts}}
 """
 from __future__ import annotations
 
@@ -30,8 +31,16 @@ from pathlib import Path
 import aaka_config
 
 _CODE_ALPHABET = "ACDEFGHJKMNPQRSTUVWXYZ2345679"  # no ambiguous 0/O/1/I/L/B/8
-_CODE_LEN = 4
-_INVITE_TTL_S = 7 * 24 * 3600  # 7 days
+# 8 chars over a 29-char alphabet ≈ 5e11 codes. Any unknown DM sender can reach
+# try_signup(), so the code has to survive online guessing on its own: a 4-char
+# code was only ~707k combinations, brute-forceable in hours (SEC-4).
+_CODE_LEN = 8
+_INVITE_TTL_S = 24 * 3600  # 24 hours
+
+# Per-sender guessing throttle: after _MAX_FAILS bad codes inside _FAIL_WINDOW_S,
+# that sender's codes are silently ignored for the rest of the window.
+_MAX_FAILS = 5
+_FAIL_WINDOW_S = 3600  # 60 minutes
 
 
 def _cfg_dir() -> Path:
@@ -111,28 +120,94 @@ def handles_for(member_id: str) -> list[str]:
 
 
 def _find_code(text: str) -> str | None:
-    """Extract a plausible code token from free text (e.g. 'Hi rosi (A7X2)')."""
+    """Extract THE ONE plausible code token from free text (e.g. 'Hi rosi (A7X2GKMN)').
+
+    Exactly one candidate is ever returned — the first token made entirely of
+    code-alphabet characters. Testing every token in the message would turn one
+    inbound message into dozens of guesses and defeat the throttle (SEC-4)."""
     for tok in re.findall(r"[A-Za-z0-9]{%d}" % _CODE_LEN, text or ""):
-        if tok.upper() in _load_invites() or all(c in _CODE_ALPHABET for c in tok.upper()):
-            up = tok.upper()
-            if up in _load_invites():
-                return up
+        up = tok.upper()
+        if all(c in _CODE_ALPHABET for c in up):
+            return up
     return None
+
+
+# ── Brute-force throttle (data/wa_invite_attempts.json) ───────────────────────
+
+def _attempts_path() -> Path:
+    return _cfg_dir() / "data" / "wa_invite_attempts.json"
+
+
+def _load_attempts() -> dict:
+    p = _attempts_path()
+    try:
+        return json.loads(p.read_text()) if p.exists() else {}
+    except Exception:
+        return {}
+
+
+def _throttled(handle: str) -> bool:
+    """True when `handle` has burned through its failed-code budget this hour."""
+    rec = _load_attempts().get(str(handle).strip().lower())
+    if not rec:
+        return False
+    now = int(time.time())
+    if now - int(rec.get("first_ts", 0)) >= _FAIL_WINDOW_S:
+        return False  # window elapsed — the counter is stale
+    return int(rec.get("fails", 0)) >= _MAX_FAILS
+
+
+def _record_failure(handle: str) -> None:
+    key = str(handle).strip().lower()
+    data = _load_attempts()
+    now = int(time.time())
+    rec = data.get(key) or {}
+    if now - int(rec.get("first_ts", 0)) >= _FAIL_WINDOW_S:
+        rec = {"first_ts": now, "fails": 0}
+    rec["fails"] = int(rec.get("fails", 0)) + 1
+    rec["last_ts"] = now
+    data[key] = rec
+    # Drop entries whose window has long expired so the file can't grow forever.
+    data = {h: r for h, r in data.items()
+            if now - int(r.get("first_ts", 0)) < _FAIL_WINDOW_S * 24}
+    try:
+        _save_json(_attempts_path(), data)
+    except Exception:
+        pass
+
+
+def _clear_failures(handle: str) -> None:
+    key = str(handle).strip().lower()
+    data = _load_attempts()
+    if key in data:
+        data.pop(key, None)
+        try:
+            _save_json(_attempts_path(), data)
+        except Exception:
+            pass
 
 
 def try_signup(handle: str, sender_name: str, text: str) -> str | None:
     """If `text` carries a valid unexpired invite code, bind `handle` to the
-    member and return a welcome message. Otherwise None (caller falls back)."""
+    member and return a welcome message. Otherwise None (caller falls back).
+
+    Rate-limited: at most one code is tested per message, and after _MAX_FAILS
+    bad codes in _FAIL_WINDOW_S this sender's codes are ignored outright."""
     code = _find_code(text)
     if not code:
+        return None
+    if _throttled(handle):
         return None
     invites = _load_invites()
     inv = invites.get(code)
     if not inv or inv.get("consumed"):
+        _record_failure(handle)
         return None
     if int(inv.get("expires_ts", 0)) < int(time.time()):
+        _record_failure(handle)
         return None
 
+    _clear_failures(handle)
     member_id = inv["member_id"]
     bind(handle, member_id)
     inv["consumed"] = True

@@ -63,6 +63,13 @@ if _env_config:
 
 app = FastAPI(title="Aaka Console")
 
+# Portable app-level guard (mirrors taskboard/serve.py): dormant on localhost /
+# no secret; enforces a signed cookie (magic-link ?k=) once a page secret is
+# configured. Survives a bypassed reverse proxy. SEC-6.
+import webauth  # noqa: E402
+
+webauth.install_guard(app, open_paths=("/healthz", "/health"))
+
 
 # ── Console-specific routes ───────────────────────────────────────────────────
 @app.get("/")
@@ -180,6 +187,9 @@ def main() -> int:
         os.environ["QUEUE_DB"] = str(config_dir / "data" / "queue" / "butler.db")
     State.config_dir = config_dir
     State.mode = webui._detect_mode(config_dir)
+
+    # Anti-footgun: refuse a public bind unless a page secret is configured.
+    webauth.assert_safe_bind(args.host)
 
     import uvicorn
     uvicorn.run(app, host=args.host, port=args.port,

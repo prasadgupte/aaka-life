@@ -769,14 +769,48 @@ def _exec_agent_dispatch(payload: dict) -> dict:
             "attachments": n, "cost": res.get("cost")}
 
 
+def _dispatch_dir_allowed(project_path: str) -> bool:
+    """True when `project_path` is one of the dirs registered in agents.yaml.
+
+    Shares the registry with gateway.dispatch (the /ask path) so there is a
+    single answer to "which directories may aaka run Claude in" (SEC-5)."""
+    import os as _os
+    try:
+        from gateway.dispatch import agents as _agents
+    except Exception as exc:  # registry unavailable → deny (fail closed)
+        print(f"[worker] agent registry unreadable, refusing dispatch: {exc}")
+        return False
+    try:
+        want = _os.path.realpath(str(project_path))
+    except Exception:
+        return False
+    if not _os.path.isdir(want):
+        return False
+    for d in (_agents() or {}).values():
+        if not d:
+            continue
+        try:
+            if _os.path.realpath(str(d)) == want:
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _exec_agent_job(payload: dict) -> dict:
     """Dispatch an agent's scheduled job.
 
     If payload contains ``claude_prompt`` and ``project_path``, runs the Claude
     CLI in non-interactive mode (``-p``) with the project directory as cwd.
 
+    ``project_path`` is attacker-reachable (any registered agent can schedule a
+    job), so it must resolve to a directory in the SAME registry that gates
+    /ask dispatch — $AAKA_CONFIG_DIR/config/agents.yaml via
+    gateway.dispatch.agents(). An unlisted path is refused outright (SEC-5).
+
     --dangerously-skip-permissions is only passed when the agent has
-    ``allow_dangerous: true`` in its permissions column. Default: off.
+    ``allow_dangerous: true`` in its permissions column AND the path is
+    allowlisted. Default: off.
     """
     agent_id = payload.get("agent_id", "")
     job_name = payload.get("job_name", "")
@@ -787,6 +821,12 @@ def _exec_agent_job(payload: dict) -> dict:
     if claude_prompt and project_path:
         import subprocess
         from aaka_queue.queue import _connect
+
+        if not _dispatch_dir_allowed(project_path):
+            print(f"[worker] REFUSED agent_job: project_path not in agents.yaml: {project_path}")
+            return {"agent_id": agent_id, "job_name": job_name,
+                    "status": "refused", "reason": "project_path_not_allowlisted"}
+
         # Check agent permissions
         allow_dangerous = False
         try:

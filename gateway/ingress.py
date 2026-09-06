@@ -182,17 +182,35 @@ def _log(msg: InboundMessage, status: str, correlation_id: str = "",
 # Format C (plain text — fallback):
 #   <text>
 #   (sender/channel come from InboundMessage.sender_id / .channel)
+#
+# SECURITY (SEC-1): envelopes are TRUSTED metadata — they set sender_id, which
+# drives the channel allowlist and every member_is_admin() gate. They are
+# therefore only honoured when ANCHORED at position 0 of raw_text (\A / .match),
+# and only the FIRST one counts: everything after the envelope is user text and
+# is never re-scanned for another envelope. Transports that wrap *user-supplied*
+# text (the Telegram poller, the WhatsApp receiver, the web UI) must call
+# neutralize_envelope() on that text so a message body cannot become the
+# envelope of the next hop.
 
+_MEDIA_HEADER_SRC = (
+    r'\[media attached:\s*(?P<lead_path>.+?)\s+\((?P<lead_mime>[^)]+)\)\s*'
+    r'(?:\|[^\]]+)?\]'
+)
+# Format A — anchored. The optional leading media header is part of the trusted
+# wrapper (executor/webui/server.py::_format_a_wrap emits it *before* the JSON
+# block; sensor/telegram_poller.py emits it *after*). Both positions are trusted
+# because they are inside the anchored match / at offset 0 of the remainder.
 _FORMAT_A_RE = re.compile(
-    r'Conversation info[^`]+```json\s*(\{[^}]+\})\s*```',
+    r'\A(?:' + _MEDIA_HEADER_SRC + r'\s*)?'
+    r'Conversation info[^`]+```json\s*(?P<meta>\{[^}]+\})\s*```',
     re.DOTALL,
 )
 _FORMAT_A_MEDIA_RE = re.compile(
     r'\[media attached:\s*(.+?)\s+\(([^)]+)\)\s*(?:\|[^\]]+)?\]'
 )
-# Format B: OpenClaw WhatsApp cliBackend envelope
+# Format B: OpenClaw WhatsApp cliBackend envelope — anchored (\A, not ^/search)
 _FORMAT_B_WA_RE = re.compile(
-    r'^\[(\w+)\s+'           # channel name (WhatsApp, Telegram, …)
+    r'\A\[(\w+)\s+'          # channel name (WhatsApp, Telegram, …)
     r'(\+?[\d@.\w]+)\s+'     # sender ID (phone or JID)
     r'.*?\]\s*'              # timing + date — ignored
     r'\(([^)]*)\):\s*'       # role: (self), (user), etc.
@@ -200,6 +218,78 @@ _FORMAT_B_WA_RE = re.compile(
     r'(.*)',                  # actual message text
     re.DOTALL,
 )
+
+# Text that would be mistaken for an envelope if it were placed at offset 0 by a
+# wrapper. Checked after lstrip() so leading whitespace can't be used to sneak in.
+_ENVELOPE_LEAD_RE = re.compile(r'\A(?:Conversation info|\[media attached:)', re.I)
+# U+2063 INVISIBLE SEPARATOR — renders as nothing, but breaks the \A anchors.
+_NEUTRALIZER = "⁣"
+
+
+def neutralize_envelope(text: str) -> str:
+    """Make user-supplied text safe to place inside a trusted envelope.
+
+    A transport that wraps user text (the Telegram poller's _build_format_a, the
+    WhatsApp receiver's envelope builder, the web UI's Format-A wrapper) must
+    pass the text through this first. If it starts with an envelope marker, an
+    invisible separator is prefixed so the anchored Format A/B regexes above
+    cannot match it on the next parse. Idempotent-safe; no-op otherwise.
+    """
+    if not text:
+        return text
+    probe = text.lstrip()
+    if probe.startswith(_NEUTRALIZER):
+        return text
+    if _ENVELOPE_LEAD_RE.match(probe) or _FORMAT_B_WA_RE.match(probe):
+        return _NEUTRALIZER + text
+    return text
+
+
+# ── Media path allowlist (SEC-3) ───────────────────────────────────────────────
+#
+# The `[media attached: <path> (<mime>)]` header is copied verbatim into
+# shutil.copy2() by the router's /drop + note handlers. Only paths written by a
+# trusted transport are acceptable — anything else is an arbitrary-file-read.
+
+def _media_roots() -> list[Path]:
+    cfg = _config_dir()
+    roots = [
+        cfg / "data" / "telegram_media",   # sensor/telegram_poller.py
+        cfg / "data" / "staging",          # webui uploads + router staging
+        cfg / "wa-media",                  # WhatsApp receiver media (WA_MEDIA_DIR)
+    ]
+    wa_media = os.environ.get("WA_MEDIA_DIR", "").strip()
+    if wa_media:
+        roots.append(Path(wa_media))
+    wa_auth = os.environ.get("WA_AUTH_DIR", "").strip()
+    if wa_auth:
+        roots.append(Path(wa_auth).parent / "wa-media")
+    # Escape hatch for non-standard installs (os.pathsep-separated).
+    for extra in os.environ.get("AAKA_MEDIA_ROOTS", "").split(os.pathsep):
+        if extra.strip():
+            roots.append(Path(extra.strip()))
+    return roots
+
+
+def is_allowed_media_path(path: str | os.PathLike | None) -> bool:
+    """True when `path` resolves inside one of the trusted media roots."""
+    if not path:
+        return False
+    try:
+        resolved = Path(os.path.realpath(str(path)))
+    except Exception:
+        return False
+    for root in _media_roots():
+        try:
+            root_r = Path(os.path.realpath(str(root)))
+        except Exception:
+            continue
+        try:
+            if resolved == root_r or resolved.is_relative_to(root_r):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _strip_uuid_suffix(path: str) -> str:
@@ -231,10 +321,17 @@ def _clean_media_text(text: str) -> str:
     return text.strip()
 
 
-def normalize(msg: InboundMessage) -> Optional[ParsedMessage]:
+def normalize(msg: InboundMessage, *, trust_envelope: bool = True) -> Optional[ParsedMessage]:
     """Normalise InboundMessage into a ParsedMessage.
 
     Returns None if the message cannot be parsed (e.g. no sender_id).
+
+    Args:
+        trust_envelope: When False, raw_text is treated as pure user text
+            (Format C only) — sender/channel/message_id come exclusively from
+            the InboundMessage fields. Callers whose raw_text IS the user's own
+            message body (the WhatsApp HTTP receiver) MUST pass False, else a
+            message body can forge its own sender (SEC-1).
     """
     raw = msg.raw_text
     sender_id = msg.sender_id
@@ -249,10 +346,11 @@ def normalize(msg: InboundMessage) -> Optional[ParsedMessage]:
     text = raw
 
     # ── Format A (Telegram poller envelope) ──────────────────────────────────
-    m_a = _FORMAT_A_RE.search(raw)
+    # .match() (with \A in the pattern) — an envelope is only trusted at offset 0.
+    m_a = _FORMAT_A_RE.match(raw) if trust_envelope else None
     if m_a:
         try:
-            meta = json.loads(m_a.group(1))
+            meta = json.loads(m_a.group("meta"))
             sender_id = str(meta.get("sender_id", sender_id))
             message_id = str(meta.get("message_id", message_id or ""))
             sender_name = str(meta.get("sender_name", "") or "")
@@ -275,18 +373,26 @@ def normalize(msg: InboundMessage) -> Optional[ParsedMessage]:
             pass
         # Strip the metadata envelope from the text
         text = raw[m_a.end():].strip()
-        # Extract optional media header
-        m_media = _FORMAT_A_MEDIA_RE.search(text)
-        if m_media:
-            media_path = m_media.group(1)
-            mime_type = m_media.group(2)
+        # Media header — either captured inside the anchored envelope match
+        # (webui puts it first) or at offset 0 of the remainder (telegram_poller
+        # puts it right after the JSON block). Never .search() the user's text:
+        # a member could otherwise name any file on disk (SEC-3).
+        if m_a.group("lead_path"):
+            media_path = m_a.group("lead_path")
+            mime_type = m_a.group("lead_mime")
             original_filename = _strip_uuid_suffix(media_path)
-            text = (text[:m_media.start()] + text[m_media.end():]).strip()
+        else:
+            m_media = _FORMAT_A_MEDIA_RE.match(text)
+            if m_media:
+                media_path = m_media.group(1)
+                mime_type = m_media.group(2)
+                original_filename = _strip_uuid_suffix(media_path)
+                text = text[m_media.end():].strip()
         # Strip OpenClaw image/PDF wrapper markup from the remaining text
         text = _clean_media_text(text) if text else text
 
     # ── Format B (WhatsApp via OpenClaw cliBackend) ───────────────────────────
-    elif _FORMAT_B_WA_RE.match(raw):
+    elif trust_envelope and _FORMAT_B_WA_RE.match(raw):
         m_b = _FORMAT_B_WA_RE.match(raw)
         channel = m_b.group(1).lower()       # "whatsapp"
         sender_id = m_b.group(2)
@@ -303,6 +409,14 @@ def normalize(msg: InboundMessage) -> Optional[ParsedMessage]:
 
     if not channel_id:
         channel_id = sender_id  # DM: use sender as channel
+
+    # Media must live in a trusted transport directory — otherwise drop it and
+    # carry on as a text-only message (SEC-3).
+    if media_path and not is_allowed_media_path(media_path):
+        _log(msg, "media_rejected")
+        media_path = None
+        mime_type = None
+        original_filename = None
 
     return ParsedMessage(
         text=text,
@@ -322,7 +436,8 @@ def normalize(msg: InboundMessage) -> Optional[ParsedMessage]:
 
 # ── Main entry point ───────────────────────────────────────────────────────────
 
-def receive(msg: InboundMessage, *, log_intent: str = "") -> Optional[ParsedMessage]:
+def receive(msg: InboundMessage, *, log_intent: str = "",
+            trust_envelope: bool = True) -> Optional[ParsedMessage]:
     """Process an inbound message through the ingress gateway.
 
     - Logs to ingress.jsonl
@@ -335,6 +450,8 @@ def receive(msg: InboundMessage, *, log_intent: str = "") -> Optional[ParsedMess
         log_intent: If known at call time, record in the log entry.
                     Callers can also update the log after routing by calling
                     log_intent_resolved(correlation_id, intent).
+        trust_envelope: See normalize(). Pass False when raw_text is the user's
+                    own message body rather than a transport envelope.
 
     Returns:
         ParsedMessage on success, None if blocked or unparseable.
@@ -344,7 +461,7 @@ def receive(msg: InboundMessage, *, log_intent: str = "") -> Optional[ParsedMess
         _log(msg, "blocked")
         return None
 
-    parsed = normalize(msg)
+    parsed = normalize(msg, trust_envelope=trust_envelope)
     if parsed is None:
         _log(msg, "parse_error")
         return None
