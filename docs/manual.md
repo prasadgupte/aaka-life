@@ -1,6 +1,8 @@
 # Aaka User Manual
 
-Use cases and how to interact with the assistant via Telegram or WhatsApp.
+Use cases and how to interact with the assistant via Telegram, WhatsApp or Signal.
+Every command below works the same on every channel — see **Channels** at the
+bottom for the handful of places a channel's own limits show through.
 
 ---
 
@@ -509,3 +511,84 @@ python3 tools/pw_import.py export.csv        # import LastPass export
 python3 tools/pw_import.py export.csv --overwrite  # update existing entries
 ```
 
+
+---
+
+## Channels
+
+Aaka is Telegram-first; WhatsApp, Slack and Signal are add-on channels. Turn one
+on with `ENABLED_CHANNELS` in `.env` (e.g. `ENABLED_CHANNELS=telegram,signal`).
+Every intent in this manual works on every channel — the differences are only in
+what each messenger itself can render.
+
+| | Telegram | WhatsApp | Signal |
+|---|---|---|---|
+| Transport | Bot API long-poll | Baileys sidecar | signal-cli JSON-RPC daemon |
+| Buttons (confirm / options) | inline keyboard | numbered reply | numbered reply |
+| Files in + out | yes | yes | yes |
+| Reactions (👀 read-ack) | yes | not wired | yes |
+| Invite deep link | pre-filled `t.me` | pre-filled `wa.me` | `signal.me` + the line to send |
+
+### Signal
+
+**Use a dedicated number.** signal-cli can either *register* a number of its own
+or *link* to your existing Signal account as a second device. Register a
+dedicated number — a prepaid SIM is enough. Linking makes aaka **be** your
+personal account: it sees every private conversation you have, and it can never
+show up as its own contact in the family chat, which is how the bot is supposed
+to work. `signal-cli link -n aaka` (scan the QR from Signal → Linked Devices) is
+a fine five-minute test; it is not a way to run this.
+
+Setup, in short — the full version is `INSTALL.md → Phase 5b`:
+
+```bash
+brew install signal-cli                       # Mac; VPS: apt install openjdk-21-jre-headless
+signal-cli -a +15550000000 register           # the dedicated number
+signal-cli -a +15550000000 verify 123456      # code from the SMS
+```
+
+```
+# .env
+ENABLED_CHANNELS=telegram,signal
+SIGNAL_ACCOUNT=+15550000000
+```
+
+Then install the services and run `bash admin/diagnose.sh` — the **Signal** block
+tells you whether the daemon, the poller and the family gate are all happy. The
+daemon listens on `127.0.0.1:18794` and is never network-reachable.
+
+**Where it runs matters.** Replies to *queued* intents (anything that needs the
+executor) are sent by the outbox flusher, which runs from cron on the VPS. So
+signal-cli belongs on the VPS too — that is the default,
+`SIGNAL_PLACEMENT=sensor`. With `SIGNAL_PLACEMENT=executor` (daemon on the Mac)
+instant replies work but queued ones stay pending, and the flusher logs that it
+skipped them.
+
+**Being let in.** aaka only answers people it knows. Either add a member's number
+to `aaka.yaml` (`signal: "+491700000000"`) or run `/invite <name>` and send them
+the link. An unknown sender always gets their own handle back with "share it with
+whoever set me up" — never silence. Set `SIGNAL_GROUP_ID` (find it with
+signal-cli's `listGroups`) to let a whole family group in.
+
+**No buttons.** Where Telegram shows inline buttons, Signal gets a numbered list:
+
+```
+Add "physio" Fri 15:00–16:00?
+
+Reply with a number:
+1. Yes
+2. Change time
+3. Cancel
+```
+
+Reply `2` and aaka treats it exactly as a button tap. The numbering expires after
+6 hours and each list answers once.
+
+**Note to self.** If aaka's number is in your own contacts you can message it
+directly. aaka also reads your Signal *note-to-self* when it is running on that
+same account, but it deliberately ignores copies of messages you send to anyone
+else — it will not join conversations it wasn't addressed in.
+
+> Status: the Signal channel is implemented and unit-tested against a mock
+> signal-cli daemon. It has **not yet been verified against a live Signal
+> account**.

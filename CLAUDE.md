@@ -1,6 +1,6 @@
 # Aaka — Claude Code Context
 
-Local-first family calendar assistant on macOS, delivered over WhatsApp and Telegram.
+Local-first family calendar assistant on macOS, delivered over Telegram, WhatsApp and Signal.
 
 **Design principle:** zero-token for common queries, privacy-sensitive (no personal data in git).
 **Gateway:** OpenClaw (default) or ZeroClaw (fallback via `GATEWAY_BACKEND=zeroclaw`).
@@ -21,6 +21,10 @@ aaka-repo/                          ← repo root
 │   ├── adapter.py                  ← GatewayAdapter: send_message(), call_llm()
 │   ├── agent_api.py                ← FastAPI agent gateway (port 18790, localhost)
 │   ├── agent_client.py             ← Python SDK: AakaClient(api_key).ask("…")
+│   ├── egress.py                   ← single outbound chokepoint (audit, kill switch, rate limit)
+│   ├── ingress.py                  ← single inbound chokepoint (block list, Format A/B/C)
+│   ├── channels/                   ← one module per channel — see "Registered channels"
+│   │   ├── telegram.py  whatsapp.py  slack.py  signal_cli.py
 │   ├── zeroclaw/
 │   │   └── agent.toml.example      ← zeroclaw config template
 │   └── openclaw/
@@ -30,6 +34,10 @@ aaka-repo/                          ← repo root
 ├── message_send.py                 ← calls gateway/adapter.send_message()
 ├── sensor/
 │   ├── router_sensor.py            ← VPS intent router (no side-effects; writes to queue)
+│   ├── telegram_poller.py          ← Telegram long-poll → Format A → router
+│   ├── signal_poller.py            ← signal-cli SSE → Format A → router
+│   ├── wa_inbound.py               ← wa-sidecar POST /inbound → router
+│   ├── pdf_command.py              ← shared /pdf handler (all pollers)
 │   ├── Dockerfile                  ← OpenClaw + sensor container
 │   └── entrypoint.sh               ← templates agent.yaml, starts openclaw daemon
 ├── executor/
@@ -89,6 +97,13 @@ aaka-repo/                          ← repo root
 | `GEMINI_API_KEY` | — | Gemini API key (zeroclaw backend) |
 | `QUEUE_DB` | `$AAKA_CONFIG_DIR/data/queue/butler.db` | Queue DB path override |
 | `AGENT_API_PORT` | `18790` | Port for agent gateway (localhost only) |
+| `ENABLED_CHANNELS` | `telegram` | Comma list of channels to run: `telegram,whatsapp,slack,signal` |
+| `SIGNAL_CLI_URL` | `http://127.0.0.1:18794` | signal-cli JSON-RPC daemon base URL (an SSH tunnel is fine) |
+| `SIGNAL_ACCOUNT` | — | aaka's own Signal number (+E.164). Use a **dedicated** number, not a linked personal account |
+| `SIGNAL_GROUP_ID` | — | base64 groupId of the family Signal group (`listGroups`) — the Signal `WHATSAPP_GROUP_JID` |
+| `SIGNAL_ATTACHMENTS_DIR` | `~/.local/share/signal-cli/attachments` | Where signal-cli stores received attachments |
+| `SIGNAL_POLL_MODE` | `sse` | `sse` = stream `/api/v1/events`; `rpc` = poll the `receive` method |
+| `SIGNAL_PLACEMENT` | `sensor` | Where signal-cli runs. Queued-intent replies are flushed by cron **on the VPS**, so the daemon belongs there; `executor` (Mac) means `flush_outbox.py` skips signal rows |
 | `AAKA_ROLE` | `executor` | Process role: `sensor` (VPS) or `executor` (Mac). Skills check `aaka_config.skill_enabled(name)` against `roles.<role>.skills_disabled` in `aaka.yaml` and return `{"skipped": ...}` when disabled. Set to `sensor` in `sensor/entrypoint.sh`. |
 
 ---
@@ -96,6 +111,7 @@ aaka-repo/                          ← repo root
 ## Gateway Abstraction
 
 All outbound messages and LLM calls go through `gateway/adapter.py`.
+
 Switch backends with one env var — no code changes:
 
 ```bash
@@ -104,6 +120,24 @@ export GATEWAY_BACKEND=zeroclaw   # fallback
 ```
 
 `gateway/adapter.py` dispatches `send_message()` and `call_llm()` based on this var.
+
+### Registered channels
+
+`gateway/egress.py` → `_CHANNEL_DISPATCH` maps a channel name to its adapter;
+inbound has one poller/receiver per channel that builds the trusted Format-A
+envelope. Adding one: see `docs/openclaw-removal.md` → "How a new channel plugs in".
+
+| Channel | Outbound | Inbound | Notes |
+|---|---|---|---|
+| `telegram` | `gateway/channels/telegram.py` | `sensor/telegram_poller.py` (getUpdates) | default; inline keyboards, multi-bot via `bot_id` |
+| `whatsapp` | `gateway/channels/whatsapp.py` | `sensor/wa_inbound.py` (sidecar POST) | Baileys sidecar owns the session |
+| `slack` | `gateway/channels/slack.py` | (Socket Mode poller not built) | outbound only today |
+| `signal` | `gateway/channels/signal_cli.py` | `sensor/signal_poller.py` (SSE) | signal-cli JSON-RPC daemon; **module is `signal_cli.py`, never `signal.py`** — that would shadow the stdlib `signal` module. No inline keyboards → numbered replies, mapped back to callback_data via `data/signal_options.json`. Not yet verified against a live account. |
+
+**A channel's outbound adapter runs where the outbox is flushed.** Replies to
+queued intents are sent by `sensor/flush_outbox.py` from **cron on the VPS**, not
+by the Mac executor that produced them — so a transport that only exists on the
+Mac can answer zero-token intents and nothing else.
 
 ---
 
@@ -281,7 +315,7 @@ Register an agent: `python3 admin/register_agent.py <id> "<Display Name>"`
 | `undo_queue` | /undo, undo #hash | — | cancel queued action; delete calendar events if already written (0 tokens) |
 | `pdf_tool` | /pdf, p \<cmd\> | `p` | compress/extract/split/merge/delete pages on PDFs; `delete blank-pages` auto-removes blanks (`dont-return` to skip companion); `ocr` runs Tesseract → .txt (trailing `ocr` chains after any command); returns files via sendDocument (0 tokens, sensor-side) |
 | `pay` | /pay, pay | — | generate EPC/GiroCode QR for SEPA transfer → sendPhoto PNG (0 tokens, sensor-side). Format: `pay NAME IBAN AMOUNT REFERENCE` |
-| `invite` | /invite \<name\> | — | admin-only: mint a one-time code + **both a Telegram `t.me/<bot>?start=<code>` and a WhatsApp `wa.me` deep link** to onboard a member; invitee taps → sends → auto-registered (handle bound in `data/wa_allowlist.json`, no aaka.yaml edit). Telegram link always builds (bot username via getMe, cached); wa.me needs the sidecar connected. Solves @lid opacity. See `sensor/wa_onboard.py::tg_invite_link` (0 tokens) |
+| `invite` | /invite \<name\> | — | admin-only: mint a one-time code + **a Telegram `t.me/<bot>?start=<code>`, a WhatsApp `wa.me` deep link, and a Signal `signal.me` link** (Signal can't pre-fill text, so the reply also carries the line to send) to onboard a member; invitee taps → sends → auto-registered (handle bound in `data/wa_allowlist.json`, no aaka.yaml edit). Telegram link always builds (bot username via getMe, cached); wa.me needs the sidecar connected. Solves @lid opacity. See `sensor/wa_onboard.py::tg_invite_link` (0 tokens) |
 | `tools_list` | /tools, /tools/\<tool\> \<args\>, /tools run \<name\> | — | any member: list registered aaka Tools (state/schedule/placement/last-run), run one (`/tools/webuntis <kid> digest`), or `help`; strangers locked out. Register/enable/disable is admin-only via MCP. Executor-placed tools invoked on the sensor hand off to the Mac (`⏳ …I'll report back`). See `docs/aaka-tools.md` + `sensor/tool_runner.py` (0 tokens) |
 | `mcp_view` | /mcp, /mcp members\|agents\|tools\|bot\|setup, /mcp members invite\|add \<name\> | — | `/mcp agents` lists push-registered agents (`agent_registry`) + dispatchable `/ask` agents (`gateway/dispatch.py`). | admin-only introspection + onboarding from chat. Read views mirror the MCP read tools (roster + recognized/bound handles, tools, bot, setup tiers). `/mcp members invite <name>` mints a one-time code + wa.me link (reuses the `/invite` flow); `/mcp members add <name>` creates a member. On signup, aaka greets the new member **by name + today's family-calendar gist** (see `wa_onboard.try_signup` + the today-gist append in the channel gate). See `_handle_mcp` (0 tokens) |
 | `security_audit` | /security, /security surface | — | admin-only, read-only. `/security` = hardening self-audit (`admin/security_check.py`: perms, git-tracked secrets, inbound-port exposure, shell=True, admin gates, arg sanitization). `/security surface` = attack-surface inventory (`admin/exposure_report.py`: listening ports + network-reachable, public endpoints, each token's capability, secrets/scraping creds). Run before deploying. Also MCP `security_check()` / `exposure_report()` (0 tokens) |
@@ -377,6 +411,9 @@ BASE = Path(os.environ.get("AAKA_BASE") or Path(__file__).resolve().parent.paren
 - `QUEUE_DB` env var overrides queue DB path
 - `AAKA_CONTEXT` is now **semantic only** — paths no longer include a `family/` subdirectory
 - Tokens live in `$AAKA_CONFIG_DIR/tokens/` (not `config/`) — `auth_for()` uses `TOKENS_DIR`
+- Never create `gateway/channels/signal.py` — it shadows the stdlib `signal` module for anything run from that directory. The Signal adapter is `signal_cli.py`; the channel name string is still `"signal"`
+- Signal needs a **dedicated** number (`signal-cli register`), not a linked personal account — linking makes aaka *be* the operator's Signal account
+- Member handles: read them with `aaka_config.member_handle(m, channel)`. `aaka.yaml.example` writes `whatsapp_phone` while older code read `whatsapp`; `CHANNEL_FIELDS` accepts both, plus `signal` / `signal_number`
 
 ---
 

@@ -206,6 +206,45 @@ Skip this phase if you don't need WhatsApp.
 
 ---
 
+## Phase 5b — Signal [Human + Claude] (optional)
+
+Skip if you don't need Signal.
+
+Signal needs **signal-cli** (a Java binary) plus a **dedicated phone number**.
+Register a number for aaka rather than linking aaka to your own Signal account:
+linking would make aaka *be* your account — it would see all your private
+Signal traffic and could never appear as a separate contact in the family chat.
+
+1. Install signal-cli and a JRE:
+   - Mac: `brew install signal-cli`
+   - VPS (Ubuntu): `sudo apt install -y openjdk-21-jre-headless` and unpack a
+     signal-cli release into `/opt/signal-cli`
+2. Register the dedicated number (once), then verify with the SMS code:
+   ```bash
+   signal-cli -a +15550000000 register
+   signal-cli -a +15550000000 verify 123456
+   ```
+3. In `$AAKA_CONFIG_DIR/.env`:
+   ```
+   ENABLED_CHANNELS=telegram,signal
+   SIGNAL_ACCOUNT=+15550000000
+   ```
+4. Install the services where the outbox is flushed — the VPS by default:
+   ```bash
+   # VPS
+   sudo cp deploy/aaka-signal-cli.service deploy/aaka-signal-poller.service /etc/systemd/system/
+   sudo systemctl daemon-reload && sudo systemctl enable --now aaka-signal-cli aaka-signal-poller
+   # Mac (only with SIGNAL_PLACEMENT=executor)
+   bash admin/deploy.sh
+   ```
+5. Add each family member's Signal number to `aaka.yaml` (`signal: "+E.164"`),
+   or onboard them with `/invite <name>`.
+6. Verify with `bash admin/diagnose.sh` → the **Signal** block.
+
+Not yet verified against a live Signal account — see `docs/manual.md → Signal`.
+
+---
+
 ## Phase 6 — Install Mac daemons [Claude]
 
 ```bash
@@ -262,6 +301,10 @@ These read from `$AAKA_CONFIG_DIR/.env` (auto-loaded by `admin/lib/detect.sh`):
 | `AAKA_VPS_HOST` | SSH host alias for your VPS | `aaka-away` |
 | `AAKA_VPS_IP` | Public IP of your VPS — used by deploy + the &home/&away detector | (unset) |
 | `AAKA_REPO_URL` | Git URL used by `admin/deploy.sh` when cloning on the VPS | `https://github.com/prasadgupte/aaka-life.git` |
+| `ENABLED_CHANNELS` | Comma list of channels to run — `telegram,whatsapp,slack,signal` | `telegram` |
+| `SIGNAL_ACCOUNT` | aaka's own Signal number (+E.164) — a dedicated number, not yours | (unset) |
+| `SIGNAL_CLI_URL` | signal-cli daemon base URL | `http://127.0.0.1:18794` |
+| `SIGNAL_PLACEMENT` | Where signal-cli runs: `sensor` (VPS, default) or `executor` (Mac) | `sensor` |
 
 ---
 

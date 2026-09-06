@@ -6,7 +6,7 @@ Aaka is a personal assistant that runs on your own machine and VPS. There is no 
 
 Areas in scope for security reports:
 
-- Authentication bypass in the Telegram/WhatsApp channel gate
+- Authentication bypass in the Telegram/WhatsApp/Signal channel gate
 - Credential or token leakage via logs, queue DB, or API responses
 - Command injection via message parsing
 - Insecure defaults that expose data to unintended senders
@@ -59,6 +59,7 @@ notes) never touch the LLM.
 
 ## Known design decisions
 
-- **Channel gate** — unknown Telegram senders get a one-line reply with their user ID and no other data. Group messages from unknown senders are silently dropped.
+- **Channel gate** — unknown senders get a one-line reply with their own handle (Telegram user ID, WhatsApp number/@lid, Signal number/uuid) and no other data. Group messages from unknown senders are silently dropped. The same gate covers every channel: it keys on `aaka_config.member_by_sender()` plus the configured group ids (`TELEGRAM_GROUP_ID`, `WHATSAPP_GROUP_JID`, `SIGNAL_GROUP_ID`).
+- **Signal transport** — `signal-cli`'s JSON-RPC daemon binds `127.0.0.1` only and is never network-reachable; the poller consumes it outbound-only (SSE), so Signal adds no inbound listening port.
 - **OAuth credentials** — `config/credentials.json` contains a Desktop app client secret. Desktop app secrets are intentionally distributable (same model as `rclone`, `gcloud auth login`, and similar tools). The token produced by OAuth is yours and lives only on your machine.
 - **SQLite queue** — `butler.db` is local-only. The VPS sync copies it over SSH. No external database.
