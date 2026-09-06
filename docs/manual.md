@@ -542,6 +542,16 @@ card, so it still looks and behaves like a bot to your family.
 Two consequences: there are no inline buttons (aaka sends numbered options and
 you reply with a number), and the number you choose matters a great deal.
 
+**Never run a signal-cli subcommand while the daemon is up.** signal-cli takes
+an exclusive lock on the account directory, so any other invocation blocks for
+as long as the daemon holds it, printing only `Config file is in use by another
+instance, waiting…` and hanging indefinitely. That is why `diagnose.sh` reads
+`data/accounts.json` instead of asking the CLI. If you need a one-off command,
+stop the daemon first (`launchctl stop com.aaka.signalcli`, or
+`systemctl stop aaka-signal-cli` on the VPS), run it, then start it again.
+Note also that `listAccounts` is **not** exposed over JSON-RPC, so the daemon
+cannot answer it for you.
+
 **Use a dedicated number.** signal-cli can either *register* a number of its own
 or *link* to your existing Signal account as a second device. Register a
 dedicated number — a prepaid SIM is enough. Linking makes aaka **be** your

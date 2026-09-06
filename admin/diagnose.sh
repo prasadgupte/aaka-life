@@ -1103,13 +1103,20 @@ if echo "${ENABLED_CHANNELS:-telegram}" | grep -q "signal"; then
     # common) failure than a daemon that is down, and the fix is not the same.
     if command -v signal-cli &>/dev/null; then
         ok "signal-cli installed: $(signal-cli --version 2>/dev/null | head -1)"
-        # Is the account actually registered on THIS host? The daemon crash-loops
-        # if it is not, and the journal error is easy to misread as a port issue.
+        # Is the account actually registered on THIS host? Read accounts.json
+        # rather than shelling out: signal-cli takes an exclusive lock on the
+        # account directory, so ANY CLI subcommand blocks indefinitely while the
+        # daemon holds it ("Config file is in use by another instance, waiting…").
+        # A diagnostic must never hang, and the daemon runs in normal operation.
+        SIGNAL_DATA_DIR="${SIGNAL_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/signal-cli}"
+        SIGNAL_ACCOUNTS_JSON="$SIGNAL_DATA_DIR/data/accounts.json"
         if [ -n "${SIGNAL_ACCOUNT:-}" ]; then
-            if signal-cli -a "$SIGNAL_ACCOUNT" listAccounts &>/dev/null; then
+            if [ -f "$SIGNAL_ACCOUNTS_JSON" ] && grep -q -- "$SIGNAL_ACCOUNT" "$SIGNAL_ACCOUNTS_JSON" 2>/dev/null; then
                 ok "signal account registered on this host: $SIGNAL_ACCOUNT"
+            elif [ ! -f "$SIGNAL_ACCOUNTS_JSON" ]; then
+                fail "no signal-cli account store at $SIGNAL_ACCOUNTS_JSON — run: bash admin/setup_signal.sh"
             else
-                fail "$SIGNAL_ACCOUNT is NOT registered here — signal-cli -a $SIGNAL_ACCOUNT register (then verify CODE). Use a dedicated number; registering one already on a phone deregisters Signal there."
+                fail "$SIGNAL_ACCOUNT is NOT in $SIGNAL_ACCOUNTS_JSON — run: bash admin/setup_signal.sh (link, or register a dedicated number)"
             fi
         fi
     else

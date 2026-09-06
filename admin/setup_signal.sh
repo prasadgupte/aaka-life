@@ -97,7 +97,10 @@ link)
   info "Scan it from Signal → Settings → Linked Devices → +"
   echo
   if "$PY" "$HERE/signal_pair.py" --port "$PAIR_PORT" --name aaka; then
-    ACCOUNT="$(signal-cli listAccounts 2>/dev/null | grep -oE '\+[0-9]+' | head -1 || true)"
+    # Lock-free: signal-cli subcommands block while a daemon holds the account
+    # directory, so read the store directly.
+    SDD="${SIGNAL_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/signal-cli}"
+    ACCOUNT="$(grep -oE '\+[0-9]{6,}' "$SDD/data/accounts.json" 2>/dev/null | head -1 || true)"
     [ -n "$ACCOUNT" ] && ok "linked to $ACCOUNT" || warn "linked, but could not read the account number"
   else
     fail "Linking did not complete."

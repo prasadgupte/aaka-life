@@ -240,9 +240,13 @@ ENVEOF
         systemctl enable --now aaka-signal-cli aaka-signal-poller 2>/dev/null \
             && ok "aaka-signal-cli + aaka-signal-poller enabled and started" \
             || warn "systemctl enable/start failed — check: journalctl -u aaka-signal-cli -n 50"
-        if ! signal-cli -a "$_SA" listAccounts &>/dev/null; then
-            warn "$_SA is not registered yet on this host — the daemon will fail until it is."
-            info "  signal-cli -a $_SA register   (then verify CODE)"
+        # Read the account store instead of invoking the CLI: signal-cli locks
+        # the account dir, so a subcommand blocks for as long as the daemon we
+        # just started holds it.
+        _SDD="${SIGNAL_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/signal-cli}"
+        if ! grep -q -- "$_SA" "$_SDD/data/accounts.json" 2>/dev/null; then
+            warn "$_SA is not registered on this host — the daemon will fail until it is."
+            info "  bash admin/setup_signal.sh    (link, or register a dedicated number)"
         fi
     fi
 
