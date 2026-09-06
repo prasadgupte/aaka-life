@@ -372,9 +372,14 @@ def _is_allowed_channel(sender_id: str, channel_id: str) -> bool:
     """
     if aaka_config.member_by_sender(sender_id):
         return True
+    _signal_group = os.environ.get("SIGNAL_GROUP_ID", "").strip()
     allowed_groups = {g.strip() for g in [
         os.environ.get("WHATSAPP_GROUP_JID", ""),
         os.environ.get("TELEGRAM_GROUP_ID", ""),
+        _signal_group,
+        # The Signal poller addresses groups as "group:<base64 groupId>", so
+        # accept both spellings of the configured group.
+        f"group:{_signal_group}" if _signal_group else "",
     ] if g.strip()}
     return bool(allowed_groups & {sender_id, channel_id})
 
@@ -398,10 +403,12 @@ def _format_members() -> str:
 
         # Contact channels
         channels = []
-        if m.get("whatsapp"):
+        if aaka_config.member_handle(m, "whatsapp"):
             channels.append("WhatsApp")
-        if m.get("telegram"):
+        if aaka_config.member_handle(m, "telegram"):
             channels.append("Telegram")
+        if aaka_config.member_handle(m, "signal"):
+            channels.append("Signal")
         if m.get("email"):
             channels.append(m["email"])
         if channels:
@@ -842,6 +849,7 @@ def _handle_invite(message: str, sender_id: str) -> str:
     code = wa_onboard.create_invite(target["id"], nm)
     wa_url, text = wa_onboard.invite_link(code, nm)
     tg_url = wa_onboard.tg_invite_link(code, nm)
+    sg_url, sg_text = wa_onboard.signal_invite_link(code, nm)
     made = f"👤 Added *{nm}* as a new member.\n" if created else ""
     _ttl_h = max(1, wa_onboard._INVITE_TTL_S // 3600)
     _ttl = f"{_ttl_h // 24} days" if _ttl_h >= 48 else f"{_ttl_h} hours"
@@ -850,10 +858,13 @@ def _handle_invite(message: str, sender_id: str) -> str:
         lines.append(f"\n📨 *Telegram* (one tap): {tg_url}")
     if wa_url:
         lines.append(f"💬 *WhatsApp* (one tap): {wa_url}")
-    elif not tg_url:
+    if sg_url:
+        # Signal deep links can't pre-fill text — they have to type the line.
+        lines.append(f"🔒 *Signal*: {sg_url}\n   then send: “{sg_text}”")
+    elif not tg_url and not wa_url:
         # neither link could be built — fall back to plain instructions
         lines.append(f"\nAsk them to message me: “{text}”.")
-    if tg_url or wa_url:
+    if tg_url or wa_url or sg_url:
         lines.append("\nThey tap a link, hit send, and I greet them by name + today's plan.")
     if not wa_url and tg_url:
         lines.append("_(WhatsApp link needs the sidecar connected — Telegram works now.)_")
@@ -998,10 +1009,10 @@ def _handle_mcp(message: str, sender_id: str) -> str:
             # Recognized = reachable on some channel: static yaml fields (telegram/
             # whatsapp) + any dynamically-bound handle (invite onboarding).
             handles = []
-            if m.get("telegram"):
-                handles.append(f"tg:`{m['telegram']}`")
-            if m.get("whatsapp"):
-                handles.append(f"wa:`{m['whatsapp']}`")
+            for _pfx, _ch in (("tg", "telegram"), ("wa", "whatsapp"), ("sg", "signal")):
+                _h = aaka_config.member_handle(m, _ch)
+                if _h:
+                    handles.append(f"{_pfx}:`{_h}`")
             for h in wa_onboard.handles_for(mid):
                 if all(h not in x for x in handles):
                     handles.append(f"`{h}`")
@@ -1362,16 +1373,27 @@ def _flush_outbox() -> None:
 
 # ── Read reaction + threaded reply helpers ────────────────────────────────────
 
-def _react_read(message_id: "str | None", source: str, channel_id: str = "") -> None:
-    """Send 👀 reaction to acknowledge receipt (best-effort, Telegram only)."""
-    if not message_id or source != "telegram":
+def _react_read(message_id: "str | None", source: str, channel_id: str = "",
+                sender_id: str = "") -> None:
+    """Send 👀 reaction to acknowledge receipt (best-effort; Telegram + Signal).
+
+    Signal reactions need the *author* of the reacted-to message alongside its
+    timestamp, so the id is passed as "<author>:<timestamp>" — the shape
+    gateway/channels/signal_cli.py::send_reaction parses.
+    """
+    if not message_id or source not in ("telegram", "signal"):
         return
-    chat_id = channel_id or os.environ.get("TELEGRAM_USER_ID", "")
+    if source == "signal":
+        chat_id = channel_id
+        target = f"{sender_id}:{message_id}" if sender_id else str(message_id)
+    else:
+        chat_id = channel_id or os.environ.get("TELEGRAM_USER_ID", "")
+        target = str(message_id)
     if not chat_id:
         return
     try:
         from gateway.egress import send as _egress_send, reaction as _egress_reaction
-        _egress_send(_egress_reaction(chat_id, "telegram", "👀", message_id,
+        _egress_send(_egress_reaction(chat_id, source, "👀", target,
                                      source="router_sensor"))
     except Exception:
         pass  # non-fatal
@@ -1577,8 +1599,12 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
             # Default: first adult member
             m = next((m for m in aaka_config.members() if m.get("role") == "adult"), None)
         if m:
-            # Rewrite sender_id to the member's configured whatsapp so downstream lookups work
-            sender_id = m.get("whatsapp") or m.get("telegram") or sender_id
+            # Rewrite sender_id to the member's handle on the channel the
+            # message actually arrived on, so downstream lookups resolve.
+            sender_id = (aaka_config.member_handle(m, source)
+                         or aaka_config.member_handle(m, "whatsapp")
+                         or aaka_config.member_handle(m, "telegram")
+                         or sender_id)
             _log.info("self-dm: mapped sender to member=%s sender_id=%s", m["id"], sender_id)
 
     msg_lower = message.lower()
@@ -1621,6 +1647,13 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                 f"Your Telegram ID is `{sender_id}`.\n\n"
                 f"Share this with whoever set me up and they'll add you in a few seconds."
             )
+        if source == "signal" and sender_id == channel_id:
+            greeting = f"👋 Hi{(' ' + sender_name) if sender_name else ''}! You're almost in"
+            return (
+                f"{greeting} — I don't recognise you yet.\n\n"
+                f"Your Signal handle is `{sender_id}`.\n\n"
+                f"Share it with whoever set me up and they'll add you in a few seconds."
+            )
         if source == "whatsapp" and sender_id == channel_id:
             # Show the handle to add to the allowlist. Real numbers → +E.164; a
             # privacy @lid has no phone equivalent, so show it verbatim (no bogus +).
@@ -1641,7 +1674,7 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
 
     # ── Acknowledge receipt with 👀 reaction ──────────────────────────────────
     if not dry_run:
-        _react_read(message_id, source, channel_id)
+        _react_read(message_id, source, channel_id, sender_id)
 
     # ── Outbox flush skipped here — openclaw subprocess deadlocks when called
     #    from within an openclaw-spawned process.  Outbox items are flushed by
@@ -2199,16 +2232,20 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                 if not phone and not email:
                     text = f"No contact info for {item['name']} — add phone or email to contacts."
                 elif test_mode:
-                    ch = "whatsapp" if phone else "email"
+                    from skills.outbox.send_contact import phone_channel as _pc
+                    ch = _pc() if phone else "email"
                     addr = phone if phone else email
                     text = f"🧪 Would send via {ch}\nTo: {addr}\nMsg: {wish_msg}"
                 elif phone:
-                    from skills.outbox.send_contact import send_to_contact as _send_contact
+                    from skills.outbox.send_contact import (
+                        phone_channel as _pc, send_to_contact as _send_contact,
+                    )
+                    _ch = _pc()
                     result = _send_contact(name=item["name"], first_name=item["first_name"],
-                                          phone=phone, message=wish_msg, channel="whatsapp",
+                                          phone=phone, message=wish_msg, channel=_ch,
                                           dry_run=dry_run)
                     if result["sent"]:
-                        text = f"✅ Sent wishes to {item['first_name']} via WhatsApp!"
+                        text = f"✅ Sent wishes to {item['first_name']} via {_ch.title()}!"
                     else:
                         text = f"⚠️ Could not send: {result.get('error')}"
                 else:

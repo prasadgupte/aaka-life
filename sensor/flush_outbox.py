@@ -7,7 +7,17 @@ rate-limited, and subject to the kill switch.
 import json, sys, os
 sys.path.insert(0, os.environ.get("AAKA_BASE", "/app"))
 from aaka_queue.queue import read_pending_outbox, mark_outbox_sent
+from gateway.config import SIGNAL_PLACEMENT
 from gateway.egress import send, OutboundMessage, MessageKind
+
+# outbox `source` (the channel a message arrived on) → egress channel name.
+# Anything unknown falls back to whatsapp, which is the historical default.
+_CHANNEL_FOR_SOURCE = {
+    "telegram": "telegram",
+    "whatsapp": "whatsapp",
+    "signal":   "signal",
+    "slack":    "slack",
+}
 
 items = read_pending_outbox()
 for item in items:
@@ -21,13 +31,25 @@ for item in items:
         if source == "web":
             continue
 
+        channel = _CHANNEL_FOR_SOURCE.get(source, "whatsapp")
+
+        # Signal rows are only flushable where the signal-cli daemon actually
+        # runs. This flusher runs from cron on the VPS (sensor); with
+        # SIGNAL_PLACEMENT=executor the daemon is on the Mac and POSTing to our
+        # own loopback would fail every minute forever. Skip and say so — same
+        # shape as the "web" branch above, which is also delivered elsewhere.
+        if channel == "signal" and SIGNAL_PLACEMENT != "sensor":
+            print(f"[skip] outbox item {item['id']}: signal placement="
+                  f"{SIGNAL_PLACEMENT!r} — daemon is not on this host, leaving pending")
+            continue
+
         # Special reaction entries: "__react:<emoji>:<message_id>"
         if text.startswith("__react:"):
             parts = text.split(":", 2)
-            if len(parts) == 3 and source == "telegram":
+            if len(parts) == 3 and source in ("telegram", "signal"):
                 from gateway.egress import reaction
-                send(reaction(channel_id, "telegram", parts[1], parts[2],
-                              source="flush_outbox"))
+                send(reaction(channel_id, _CHANNEL_FOR_SOURCE[source], parts[1],
+                              parts[2], source="flush_outbox"))
             mark_outbox_sent(item["id"], "sent")
             continue
 
@@ -38,7 +60,6 @@ for item in items:
             except Exception:
                 markup = None
 
-        channel = "telegram" if source == "telegram" else "whatsapp"
         send(OutboundMessage(
             kind=MessageKind.TEXT,
             recipient=channel_id,

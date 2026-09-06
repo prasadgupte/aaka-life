@@ -302,6 +302,8 @@ def _source_for_chat(chat_id: str) -> str:
         return "web"
     if chat_id.startswith("whatsapp:") or chat_id.endswith("@s.whatsapp.net") or chat_id.endswith("@g.us"):
         return "whatsapp"
+    if chat_id.startswith("signal:") or chat_id.startswith("group:"):
+        return "signal"
     return "telegram"
 
 
@@ -335,7 +337,7 @@ def notify(body: NotifyRequest, agent: dict = Depends(_require_agent)):
 
     # Strip optional channel prefix ("telegram:-100...", "web:notes" stays).
     chat_id = chat_ids[0]
-    if ":" in chat_id and chat_id.split(":", 1)[0] in ("telegram", "whatsapp"):
+    if ":" in chat_id and chat_id.split(":", 1)[0] in ("telegram", "whatsapp", "signal"):
         chat_id = chat_id.split(":", 1)[1]
 
     source = _source_for_chat(chat_id)
@@ -539,7 +541,7 @@ def create_gmail_draft(body: CreateDraftRequest, agent: dict = Depends(_require_
 
 # ── Scheduled outbound messages ───────────────────────────────────────────────
 
-_VALID_CHANNELS = {"email", "telegram", "whatsapp"}
+_VALID_CHANNELS = {"email", "telegram", "whatsapp", "signal"}
 _MAX_FUTURE_DAYS = 90
 _MAX_PAST_MINUTES = 5
 
@@ -607,15 +609,24 @@ def _validate_whatsapp_payload(payload: dict) -> None:
         raise HTTPException(status_code=422, detail="whatsapp payload requires text")
 
 
+def _validate_signal_payload(payload: dict) -> None:
+    # recipient is "+E.164", a Signal uuid, or "group:<base64 groupId>".
+    if not payload.get("channel_id") and not payload.get("recipient"):
+        raise HTTPException(status_code=422, detail="signal payload requires channel_id or recipient")
+    if not payload.get("text"):
+        raise HTTPException(status_code=422, detail="signal payload requires text")
+
+
 _PAYLOAD_VALIDATORS = {
     "email": _validate_email_payload,
     "telegram": _validate_telegram_payload,
     "whatsapp": _validate_whatsapp_payload,
+    "signal": _validate_signal_payload,
 }
 
 
 class ScheduledMessageRequest(BaseModel):
-    channel: str                               # 'email' | 'telegram' | 'whatsapp'
+    channel: str                               # 'email' | 'telegram' | 'whatsapp' | 'signal'
     payload: dict                              # channel-specific (see docs)
     schedule_at: Optional[str] = None         # ISO8601 with explicit TZ; default = now
 

@@ -44,6 +44,48 @@ def _send_whatsapp(phone: str, message: str, *, dry_run: bool = False) -> dict:
         return {"sent": False, "channel": "whatsapp", "error": str(exc)}
 
 
+# ── Signal ────────────────────────────────────────────────────────────────────
+
+def _send_signal(phone: str, message: str, *, dry_run: bool = False) -> dict:
+    """Send a Signal message to an arbitrary phone number via the egress gateway.
+
+    Note this only reaches people who are actually on Signal — unlike WhatsApp
+    there is no delivery-side fallback, so a non-Signal number simply errors.
+    """
+    if phone and not phone.startswith("+"):
+        phone = "+" + phone
+    if dry_run:
+        log.info("[dry-run] Signal → %s: %s", phone, message[:80])
+        return {"sent": True, "channel": "signal"}
+    try:
+        from gateway.egress import MessageKind, OutboundMessage, send
+        send(OutboundMessage(kind=MessageKind.TEXT, recipient=phone,
+                             channel="signal", text=message, source="send_contact"))
+        return {"sent": True, "channel": "signal"}
+    except Exception as exc:
+        log.warning("Signal send failed to %s: %s", phone, exc)
+        return {"sent": False, "channel": "signal", "error": str(exc)}
+
+
+def phone_channel() -> str:
+    """Which enabled channel we use to reach a bare phone number.
+
+    WhatsApp wins when it is enabled (it reaches almost anyone); Signal is used
+    when it is the only messaging channel configured. Callers that only have an
+    email address should pass channel="email" instead.
+    """
+    try:
+        from gateway.config import ENABLED_CHANNELS
+        enabled = [c.strip().lower() for c in ENABLED_CHANNELS]
+    except Exception:
+        enabled = []
+    if "whatsapp" in enabled:
+        return "whatsapp"
+    if "signal" in enabled:
+        return "signal"
+    return "whatsapp"  # historical default when nothing is declared
+
+
 # ── Email ─────────────────────────────────────────────────────────────────────
 
 def _get_gmail_service(member_id: str):
@@ -124,19 +166,25 @@ def send_to_contact(
     Send a message to an external contact via the best available channel.
 
     channel:
-      "auto"      — WhatsApp if phone present, else email if email present
+      "auto"      — phone_channel() if phone present, else email if email present
       "whatsapp"  — WhatsApp only (fails gracefully if no phone)
+      "signal"    — Signal only (fails gracefully if no phone)
       "email"     — Email only (fails gracefully if no email or no token)
 
     cc: one address string or list of addresses (email channel only).
 
     Returns: {"sent": bool, "channel": str | None, "error": str | None}
     """
-    use_wa    = channel in ("auto", "whatsapp")
+    phone_ch  = phone_channel() if channel == "auto" else channel
+    use_wa    = phone_ch == "whatsapp"
+    use_sig   = phone_ch == "signal"
     use_email = channel in ("auto", "email")
 
     if use_wa and phone:
         return _send_whatsapp(phone, message, dry_run=dry_run)
+
+    if use_sig and phone:
+        return _send_signal(phone, message, dry_run=dry_run)
 
     if use_email and email:
         if not from_member_id:
@@ -150,6 +198,8 @@ def send_to_contact(
     channels_tried = []
     if use_wa:
         channels_tried.append("whatsapp (no phone)")
+    if use_sig:
+        channels_tried.append("signal (no phone)")
     if use_email:
         channels_tried.append("email (no address)")
     return {
