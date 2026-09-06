@@ -340,6 +340,45 @@ def _push_to_vps(cfg: SyncConfig, table: str, rows: list[dict],
         return 0
 
 
+def _push_tools_manifest(cfg: SyncConfig) -> int:
+    """Mirror the Mac tool manifest → VPS so MCP-registered sensor tools/watchdogs
+    actually run there. The Mac is the single source of truth: run-script paths are
+    rewritten from the Mac repo root to the VPS repo root (a sensor tool's script must
+    live under aaka-repo, which git-deploys to the VPS). On the VPS the tool_runner
+    --due cron runs the sensor-placed entries; executor entries are carried for /tools
+    listing but never run there. Only pushes when the manifest actually changed."""
+    import yaml, base64, hashlib
+    from sensor import tool_runner
+    man = tool_runner.load_manifest()
+    if not man:
+        return 0
+    out = {}
+    for name, e in man.items():
+        e = dict(e)
+        if e.get("run"):
+            e["run"] = e["run"].replace("/Users/Shared/aaka-repo", "/opt/aaka-repo")
+        out[name] = e
+    body = yaml.safe_dump(out, default_flow_style=False, allow_unicode=True, sort_keys=True)
+    h = hashlib.sha256(body.encode()).hexdigest()
+    if _get_hwm("tools_manifest_hash") == h:
+        return 0  # unchanged since last push — skip the round-trip
+    dest = f"{cfg.vps_config_root}/config/tools.yaml"
+    b64 = base64.b64encode(body.encode()).decode()
+    script = (
+        "import base64,pathlib\n"
+        f"p=pathlib.Path({dest!r})\n"
+        "p.parent.mkdir(parents=True,exist_ok=True)\n"
+        f"p.write_text(base64.b64decode({b64!r}).decode())\n"
+        "print('ok')\n"
+    )
+    r = _ssh_run(cfg, "python3 -", stdin_data=script, timeout=30)
+    if r.returncode != 0:
+        print(f"[sync] push tools manifest error: {r.stderr.strip()}")
+        return 0
+    _set_hwm("tools_manifest_hash", h)
+    return len(out)
+
+
 def _push_heartbeats(cfg: SyncConfig) -> int:
     """Push today's signal heartbeats Mac→VPS so the sensor watchdog knows which
     scheduled Mac jobs ran. INSERT OR IGNORE — existence is all the watchdog checks."""
@@ -701,6 +740,12 @@ def run_sync_cycle(cfg: SyncConfig) -> SyncStats:
         _push_heartbeats(cfg)
     except Exception as e:
         print(f"[sync] push heartbeats error: {e}")
+
+    # 4d. Mirror the tool manifest so sensor tools/watchdogs run on the VPS.
+    try:
+        _push_tools_manifest(cfg)
+    except Exception as e:
+        print(f"[sync] push tools manifest error: {e}")
 
     # 4b. Pull agent_replies from VPS so gateway can serve them to polling agents.
     try:
