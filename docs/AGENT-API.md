@@ -491,7 +491,7 @@ for post in posts:
 client.send("Review complete.")  # fire-and-forget confirmation
 ```
 
-See `agents/content_approval.py` for the full runnable example.
+See `examples/content_approval.py` for the full runnable example.
 
 ---
 

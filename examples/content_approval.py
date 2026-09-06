@@ -7,7 +7,7 @@ Approve / Edit / Reject / Skip decisions, handles a second round-trip for edits,
 and sends a final confirmation.
 
 Run directly (not via the job scheduler — interactive flows need more than 300s):
-    AAKA_AGENT_KEY=aaka-... python3 agents/content_approval.py
+    AAKA_AGENT_KEY=aaka-... python3 examples/content_approval.py
 
 For a real agent, replace load_pending_posts() / publish() / reject() / apply_edits()
 with your own logic (database, API calls, file writes, etc.).
