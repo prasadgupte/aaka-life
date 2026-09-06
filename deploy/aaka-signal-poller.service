@@ -1,0 +1,29 @@
+[Unit]
+Description=Aaka Signal poller — consumes signal-cli SSE, routes to the sensor
+Documentation=https://github.com/prasadgupte/aaka-life
+After=aaka-signal-cli.service network-online.target
+Wants=network-online.target
+Requires=aaka-signal-cli.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/aaka-repo
+EnvironmentFile=/opt/aaka-repo/.env
+Environment=AAKA_CONFIG_DIR=/opt/aaka-config
+Environment=AAKA_BASE=/opt/aaka-repo
+Environment=AAKA_ROLE=sensor
+Environment=AAKA_CONTEXT=family
+Environment=LLM_PROVIDER=gemini
+Environment=QUEUE_DB=/opt/aaka-config/data/queue/butler.db
+Environment=SIGNAL_CLI_URL=http://127.0.0.1:18794
+Environment=SIGNAL_ATTACHMENTS_DIR=/root/.local/share/signal-cli/attachments
+ExecStart=/opt/aaka-repo/venv/bin/python -u sensor/signal_poller.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aaka-signal-poller
+
+[Install]
+WantedBy=multi-user.target

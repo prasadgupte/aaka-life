@@ -2879,6 +2879,91 @@ check "wa_inbound: receive() called with channel=whatsapp; reply via egress" \
 check "wa_onboard: invite mint → signup binds handle → recognized (one-time)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_wa_onboard.py"
 
+# ── Signal channel (signal-cli JSON-RPC daemon) ───────────────────────────────
+header "Signal — outbound adapter (mock signal-cli daemon)"
+check "signal channel: send/reaction/options/split against a mock JSON-RPC daemon" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' gateway/channels/signal_cli_test.py"
+
+header "Signal — inbound poller (mock SSE stream)"
+check "signal_poller: DM/group/attachment/option-reply/receipts/self + SEC-1 envelope" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_signal_poller.py"
+
+header "Signal — module must not shadow the stdlib signal module"
+if [ -f "$REPO_DIR/gateway/channels/signal.py" ]; then
+    fail "gateway/channels/signal.py exists — it shadows stdlib signal; the module must be signal_cli.py"
+    FAIL=$((FAIL + 1))
+else
+    ok "gateway/channels/signal_cli.py (no stdlib shadowing)"
+    PASS=$((PASS + 1))
+fi
+
+header "Signal — reply routing knows the channel everywhere"
+check "flush_outbox maps source to channel and guards signal placement" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"
+src = open('sensor/flush_outbox.py').read()
+assert '_CHANNEL_FOR_SOURCE' in src, 'flush_outbox still hardcodes the channel'
+assert 'signal' in src, 'signal missing from the outbox channel map'
+assert 'SIGNAL_PLACEMENT' in src, 'flush_outbox must skip signal rows when the daemon is elsewhere'
+print('flush_outbox channel map ok')
+\""
+check "agent API accepts the signal channel + validates its payload" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"
+import sys; sys.path.insert(0, '.')
+import gateway.agent_api as a
+assert 'signal' in a._VALID_CHANNELS
+assert 'signal' in a._PAYLOAD_VALIDATORS
+assert a._source_for_chat('signal:+15550000000') == 'signal'
+assert a._source_for_chat('group:Z3JvdXA=') == 'signal'
+assert a._source_for_chat('123456') == 'telegram'
+print('agent_api signal routing ok')
+\""
+check "member_by_sender resolves signal handles + the whatsapp_phone alias" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"
+import aaka_config as c
+c._load = lambda: {'members': [
+    {'id': 'alex', 'name': 'Alex', 'whatsapp_phone': '+491700000000', 'signal': '+15550000000'},
+    {'id': 'sam', 'name': 'Sam', 'signal_number': '+15550000001'},
+]}
+assert c.member_by_sender('+15550000000')['id'] == 'alex', 'signal field not matched'
+assert c.member_by_sender('+491700000000')['id'] == 'alex', 'whatsapp_phone alias not matched'
+assert c.member_by_sender('+15550000001')['id'] == 'sam', 'signal_number alias not matched'
+assert c.member_handle(c.member_by_sender('+15550000000'), 'signal') == '+15550000000'
+assert c.member_by_sender('+15559999999') is None
+print('member_by_sender multi-channel ok')
+\""
+check "signal Format-A envelope normalizes to channel=signal" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"
+import sys; sys.path.insert(0, '.')
+from sensor.signal_poller import _build_format_a
+from gateway.ingress import InboundMessage, Channel, normalize
+raw = _build_format_a('+15550000000', '+15550000000', 1735000000000, '/menu', sender_name='Sam')
+p = normalize(InboundMessage(raw_text=raw, sender_id='', channel=Channel.SIGNAL, source='t'))
+assert p.channel == 'signal', p.channel
+assert p.channel_id == '+15550000000'
+assert p.message_id == '1735000000000'
+print('signal Format-A envelope ok')
+\""
+check "signal group id survives the channel-prefix strip" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"
+import sys; sys.path.insert(0, '.')
+from sensor.signal_poller import _build_format_a
+from gateway.ingress import InboundMessage, Channel, normalize
+raw = _build_format_a('+15550000000', 'group:Z3JvdXBpZA==', 1735000000100, '/status')
+p = normalize(InboundMessage(raw_text=raw, sender_id='', channel=Channel.SIGNAL, source='t'))
+assert p.channel == 'signal'
+assert p.channel_id == 'group:Z3JvdXBpZA==', p.channel_id
+print('signal group addressing ok')
+\""
+check "signal_media is an allowed media root (SEC-3)" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"
+import sys, os; sys.path.insert(0, '.')
+from pathlib import Path
+import gateway.ingress as ing
+roots = [str(r) for r in ing._media_roots()]
+assert any(r.endswith('data/signal_media') for r in roots), roots
+print('signal_media allowlisted')
+\""
+
 check "tool_runner: manifest → run → structured result → log → cron/placement" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_tool_runner.py"
 

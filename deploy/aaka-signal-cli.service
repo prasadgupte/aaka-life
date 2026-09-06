@@ -1,0 +1,27 @@
+[Unit]
+Description=signal-cli JSON-RPC daemon for Aaka (Signal channel)
+Documentation=https://github.com/AsamK/signal-cli/wiki/JSON-RPC-service
+After=network-online.target
+Wants=network-online.target
+
+# Prerequisites on the VPS (Ubuntu 24.04):
+#   sudo apt install -y openjdk-21-jre-headless
+#   install signal-cli to /opt/signal-cli (see docs/manual.md → Signal)
+#   register a DEDICATED number:  signal-cli -a "$SIGNAL_ACCOUNT" register
+# The daemon binds loopback only — nothing about Signal is network-reachable.
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/aaka-repo
+EnvironmentFile=/opt/aaka-repo/.env
+Environment=SIGNAL_CLI_HTTP=127.0.0.1:18794
+ExecStart=/bin/sh -c '/opt/signal-cli/bin/signal-cli -a "$SIGNAL_ACCOUNT" daemon --http "$SIGNAL_CLI_HTTP"'
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aaka-signal-cli
+
+[Install]
+WantedBy=multi-user.target

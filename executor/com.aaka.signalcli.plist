@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Templated by admin/deploy.sh: ${SIGNAL_CLI_BIN} ${AAKA_BASE} ${AAKA_CONFIG_DIR}
+     ${SIGNAL_ACCOUNT} are substituted at install time. Runs the signal-cli
+     JSON-RPC daemon under launchd so the Signal session is always-on.
+
+     Only installed on the Mac when SIGNAL_PLACEMENT=executor. The default is
+     SIGNAL_PLACEMENT=sensor — see deploy/aaka-signal-cli.service — because
+     replies to queued intents are flushed from cron ON THE VPS, so the daemon
+     has to live next to that flusher to answer them.
+
+     Binds 127.0.0.1 only: nothing about Signal is network-reachable. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aaka.signalcli</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>${SIGNAL_CLI_BIN}</string>
+    <string>-a</string>
+    <string>${SIGNAL_ACCOUNT}</string>
+    <string>daemon</string>
+    <string>--http</string>
+    <string>127.0.0.1:18794</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${AAKA_BASE}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AAKA_CONFIG_DIR</key>
+    <string>${AAKA_CONFIG_DIR}</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>${AAKA_CONFIG_DIR}/logs/signal_cli.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${AAKA_CONFIG_DIR}/logs/signal_cli.log</string>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>

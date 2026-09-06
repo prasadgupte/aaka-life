@@ -305,6 +305,55 @@ SSHBLOCK
         info "WhatsApp not in ENABLED_CHANNELS — skipping sidecar services (Telegram-only install)."
     fi
 
+    # Signal — signal-cli JSON-RPC daemon + poller. Only when signal is enabled.
+    # Placement matters: replies to QUEUED intents are flushed from cron on the
+    # VPS, so the daemon belongs next to that flusher (SIGNAL_PLACEMENT=sensor,
+    # the default → deploy/aaka-signal-cli.service + aaka-signal-poller.service).
+    # These Mac launchd agents are for SIGNAL_PLACEMENT=executor only.
+    if echo "$_EC" | grep -q "signal"; then
+        _SP="${SIGNAL_PLACEMENT:-}"
+        if [ -z "$_SP" ] && [ -f "$AAKA_CONFIG_DIR/.env" ]; then
+            _SP="$(grep -E '^SIGNAL_PLACEMENT=' "$AAKA_CONFIG_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'\'' ')"
+        fi
+        _SP="${_SP:-sensor}"
+        _SA="${SIGNAL_ACCOUNT:-}"
+        if [ -z "$_SA" ] && [ -f "$AAKA_CONFIG_DIR/.env" ]; then
+            _SA="$(grep -E '^SIGNAL_ACCOUNT=' "$AAKA_CONFIG_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'\'' ')"
+        fi
+        SIGNAL_CLI_BIN="$(command -v signal-cli || true)"
+        PYTHON_BIN="$REPO_DIR/venv/bin/python3"
+        if [ "$_SP" != "executor" ]; then
+            info "SIGNAL_PLACEMENT=$_SP — signal-cli runs on the VPS. Install deploy/aaka-signal-cli.service + deploy/aaka-signal-poller.service there; skipping Mac launchd agents."
+        elif [ -z "$SIGNAL_CLI_BIN" ]; then
+            warn "signal-cli not found on PATH — Signal services NOT installed. brew install signal-cli and re-run deploy."
+        elif [ -z "$_SA" ]; then
+            warn "SIGNAL_ACCOUNT not set in .env — Signal services NOT installed. Add SIGNAL_ACCOUNT=+E.164 (a dedicated number) and re-run deploy."
+        elif [ ! -x "$PYTHON_BIN" ]; then
+            warn "venv python missing ($PYTHON_BIN) — Signal poller NOT installed. Create the venv and re-run deploy."
+        else
+            for sg in signalcli signalpoller; do
+                SG_SRC="$REPO_DIR/executor/com.aaka.$sg.plist"
+                SG_DST="$HOME/Library/LaunchAgents/com.aaka.$sg.plist"
+                if [ -f "$SG_SRC" ]; then
+                    sed -e "s|\${AAKA_BASE}|$REPO_DIR|g" \
+                        -e "s|\${AAKA_CONFIG_DIR}|$AAKA_CONFIG_DIR|g" \
+                        -e "s|\${SIGNAL_CLI_BIN}|$SIGNAL_CLI_BIN|g" \
+                        -e "s|\${SIGNAL_ACCOUNT}|$_SA|g" \
+                        -e "s|\${PYTHON_BIN}|$PYTHON_BIN|g" \
+                        "$SG_SRC" > "$SG_DST"
+                    launchctl unload "$SG_DST" 2>/dev/null || true
+                    launchctl load "$SG_DST"
+                    ok "com.aaka.$sg installed and loaded"
+                else
+                    warn "Signal plist not found: $SG_SRC"
+                fi
+            done
+            info "Signal always-on: signal-cli daemon :18794 (loopback) + poller. Verify with admin/diagnose.sh."
+        fi
+    else
+        info "Signal not in ENABLED_CHANNELS — skipping signal-cli services."
+    fi
+
     header "Step 5 — Create vault scaffold"
     # Vault roots are per-member (vault_path in aaka.yaml) + shared vault
     # Scaffold is created on the filesystem; gDrive sync handles backup

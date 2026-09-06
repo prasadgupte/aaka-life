@@ -1095,6 +1095,69 @@ else
     info "whatsapp not in ENABLED_CHANNELS — wa-sidecar checks skipped"
 fi
 
+# ── Signal (if signal ∈ ENABLED_CHANNELS) ─────────────────────────────────────
+header "Signal (signal-cli JSON-RPC daemon)"
+SIGNAL_CLI_URL="${SIGNAL_CLI_URL:-http://127.0.0.1:18794}"
+if echo "${ENABLED_CHANNELS:-telegram}" | grep -q "signal"; then
+    # Liveness first: GET /api/v1/check is 200 whenever the daemon is up.
+    if curl -sf -o /dev/null "$SIGNAL_CLI_URL/api/v1/check" 2>/dev/null; then
+        ok "signal-cli daemon: reachable at $SIGNAL_CLI_URL"
+    else
+        fail "signal-cli daemon not reachable at $SIGNAL_CLI_URL — start it (VPS: systemctl restart aaka-signal-cli; Mac: launchctl kickstart -k gui/\$(id -u)/com.aaka.signalcli)"
+    fi
+    # Version through the adapter's own status() — proves JSON-RPC, not just TCP.
+    SIGNAL_VER=$("$PYTHON" -c "
+import sys; sys.path.insert(0, '$REPO_DIR')
+from gateway.channels.signal_cli import status
+st = status(timeout=3)
+print(('OK ' + (st.get('version') or 'running')) if st.get('ok') else ('ERR ' + str(st.get('error'))[:80]))
+" 2>/dev/null || echo "ERR could not run adapter")
+    case "$SIGNAL_VER" in
+        OK*) ok "signal-cli JSON-RPC: ${SIGNAL_VER#OK }" ;;
+        *)   fail "signal-cli JSON-RPC: ${SIGNAL_VER#ERR }" ;;
+    esac
+    if [ -z "${SIGNAL_ACCOUNT:-}" ]; then
+        warn "SIGNAL_ACCOUNT not set — needed for a multi-account daemon and for the signal.me invite link"
+    else
+        ok "SIGNAL_ACCOUNT set"
+    fi
+    # Placement: queued-intent replies are flushed by cron ON THE VPS, so a
+    # Mac-only daemon cannot answer them.
+    SIGNAL_PLACEMENT="${SIGNAL_PLACEMENT:-sensor}"
+    if [ "$SIGNAL_PLACEMENT" = "sensor" ]; then
+        ok "SIGNAL_PLACEMENT=sensor — outbox flusher and daemon are co-located"
+    else
+        warn "SIGNAL_PLACEMENT=$SIGNAL_PLACEMENT — flush_outbox.py on the VPS will SKIP signal rows; queued-intent replies stay pending"
+    fi
+    # Poller process (systemd on the VPS, launchd on the Mac).
+    if pgrep -f "signal_poller.py" &>/dev/null; then
+        ok "signal_poller.py: running"
+    else
+        fail "signal_poller.py not running — no inbound Signal messages will be routed"
+    fi
+    SIGNAL_LOG="$AAKA_CONFIG_DIR/logs/signal_poller.log"
+    if [ -f "$SIGNAL_LOG" ]; then
+        info "signal_poller.log: $(tail -1 "$SIGNAL_LOG" 2>/dev/null | cut -c1-120)"
+    fi
+    # Who can message aaka over Signal (the family gate).
+    SIGNAL_MEMBERS=$("$PYTHON" -c "
+import sys; sys.path.insert(0, '$REPO_DIR')
+import aaka_config
+rows = [(m.get('id'), aaka_config.member_handle(m, 'signal')) for m in aaka_config.members()]
+rows = [r for r in rows if r[1]]
+print('; '.join(f'{i}={h}' for i, h in rows) if rows else 'NONE')
+" 2>/dev/null || echo "ERR")
+    if [ "$SIGNAL_MEMBERS" = "NONE" ]; then
+        warn "no member has a signal handle — everyone is gated. Add signal:\"+E.164\" to a member in aaka.yaml, or onboard with /invite"
+    elif [ "$SIGNAL_MEMBERS" = "ERR" ]; then
+        warn "could not read members (check aaka.yaml / venv)"
+    else
+        ok "signal members allowed: $SIGNAL_MEMBERS"
+    fi
+else
+    info "signal not in ENABLED_CHANNELS — signal-cli checks skipped"
+fi
+
 # ── Security self-audit ───────────────────────────────────────────────────────
 # Runs the same checks as /security: perms, git-tracked secrets, inbound-port
 # exposure, shell=True, admin gates. FAIL here = fix before deploying to the VPS.
