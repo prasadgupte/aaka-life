@@ -427,6 +427,23 @@ def register_tool(name: str, run: str, schedule: str = "", command: str = "",
 
 
 @mcp.tool()
+def register_watchdog(name: str, watch: str, schedule: str, recipients: str = "",
+                      reminder: str = "", placement: str = "sensor") -> dict:
+    """Register a dead-man's-switch. If signal `watch` has no heartbeat for today by
+    the time `schedule` fires, remind `recipients` (comma-separated member ids) via
+    Telegram. `schedule` is 5-field cron — use the day-of-week field to avoid weekend
+    noise, e.g. '30 20 * * 1-5' = weekday 20:30. Runs on the sensor (placement default)
+    so it fires even when the Mac is off. Unregister with remove_tool."""
+    from sensor import tool_runner
+    recs = [r.strip() for r in recipients.split(",") if r.strip()]
+    entry = tool_runner.register(
+        name, run="", kind="watchdog", watch=watch, schedule=schedule,
+        placement=placement, recipients=recs or None, reminder=reminder or None,
+        report_to=(recs[0] if recs else None))
+    return {"ok": True, "watchdog": name, "watch": watch, "entry": entry}
+
+
+@mcp.tool()
 def run_tool(name: str, args: str = "") -> dict:
     """Run a registered tool now and report back. Returns its structured result."""
     from sensor import tool_runner

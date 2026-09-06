@@ -340,6 +340,29 @@ def _push_to_vps(cfg: SyncConfig, table: str, rows: list[dict],
         return 0
 
 
+def _push_heartbeats(cfg: SyncConfig) -> int:
+    """Push today's signal heartbeats Mac→VPS so the sensor watchdog knows which
+    scheduled Mac jobs ran. INSERT OR IGNORE — existence is all the watchdog checks."""
+    from aaka_queue.queue import _connect
+    from datetime import date
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM signal_heartbeats WHERE ok_date >= ?",
+            (date.today().isoformat(),),
+        ).fetchall()
+    except Exception:
+        return 0  # table not created yet
+    if not rows:
+        return 0
+    # Ensure the VPS table exists first, so day-1 pushes land (avoids a false miss).
+    ddl = ("CREATE TABLE IF NOT EXISTS signal_heartbeats "
+           "(name TEXT NOT NULL, ok_date TEXT NOT NULL, ts TEXT NOT NULL, "
+           "PRIMARY KEY(name, ok_date));")
+    _ssh_run(cfg, f"sqlite3 '{cfg.vps_db_path}' \"{ddl}\"", timeout=15)
+    return _push_to_vps(cfg, "signal_heartbeats", [dict(r) for r in rows], mode="insert")
+
+
 def _push_status_updates(cfg: SyncConfig) -> int:
     """Push locally-processed queue items (done/error) back to VPS."""
     from aaka_queue.queue import _connect
@@ -672,6 +695,12 @@ def run_sync_cycle(cfg: SyncConfig) -> SyncStats:
         stats.outbox = _push_outbox(cfg)
     except Exception as e:
         print(f"[sync] push outbox error: {e}")
+
+    # 4c. Push signal heartbeats so the VPS watchdog can see which Mac jobs ran.
+    try:
+        _push_heartbeats(cfg)
+    except Exception as e:
+        print(f"[sync] push heartbeats error: {e}")
 
     # 4b. Pull agent_replies from VPS so gateway can serve them to polling agents.
     try:

@@ -144,9 +144,31 @@ def _log(name: str, record: dict) -> None:
         pass
 
 
+def _run_watchdog(name: str, entry: dict) -> dict:
+    """A watchdog doesn't run a script — it checks that an expected signal fired
+    today (via a heartbeat) and sends a friendly reminder to `recipients` if not.
+    Silent when the signal is present. The cron `schedule` controls WHICH days it
+    checks (e.g. `30 20 * * 1-5` = weekday evenings — no weekend noise)."""
+    from datetime import date
+    from aaka_queue.queue import has_heartbeat
+    watch = entry.get("watch") or name
+    if has_heartbeat(watch, date.today().isoformat()):
+        return {"ok": True, "silent": True, "summary": f"{watch}: present"}
+    reminder = entry.get("reminder") or (
+        f"Heads-up — today's *{watch}* didn't run. The home machine may have been off; "
+        f"I'll catch it up when it's back.")
+    recipients = entry.get("recipients") or (
+        [entry["report_to"]] if entry.get("report_to") else [])
+    for r in recipients:
+        _send(r, "⏰ " + reminder)
+    return {"ok": True, "silent": True, "summary": f"{watch}: MISSING — reminded {len(recipients)}"}
+
+
 def run_tool(name: str, entry: dict | None = None, extra_args: str = "") -> dict:
     """Execute one tool. Returns the structured result dict (never raises)."""
     entry = entry or load_manifest().get(name) or {}
+    if entry.get("kind") == "watchdog":
+        return _run_watchdog(name, entry)
     run = entry.get("run")
     if not run:
         return {"ok": False, "error": "no_such_tool", "summary": f"tool '{name}' has no run target"}
@@ -197,6 +219,8 @@ def _send(member_id: str, text: str) -> None:
 
 def report(name: str, entry: dict, result: dict) -> None:
     """Deliver the run result per the manifest (never silent on error)."""
+    if result.get("silent"):  # watchdog handled its own delivery (or nothing to say)
+        return
     report_to = entry.get("report_to") or aaka_config.default_actor()
     # Instances attached to a member (e.g. one kid's school) tag the report so a
     # parent watching several instances knows whose it is.

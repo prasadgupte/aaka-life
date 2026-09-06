@@ -136,6 +136,39 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+# ── Signal heartbeats (dead-man's-switch for scheduled Mac jobs) ────────────────
+# A scheduled job records a heartbeat on success; a VPS-side watchdog reminds if
+# the heartbeat for today is missing by a deadline. Synced Mac→VPS via vps_sync.
+_HEARTBEAT_DDL = """CREATE TABLE IF NOT EXISTS signal_heartbeats (
+    name    TEXT NOT NULL,
+    ok_date TEXT NOT NULL,
+    ts      TEXT NOT NULL,
+    PRIMARY KEY (name, ok_date)
+)"""
+
+
+def record_heartbeat(name: str) -> None:
+    """Mark that signal `name` succeeded today (idempotent per day)."""
+    from datetime import date, datetime
+    conn = _connect()
+    conn.execute(_HEARTBEAT_DDL)
+    conn.execute(
+        "INSERT INTO signal_heartbeats (name, ok_date, ts) VALUES (?,?,?) "
+        "ON CONFLICT(name, ok_date) DO UPDATE SET ts=excluded.ts",
+        (name, date.today().isoformat(), datetime.utcnow().isoformat() + "Z"),
+    )
+    conn.commit()
+
+
+def has_heartbeat(name: str, ok_date: str) -> bool:
+    """True if signal `name` recorded a heartbeat on `ok_date` (YYYY-MM-DD)."""
+    conn = _connect()
+    conn.execute(_HEARTBEAT_DDL)
+    return conn.execute(
+        "SELECT 1 FROM signal_heartbeats WHERE name=? AND ok_date=?", (name, ok_date)
+    ).fetchone() is not None
+
+
 def _close_all() -> None:
     """Close all tracked connections (called at interpreter exit)."""
     with _all_conns_lock:
