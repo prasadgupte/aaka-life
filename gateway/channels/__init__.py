@@ -9,8 +9,11 @@ Add a new channel by creating gateway/channels/<name>.py with:
   send_reaction(msg: OutboundMessage) -> None    # optional
 
 Available adapters:
-  telegram  — Telegram Bot API (direct HTTP, no CLI dependency)
-  whatsapp  — OpenClaw/ZeroClaw CLI wrapper
+  telegram    — Telegram Bot API (direct HTTP, no CLI dependency)
+  whatsapp    — wa-sidecar HTTP API (Baileys WhatsApp Web session)
+  slack       — Slack Web API
+  signal_cli  — signal-cli JSON-RPC daemon (channel name: "signal"; the module
+                is NOT called signal.py because that shadows stdlib `signal`)
 
 To register a new channel in egress dispatch, add an entry in
 gateway/egress.py → _CHANNEL_DISPATCH dict.
