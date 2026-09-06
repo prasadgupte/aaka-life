@@ -346,15 +346,28 @@ every private conversation they have, and it can't appear as a separate contact
 in the family chat, which is the whole model. Linking is fine for a five-minute
 test (`signal-cli link -n aaka` prints a QR); it is not how to run this.
 
-1. Install signal-cli and a JRE.
-   - Mac: `brew install signal-cli`
-   - VPS (Ubuntu 24.04): `sudo apt install -y openjdk-21-jre-headless`, then
-     unpack a signal-cli release into `/opt/signal-cli`.
-2. Register the dedicated number (once):
+**You install; the user only does what needs a human.** Exactly two steps
+require them: solving the registration captcha in a browser, and reading back
+the code that arrives by SMS or voice call. Everything else is yours — do not
+hand them a list of commands to run.
+
+1. Install signal-cli and a JRE — **`bash admin/deploy.sh` does this for you**
+   once `signal` is in `ENABLED_CHANNELS`. It uses Homebrew on the Mac and
+   apt + the pinned release tarball on the VPS, then installs the services.
+   Only fall back to installing by hand if that fails.
+2. Register the dedicated number (once). Run this yourself and walk the user
+   through the captcha and the code:
    ```bash
-   signal-cli -a +15550000000 register          # add --voice if SMS is blocked
+   signal-cli -a +15550000000 register          # add --voice for a landline
+   # Signal usually answers with a captcha challenge. Send the user the URL it
+   # prints, have them solve it and paste back the token, then:
+   signal-cli -a +15550000000 register --captcha signalcaptcha://...
    signal-cli -a +15550000000 verify 123456     # the code that arrives
    ```
+   **Check the number first.** Ask whether it is currently active on a phone.
+   If it is, stop: registering deregisters Signal on that device, and there is
+   no undo. Signal has no bot accounts, so this is a real account either way —
+   the model is WhatsApp's, not Telegram's.
 3. Add to `.env`:
    ```
    ENABLED_CHANNELS=telegram,signal

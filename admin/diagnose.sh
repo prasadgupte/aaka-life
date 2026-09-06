@@ -1099,7 +1099,23 @@ fi
 header "Signal (signal-cli JSON-RPC daemon)"
 SIGNAL_CLI_URL="${SIGNAL_CLI_URL:-http://127.0.0.1:18794}"
 if echo "${ENABLED_CHANNELS:-telegram}" | grep -q "signal"; then
-    # Liveness first: GET /api/v1/check is 200 whenever the daemon is up.
+    # The binary itself first — a missing CLI is a different (and much more
+    # common) failure than a daemon that is down, and the fix is not the same.
+    if command -v signal-cli &>/dev/null; then
+        ok "signal-cli installed: $(signal-cli --version 2>/dev/null | head -1)"
+        # Is the account actually registered on THIS host? The daemon crash-loops
+        # if it is not, and the journal error is easy to misread as a port issue.
+        if [ -n "${SIGNAL_ACCOUNT:-}" ]; then
+            if signal-cli -a "$SIGNAL_ACCOUNT" listAccounts &>/dev/null; then
+                ok "signal account registered on this host: $SIGNAL_ACCOUNT"
+            else
+                fail "$SIGNAL_ACCOUNT is NOT registered here — signal-cli -a $SIGNAL_ACCOUNT register (then verify CODE). Use a dedicated number; registering one already on a phone deregisters Signal there."
+            fi
+        fi
+    else
+        fail "signal-cli not installed — run admin/deploy.sh (it installs the JRE + signal-cli), or brew install signal-cli"
+    fi
+    # Liveness next: GET /api/v1/check is 200 whenever the daemon is up.
     if curl -sf -o /dev/null "$SIGNAL_CLI_URL/api/v1/check" 2>/dev/null; then
         ok "signal-cli daemon: reachable at $SIGNAL_CLI_URL"
     else

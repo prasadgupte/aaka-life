@@ -4,10 +4,13 @@ Documentation=https://github.com/AsamK/signal-cli/wiki/JSON-RPC-service
 After=network-online.target
 Wants=network-online.target
 
-# Prerequisites on the VPS (Ubuntu 24.04):
-#   sudo apt install -y openjdk-21-jre-headless
-#   install signal-cli to /opt/signal-cli (see docs/manual.md → Signal)
-#   register a DEDICATED number:  signal-cli -a "$SIGNAL_ACCOUNT" register
+# admin/deploy.sh installs the JRE, signal-cli and this unit when "signal" is in
+# ENABLED_CHANNELS. The one step it cannot do for you is registration, because
+# that needs a captcha and an SMS or voice code:
+#   signal-cli -a "$SIGNAL_ACCOUNT" register      # --voice for a landline
+#   signal-cli -a "$SIGNAL_ACCOUNT" verify CODE
+# Use a DEDICATED number. Registering one that is already active on a phone
+# deregisters Signal on that phone.
 # The daemon binds loopback only — nothing about Signal is network-reachable.
 
 [Service]
@@ -15,7 +18,13 @@ Type=simple
 WorkingDirectory=/opt/aaka-repo
 EnvironmentFile=/opt/aaka-repo/.env
 Environment=SIGNAL_CLI_HTTP=127.0.0.1:18794
-ExecStart=/bin/sh -c '/opt/signal-cli/bin/signal-cli -a "$SIGNAL_ACCOUNT" daemon --http "$SIGNAL_CLI_HTTP"'
+Environment=SIGNAL_CLI_BIN=/usr/local/bin/signal-cli
+# --receive-mode on-start is deliberate and load-bearing. signal-cli documents
+# three modes and states no default, and with on-connection the daemon only
+# pulls messages while a client is attached — so a poller reconnect could drop
+# whatever arrived in between. on-start keeps the daemon receiving for the whole
+# lifetime of the unit, which is what an always-on assistant needs.
+ExecStart=/bin/sh -c '"$SIGNAL_CLI_BIN" -a "$SIGNAL_ACCOUNT" daemon --http "$SIGNAL_CLI_HTTP" --receive-mode on-start'
 Restart=always
 RestartSec=10
 NoNewPrivileges=true

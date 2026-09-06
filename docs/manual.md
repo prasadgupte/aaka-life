@@ -531,6 +531,17 @@ what each messenger itself can render.
 
 ### Signal
 
+**Signal has no bot platform.** Telegram gives you BotFather, a bot token and an
+account that is a bot. Signal has none of that: there are no bot accounts and no
+official API, so aaka drives a *real* Signal account through signal-cli, an
+unofficial client. The model is the WhatsApp one, not the Telegram one — a real
+account, a real phone number, and a session that can be rate-limited. The one
+advantage over WhatsApp is that a registered number gives aaka its own contact
+card, so it still looks and behaves like a bot to your family.
+
+Two consequences: there are no inline buttons (aaka sends numbered options and
+you reply with a number), and the number you choose matters a great deal.
+
 **Use a dedicated number.** signal-cli can either *register* a number of its own
 or *link* to your existing Signal account as a second device. Register a
 dedicated number — a prepaid SIM is enough. Linking makes aaka **be** your

@@ -24,6 +24,11 @@
     <string>daemon</string>
     <string>--http</string>
     <string>127.0.0.1:18794</string>
+    <!-- on-start, not the unstated default: on-connection only receives while a
+         client is attached, so messages arriving between poller reconnects
+         could be missed. -->
+    <string>--receive-mode</string>
+    <string>on-start</string>
   </array>
 
   <key>WorkingDirectory</key>

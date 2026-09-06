@@ -215,7 +215,9 @@ Register a number for aaka rather than linking aaka to your own Signal account:
 linking would make aaka *be* your account — it would see all your private
 Signal traffic and could never appear as a separate contact in the family chat.
 
-1. Install signal-cli and a JRE:
+1. Install signal-cli and a JRE — **`bash admin/deploy.sh` does this for you**
+   once `signal` is in `ENABLED_CHANNELS` (Homebrew on the Mac, apt plus the
+   pinned release tarball on the VPS). Only do it by hand if that fails:
    - Mac: `brew install signal-cli`
    - VPS (Ubuntu): `sudo apt install -y openjdk-21-jre-headless` and unpack a
      signal-cli release into `/opt/signal-cli`
