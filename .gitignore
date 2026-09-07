@@ -55,3 +55,9 @@ BACKLOG.md
 INSIGHTS.md
 # Claude Code session state + agent worktrees (never product code)
 .claude/
+# Editor/agent scratch that must never be swept up by `git add -A`.
+# A concurrent session's in-flight .bak sitting next to a tracked file is easy
+# to commit by accident; SQLite's sidecars are pure runtime state.
+*.bak
+*.db-shm
+*.db-wal
