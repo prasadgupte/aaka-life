@@ -529,6 +529,24 @@ what each messenger itself can render.
 | Reactions (👀 read-ack) | yes | not wired | yes |
 | Invite deep link | pre-filled `t.me` | pre-filled `wa.me` | `signal.me` + the line to send |
 
+### WhatsApp — which chats aaka answers in
+
+The sidecar links to **your own** WhatsApp account: Baileys cannot register an
+account of its own, so aaka is always a guest there, exactly like a linked
+Signal device. The same deny-by-default rule therefore applies.
+
+| Chat | Answers? |
+|---|---|
+| Message Yourself (`WHATSAPP_PHONE`) | Always |
+| Anything in `WHATSAPP_ALLOWED_CHATS` | Yes |
+| Someone redeeming a valid `/invite` code | Yes, and the chat is added |
+| Everything else — groups, DMs, strangers | Silent |
+
+`WHATSAPP_GROUP_JID` folds into the allowed list, so existing setups keep
+working. If you ever run aaka on a WhatsApp number of its own rather than
+linking to yours, set `WHATSAPP_LINKED_MODE=false` to restore the old
+behaviour, where an unknown sender is told how to get added.
+
 ### Signal
 
 **Signal has no bot platform.** Telegram gives you BotFather, a bot token and an
@@ -557,10 +575,18 @@ python3 admin/signal_chats.py     # every group AND person, with ids, marking wh
 
 Signal identifies people by a **uuid** as well as a phone number, and sharing
 the number is optional — for many contacts the uuid is the only id you get.
-Either works in the allowlist. There is no self-service onboarding on a linked
-device: the invite-code flow is disabled there on purpose, because it works by
-replying to people aaka does not yet know, from your personal account. Onboard
-someone by taking their id from the command above and listing it yourself.
+Either works in the allowlist.
+
+**Invites still work on a linked device.** Reading an incoming message to look
+for a one-time code is safe; what was not safe was *replying* to people who have
+no code. So `/invite <name>` behaves as it always did — aaka checks every
+unknown sender's message for a valid, unexpired code, binds them and welcomes
+them when it finds one, and adds that chat to the allowed list so the invite
+actually means something. Anyone without a code gets silence rather than a
+"you're almost in" reply from your personal number.
+
+You can also skip the invite entirely and list someone's id yourself, from the
+command above.
 
 Then put the ids you want in `.env`:
 

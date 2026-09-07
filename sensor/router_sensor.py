@@ -375,6 +375,113 @@ def _signal_linked_mode() -> bool:
     return os.environ.get("SIGNAL_LINKED_MODE", "").strip().lower() in ("1", "true", "yes", "on")
 
 
+# Channels where aaka runs as a LINKED DEVICE on a human's own account rather
+# than owning the account itself. It answers as them, into their real
+# conversations, and can see every chat they are in — so these channels are
+# deny-by-default and never speak to anyone not explicitly allowed.
+#
+# WhatsApp defaults to linked because Baileys can only ever link: there is no
+# way for aaka to own a WhatsApp account. Signal can go either way, so it is
+# opt-in via SIGNAL_LINKED_MODE, which admin/setup_signal.sh sets when linking.
+_LINKED_DEFAULTS = {"whatsapp": True, "signal": False}
+
+
+def _linked_mode(source: str) -> bool:
+    """True when `source` is a linked device on the operator's own account."""
+    if source not in _LINKED_DEFAULTS:
+        return False
+    raw = os.environ.get(f"{source.upper()}_LINKED_MODE", "").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    return _LINKED_DEFAULTS[source]
+
+
+def _own_ids(source: str) -> set:
+    """Identifiers meaning "this account" on `source` — the self-chat, which is
+    always allowed because nobody else can see it."""
+    if source == "signal":
+        return _signal_account_ids()
+    if source == "whatsapp":
+        ids = set()
+        for key in ("WHATSAPP_PHONE", "WHATSAPP_SELF_JID"):
+            v = os.environ.get(key, "").strip()
+            if v:
+                ids.add(v)
+                bare = v.split("@")[0].lstrip("+")
+                if bare:
+                    ids.update({bare, f"+{bare}", f"{bare}@s.whatsapp.net"})
+        return ids
+    return set()
+
+
+def _allowed_chats(source: str) -> set:
+    """Chats where aaka may speak on `source`, from <CHANNEL>_ALLOWED_CHATS.
+    The older single-group vars fold in, so existing configs keep working."""
+    legacy = {"signal": "SIGNAL_GROUP_ID", "whatsapp": "WHATSAPP_GROUP_JID"}
+    raw = ",".join([
+        os.environ.get(f"{source.upper()}_ALLOWED_CHATS", ""),
+        os.environ.get(legacy.get(source, ""), "") if legacy.get(source) else "",
+    ])
+    out: set = set()
+    for tok in raw.split(","):
+        t = tok.strip()
+        if not t:
+            continue
+        out.add(t)
+        out.add(t[len("group:"):] if t.startswith("group:") else f"group:{t}")
+    return out
+
+
+def _allowed_chats_path(source: str) -> "Path":
+    return Path(os.environ.get("AAKA_CONFIG_DIR", "/config")) / "data" / f"{source}_allowed_chats.json"
+
+
+def _granted_chats(source: str) -> set:
+    """Chats allowed by a successful invite signup, as opposed to by config.
+
+    Redeeming an invite has to grant access, otherwise inviting someone to a
+    linked device accomplishes nothing: they would be bound as a member and
+    then met with silence.
+    """
+    try:
+        data = json.loads(_allowed_chats_path(source).read_text())
+        return {str(x) for x in (data if isinstance(data, list) else [])}
+    except Exception:
+        return set()
+
+
+def grant_chat(source: str, chat_id: str) -> None:
+    """Persist a chat as allowed (called after a valid invite code is redeemed)."""
+    if not chat_id:
+        return
+    path = _allowed_chats_path(source)
+    chats = _granted_chats(source)
+    if chat_id in chats:
+        return
+    chats.add(chat_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(sorted(chats)))
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.warning("could not persist allowed chat: %s", exc)
+
+
+def _chat_allowed(source: str, sender_id: str, channel_id: str) -> bool:
+    """Deny-by-default gate for a linked device.
+
+    A known member sending a DM is NOT consent: the reply would appear to come
+    from the operator, in their private conversation. Only the self-chat and
+    explicitly listed ids are allowed.
+    """
+    own = _own_ids(source)
+    if own and (sender_id in own or channel_id in own):
+        return True
+    known = _allowed_chats(source) | _granted_chats(source)
+    return bool(known & {channel_id, sender_id})
+
+
 def _signal_account_ids() -> set:
     """Identifiers meaning "this account": the configured number and its uuid."""
     ids = {os.environ.get("SIGNAL_ACCOUNT", "").strip()}
@@ -451,8 +558,8 @@ def _is_allowed_channel(sender_id: str, channel_id: str, source: str = "") -> bo
     in a school group would make aaka answer in front of everyone, as them. So in
     linked mode a group is allowed only when its id is explicitly configured.
     """
-    if source == "signal" and _signal_linked_mode():
-        return _signal_chat_allowed(sender_id, channel_id)
+    if _linked_mode(source):
+        return _chat_allowed(source, sender_id, channel_id)
     if aaka_config.member_by_sender(sender_id):
         return True
     _signal_group = os.environ.get("SIGNAL_GROUP_ID", "").strip()
@@ -1698,14 +1805,6 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
     # ── Channel gate — drop unknown senders/groups ────────────────────────────
     if not dry_run and not _is_allowed_channel(sender_id, channel_id, source):
         _log.info("drop source=%s sender=%s channel=%s (not in allowlist)", source, sender_id, channel_id)
-        # Linked-device Signal: the account belongs to a person, not to aaka.
-        # Anyone who messages them — a colleague, a stranger, a wrong number —
-        # would otherwise get an automated "you're almost in" reply from their
-        # personal account, and an invite code in someone else's message would
-        # silently bind them. Neither is acceptable when aaka is a guest on a
-        # human's account, so linked mode answers unknown senders with silence.
-        if source == "signal" and _signal_linked_mode():
-            return ""
         # Invite-code onboarding: a valid one-time code in the message
         # auto-registers the sender (binds their handle → member) and welcomes
         # them, before the "ask the admin" fallback. DMs only.
@@ -1715,6 +1814,12 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                 welcome = wa_onboard.try_signup(sender_id, sender_name, message)
                 if welcome:
                     _log.info("signup source=%s sender=%s — bound via invite code", source, sender_id)
+                    # On a linked device the roster alone does not grant speech
+                    # (see _chat_allowed), so redeeming the invite must also open
+                    # this chat — otherwise the invite binds them and then aaka
+                    # never answers again.
+                    if _linked_mode(source):
+                        grant_chat(source, sender_id)
                     # Delight the first contact: now that their handle is bound,
                     # append today's gist from the family calendar. Best-effort —
                     # never let it break the welcome.
@@ -1730,6 +1835,15 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                     return welcome
             except Exception as _e:  # pragma: no cover - defensive
                 _log.warning("invite signup check failed: %s", _e)
+        # Linked device: aaka is a guest on a human's account. Someone who
+        # presents a valid invite code has been deliberately invited and was
+        # handled above; anyone else — a colleague, a stranger, a wrong number —
+        # gets NOTHING. The "you're almost in, here's your handle" hint below is
+        # right when aaka owns the account and wrong when it would arrive from
+        # the operator's personal number.
+        if _linked_mode(source):
+            _log.info("linked-mode silence for unknown sender=%s", sender_id)
+            return ""
         # For DMs, reply with the sender's own handle so they can be added.
         # Group messages silently drop (no way to know intent).
         if source == "telegram" and sender_id == channel_id:

@@ -158,8 +158,82 @@ def test_unknown_sender_still_onboarded_for_a_dedicated_number():
           "almost in" in (out or ""))
 
 
+def test_invite_code_still_onboards_on_a_linked_device():
+    """The operator's whole point in inviting someone is that they can then use
+    aaka. Reading a message to look for a code is safe; replying to people who
+    have no code is what was not."""
+    import json as _json
+    import tempfile as _tf
+    from pathlib import Path as _P
+    from sensor import wa_onboard
+
+    _linked(True)
+    cfg = _P(_tf.mkdtemp(prefix="aaka-invite-test-"))
+    (cfg / "data").mkdir(parents=True, exist_ok=True)
+    (cfg / "config").mkdir(parents=True, exist_ok=True)
+    (cfg / "config" / "aaka.yaml").write_text(
+        (_P(os.environ["AAKA_CONFIG_DIR"]) / "config" / "aaka.yaml").read_text())
+    prev_cfg = os.environ["AAKA_CONFIG_DIR"]
+    os.environ["AAKA_CONFIG_DIR"] = str(cfg)
+    os.environ["SIGNAL_ACCOUNT"] = "+15550000000"
+    os.environ.pop("SIGNAL_ALLOWED_CHATS", None)
+    try:
+        aaka_config._load.cache_clear()
+        member = aaka_config.members()[0]["id"]
+        code = wa_onboard.create_invite(member, "Test Person")
+        stranger = "uuid-invited-person"
+
+        check("an invited stranger is not allowed before redeeming",
+              rs._chat_allowed("signal", stranger, stranger) is False)
+
+        welcome = wa_onboard.try_signup(stranger, "Test Person", f"Hi aaka ({code})")
+        check("a valid code still binds them on a linked device", bool(welcome))
+
+        rs.grant_chat("signal", stranger)
+        check("redeeming the invite opens the chat",
+              rs._chat_allowed("signal", stranger, stranger) is True)
+
+        store = _json.loads((cfg / "data" / "signal_allowed_chats.json").read_text())
+        check("the grant is persisted", stranger in store)
+
+        check("someone else with no code stays blocked",
+              rs._chat_allowed("signal", "uuid-random", "uuid-random") is False)
+    finally:
+        os.environ["AAKA_CONFIG_DIR"] = prev_cfg
+        aaka_config._load.cache_clear()
+
+
+def test_whatsapp_is_linked_by_default():
+    """Baileys can only ever link to a human's account — aaka cannot own a
+    WhatsApp number — so WhatsApp is deny-by-default without configuration."""
+    os.environ.pop("WHATSAPP_LINKED_MODE", None)
+    check("whatsapp is linked by default", rs._linked_mode("whatsapp") is True)
+    check("telegram is never linked", rs._linked_mode("telegram") is False)
+    os.environ["WHATSAPP_LINKED_MODE"] = "false"
+    check("…and can be opted out for a dedicated WhatsApp account",
+          rs._linked_mode("whatsapp") is False)
+    os.environ.pop("WHATSAPP_LINKED_MODE", None)
+
+    os.environ["WHATSAPP_PHONE"] = "+15551112222"
+    os.environ.pop("WHATSAPP_ALLOWED_CHATS", None)
+    os.environ.pop("WHATSAPP_GROUP_JID", None)
+    check("whatsapp self-chat is allowed",
+          rs._chat_allowed("whatsapp", "+15551112222", "+15551112222") is True)
+    check("whatsapp self-chat matches the jid spelling too",
+          rs._chat_allowed("whatsapp", "15551112222@s.whatsapp.net",
+                           "15551112222@s.whatsapp.net") is True)
+    check("an unlisted whatsapp group is silent",
+          rs._chat_allowed("whatsapp", "someone", "1203630000@g.us") is False)
+    os.environ["WHATSAPP_ALLOWED_CHATS"] = "1203630000@g.us"
+    check("…and speaks once listed",
+          rs._chat_allowed("whatsapp", "someone", "1203630000@g.us") is True)
+    os.environ.pop("WHATSAPP_ALLOWED_CHATS", None)
+
+
 def main():
     test_note_to_self_is_always_allowed()
+    test_invite_code_still_onboards_on_a_linked_device()
+    test_whatsapp_is_linked_by_default()
     test_known_member_dm_is_not_implicit_consent()
     test_allowlist_accepts_either_group_spelling()
     test_groups_need_explicit_config_in_linked_mode()

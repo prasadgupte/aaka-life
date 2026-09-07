@@ -103,6 +103,8 @@ aaka-repo/                          ← repo root
 | `SIGNAL_LINKED_MODE` | `false` | `true` when aaka is a **linked device** on the operator's own Signal account rather than its own registered number. Linked mode answers `/commands` and shortcuts only and stays silent on free text, so aaka never interjects in their personal chats. Set by `admin/setup_signal.sh link`. |
 | `SIGNAL_PAIR_PORT` | `18795` | Port for the browser pairing page (`admin/signal_pair.py`). Loopback only — the link URI is a credential. |
 | `SIGNAL_ALLOWED_CHATS` | _(empty)_ | Comma-separated chat ids (group ids, phone numbers, uuids) where aaka may reply on a **linked** device. Deny-by-default: Note to Self always works, everything else must be listed. `python3 admin/signal_chats.py` prints the ids. `SIGNAL_GROUP_ID` folds into this list. |
+| `WHATSAPP_LINKED_MODE` | `true` | WhatsApp via Baileys is always a linked device on a human's account, so it is deny-by-default. Set `false` only if aaka has a WhatsApp number of its own. |
+| `WHATSAPP_ALLOWED_CHATS` | _(empty)_ | Comma-separated chat ids where aaka may reply on WhatsApp. Message-Yourself always works; `WHATSAPP_GROUP_JID` folds into this list. A redeemed invite adds the chat automatically. |
 | `SIGNAL_GROUP_ID` | — | base64 groupId of the family Signal group (`listGroups`) — the Signal `WHATSAPP_GROUP_JID` |
 | `SIGNAL_ATTACHMENTS_DIR` | `~/.local/share/signal-cli/attachments` | Where signal-cli stores received attachments |
 | `SIGNAL_POLL_MODE` | `sse` | `sse` = stream `/api/v1/events`; `rpc` = poll the `receive` method |
