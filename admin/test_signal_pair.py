@@ -92,6 +92,22 @@ def test_unknown_path_404s():
         srv.shutdown()
 
 
+def test_styles_come_from_the_shared_file():
+    """The Signal and WhatsApp pairing pages must not drift: both inline the
+    same executor/webui/brand/pairing.css rather than keeping private copies."""
+    shared = REPO_ROOT / "executor" / "webui" / "brand" / "pairing.css"
+    check("shared stylesheet exists", shared.is_file())
+    page = sp._page()
+    check("placeholder is substituted", "__PAIRING_CSS__" not in page)
+    if shared.is_file():
+        marker = "image-rendering:pixelated"
+        check("shared rules reach the Signal page",
+              marker in shared.read_text() and marker in page)
+    wa = (REPO_ROOT / "wa-sidecar" / "index.js").read_text()
+    check("wa-sidecar reads the same file",
+          "brand', 'pairing.css'" in wa or "pairing.css" in wa)
+
+
 def test_binds_loopback_only():
     """The link URI is a credential — anyone who scans it gets a device on the
     account — so the server must never listen on a routable address."""
@@ -104,6 +120,7 @@ def main():
     test_qr_helper()
     test_endpoints_reflect_state()
     test_unknown_path_404s()
+    test_styles_come_from_the_shared_file()
     test_binds_loopback_only()
     print()
     if _FAILURES:

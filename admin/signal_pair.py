@@ -36,6 +36,7 @@ import sys
 import threading
 import time
 import webbrowser
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 DEFAULT_PORT = 18795
@@ -139,23 +140,7 @@ PAGE = """<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Link Signal · aaka</title>
 <style>
-  :root{--teal:#00B4A2;--ink:#1E2030;--muted:#556170;--bg:#FFF5F0;--sand:#F0DDD4}
-  *{box-sizing:border-box}body{margin:0;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    background:var(--bg);color:var(--ink);display:flex;min-height:100vh;align-items:center;justify-content:center}
-  .card{background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(15,20,25,.10);padding:32px;max-width:440px;width:92%;text-align:center}
-  .brand{font-weight:800;font-size:22px;letter-spacing:-.5px}.brand b{color:var(--teal)}
-  h1{font-size:19px;margin:.6em 0 .2em}p.sub{color:var(--muted);margin:.2em 0 1.2em;font-size:14px}
-  .qr{width:280px;height:280px;margin:8px auto;border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:center;border:1px solid #eef1f3}
-  .qr img{width:264px;height:264px;image-rendering:pixelated}
-  .steps{text-align:left;font-size:13.5px;color:var(--muted);margin:14px 4px 0;padding-left:18px}
-  .steps li{margin:3px 0}
-  .spin{width:34px;height:34px;border:3px solid #e3e8eb;border-top-color:var(--teal);
-    border-radius:50%;animation:s .8s linear infinite;margin:26px auto}@keyframes s{to{transform:rotate(360deg)}}
-  .ok{color:var(--teal);font-size:44px}
-  .warn{color:#c2410c;font-size:13px;background:#fff7ed;border-radius:10px;padding:12px;margin-top:8px;text-align:left;white-space:pre-wrap}
-  .note{font-size:12.5px;color:var(--muted);background:#f7f9fa;border-radius:10px;padding:10px 12px;margin-top:14px;text-align:left}
-  .uri{font:11px/1.4 ui-monospace,Menlo,monospace;word-break:break-all;color:var(--muted);margin-top:10px}
-  .pill{display:inline-block;font-size:12px;color:var(--muted);margin-top:14px}
+__PAIRING_CSS__
 </style></head><body>
 <div class="card">
   <div class="brand">&amp; aaka<b>.</b></div>
@@ -200,6 +185,38 @@ tick();setInterval(tick,2000);
 </script></body></html>"""
 
 
+# The pairing pages for Signal and WhatsApp are the same design; the styles live
+# in ONE file (executor/webui/brand/pairing.css) that both read, so they cannot
+# drift apart. The fallback is a shape, not a second copy of the design — it only
+# has to keep the page legible if the repo is not beside us.
+_CSS_FALLBACK = """
+:root{--teal:#00B4A2;--ink:#1E2030;--muted:#556170;--bg:#FFF5F0}
+body{margin:0;font:16px/1.5 -apple-system,system-ui,sans-serif;background:var(--bg);
+  color:var(--ink);display:flex;min-height:100vh;align-items:center;justify-content:center}
+.card{background:#fff;border-radius:20px;padding:32px;max-width:440px;width:92%;text-align:center}
+.brand{font-weight:800;font-size:22px}.brand b{color:var(--teal)}
+.qr img{width:264px;height:264px}.sub{color:var(--muted);font-size:14px}
+.steps{text-align:left;font-size:13.5px;color:var(--muted)}
+.ok{color:var(--teal);font-size:44px}
+.warn{background:#fff7ed;border-radius:10px;padding:12px;text-align:left;white-space:pre-wrap}
+.note{background:#f7f9fa;border-radius:10px;padding:10px 12px;text-align:left;font-size:12.5px}
+.uri{font:11px/1.4 ui-monospace,Menlo,monospace;word-break:break-all}
+.pill{font-size:12px;color:var(--muted)}
+"""
+
+
+def _pairing_css() -> str:
+    path = Path(__file__).resolve().parent.parent / "executor" / "webui" / "brand" / "pairing.css"
+    try:
+        return path.read_text()
+    except OSError:
+        return _CSS_FALLBACK
+
+
+def _page() -> str:
+    return PAGE.replace("__PAIRING_CSS__", _pairing_css())
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
@@ -220,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"qr": s["qr"], "uri": s["uri"]}).encode(),
                        "application/json")
         elif self.path in ("/", "/index.html"):
-            self._send(200, PAGE.encode(), "text/html; charset=utf-8")
+            self._send(200, _page().encode(), "text/html; charset=utf-8")
         else:
             self._send(404, b'{"error":"not found"}', "application/json")
 
