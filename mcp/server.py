@@ -430,6 +430,77 @@ def register_tool(name: str, run: str, schedule: str = "", command: str = "",
 
 
 @mcp.tool()
+def add_reminder(text: str, member: str = "", weekday: str = "",
+                 event_matches: str = "", unless_matches: str = "") -> dict:
+    """Add a recurring contextual reminder shown in that day's schedule and
+    morning brief.
+
+    Give it a condition — a weekday, something today's calendar contains, or
+    both:
+
+      weekday        "mon" or "mon,wed" — plain calendar weekday.
+      event_matches  regex over today's events, e.g. "sport|PE". PREFER THIS
+                     when the reminder depends on an activity: it follows the
+                     timetable, so it keeps working when sport moves day.
+      unless_matches regex that suppresses it, e.g. "holiday|no school".
+
+    `member` scopes it to one person's day view (their member id); omit for the
+    whole household. Reminders are NOT tasks: nothing to tick, nothing goes
+    overdue. Use add_task for anything you want to track to completion."""
+    from skills.reminders import rules
+    try:
+        res = rules.add(text, member=member, weekday=weekday,
+                        event_matches=event_matches, unless_matches=unless_matches)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, **res}
+
+
+@mcp.tool()
+def list_reminders() -> dict:
+    """All configured reminders with their ids, conditions and enabled state."""
+    from skills.reminders import rules
+    return {"ok": True, "reminders": rules.load()}
+
+
+@mcp.tool()
+def remove_reminder(reminder_id: str) -> dict:
+    """Delete a reminder by id (see list_reminders)."""
+    from skills.reminders import rules
+    return {"ok": rules.remove(reminder_id), "id": reminder_id}
+
+
+@mcp.tool()
+def set_reminder_enabled(reminder_id: str, enabled: bool) -> dict:
+    """Mute or unmute a reminder without deleting it — e.g. over the holidays."""
+    from skills.reminders import rules
+    return {"ok": rules.set_enabled(reminder_id, enabled),
+            "id": reminder_id, "enabled": enabled}
+
+
+@mcp.tool()
+def preview_reminders(date: str = "", member: str = "") -> dict:
+    """What would fire on `date` (YYYY-MM-DD, default today) against that day's
+    real calendar. Use this to check a rule before trusting it — a reminder on
+    the wrong day is worse than none, because it costs trust in all of them."""
+    import datetime as _dt
+    from skills.reminders import rules
+    import aaka_config as _cfg
+    try:
+        when = _dt.date.fromisoformat(date) if date else _dt.date.today()
+    except ValueError:
+        return {"ok": False, "error": f"bad date {date!r}, expected YYYY-MM-DD"}
+    cal = _cfg.CALENDAR_DIR
+    path = cal / f"today_{member}.md" if member else cal / "today.md"
+    if not path.exists():
+        path = cal / "today.md"
+    raw = path.read_text() if path.exists() else ""
+    return {"ok": True, "date": when.isoformat(), "member": member or "(all)",
+            "would_fire": rules.due(raw, date=when, member=member),
+            "calendar_available": bool(raw)}
+
+
+@mcp.tool()
 def register_watchdog(name: str, watch: str, schedule: str, recipients: str = "",
                       reminder: str = "", placement: str = "sensor") -> dict:
     """Register a dead-man's-switch. If signal `watch` has no heartbeat for today by

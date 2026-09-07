@@ -20,6 +20,20 @@ from skills.engagement.templates import (
 )
 
 
+def _reminders_block(raw: str, member_id: str) -> str:
+    """Contextual reminders for today, appended to the brief.
+
+    A reminder must reach you on the morning it applies, so it belongs in the
+    push, not only in the pulled /today view. Best-effort: a broken rule must
+    never cost you the brief itself.
+    """
+    try:
+        from skills.reminders.rules import render as _render
+        return _render(raw, member=member_id)
+    except Exception:
+        return ""
+
+
 def build_morning_brief(member_id: str) -> str | None:
     """Return the morning brief message text, or None if nothing to send."""
     CALENDAR = aaka_config.CALENDAR_DIR
@@ -46,7 +60,10 @@ def build_morning_brief(member_id: str) -> str | None:
     event_count = len(events)
 
     if event_count == 0:
-        return MORNING_NO_EVENTS.format(name=name, date=date_str)
+        # A free day still has reminders — "no events" is exactly when a
+        # standing routine is easiest to forget.
+        return MORNING_NO_EVENTS.format(name=name, date=date_str) + \
+            _reminders_block(raw, member_id)
 
     # Build schedule_line: first 2 events condensed
     schedule_lines = []
@@ -79,4 +96,4 @@ def build_morning_brief(member_id: str) -> str | None:
         date=date_str,
         schedule_line=schedule_line,
         hint=hint,
-    )
+    ) + _reminders_block(raw, member_id)
