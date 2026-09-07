@@ -2885,6 +2885,9 @@ check "signal channel: send/reaction/options/split against a mock JSON-RPC daemo
 
 check "signal pairing page: endpoints, loopback bind, QR data URI" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' admin/test_signal_pair.py"
+
+check "signal linked mode: strangers get silence; groups need explicit config" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_signal_linked_guards.py"
     bash -c "cd '$REPO_DIR' && '$PYTHON' gateway/channels/signal_cli_test.py"
 
 header "Signal — inbound poller (mock SSE stream)"

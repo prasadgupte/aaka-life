@@ -542,6 +542,14 @@ card, so it still looks and behaves like a bot to your family.
 Two consequences: there are no inline buttons (aaka sends numbered options and
 you reply with a number), and the number you choose matters a great deal.
 
+**On a linked device aaka is deliberately deaf to two things.** It never
+answers anyone it doesn't recognise — on your own account a stranger's "hi"
+would otherwise get an automated "you're almost in" reply from you — and it
+never answers in a group unless that group's id is set in `SIGNAL_GROUP_ID`.
+The second rule matters because a linked device sees *every* group you are in,
+including school and work groups, and your own messages there would otherwise
+pass the member check. Set `SIGNAL_GROUP_ID` only for the family group.
+
 **Never run a signal-cli subcommand while the daemon is up.** signal-cli takes
 an exclusive lock on the account directory, so any other invocation blocks for
 as long as the daemon holds it, printing only `Config file is in use by another

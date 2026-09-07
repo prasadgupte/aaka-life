@@ -375,11 +375,25 @@ def _signal_linked_mode() -> bool:
     return os.environ.get("SIGNAL_LINKED_MODE", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def _is_allowed_channel(sender_id: str, channel_id: str) -> bool:
+def _is_allowed_channel(sender_id: str, channel_id: str, source: str = "") -> bool:
     """
     Allow if sender is a known family member (DM) OR channel matches a known group.
     Everything else is silently dropped — no reply sent.
+
+    Linked-device Signal is stricter about GROUPS. Normally "the sender is a
+    member" is enough, because the bot only sees groups it was deliberately added
+    to. A linked device has no such boundary: it sees every group the operator is
+    in — their kids' school group, work groups, everything — and any message the
+    operator themselves posts there passes the member check. A stray "d" or "/x"
+    in a school group would make aaka answer in front of everyone, as them. So in
+    linked mode a group is allowed only when its id is explicitly configured.
     """
+    is_group = bool(channel_id) and channel_id != sender_id
+    if is_group and source == "signal" and _signal_linked_mode():
+        _sg = os.environ.get("SIGNAL_GROUP_ID", "").strip()
+        if not _sg:
+            return False
+        return channel_id in (_sg, f"group:{_sg}")
     if aaka_config.member_by_sender(sender_id):
         return True
     _signal_group = os.environ.get("SIGNAL_GROUP_ID", "").strip()
@@ -1623,8 +1637,16 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
     _log.info("recv source=%s sender=%s channel=%s msg=%.80r", source, sender_id, channel_id, message)
 
     # ── Channel gate — drop unknown senders/groups ────────────────────────────
-    if not dry_run and not _is_allowed_channel(sender_id, channel_id):
+    if not dry_run and not _is_allowed_channel(sender_id, channel_id, source):
         _log.info("drop source=%s sender=%s channel=%s (not in allowlist)", source, sender_id, channel_id)
+        # Linked-device Signal: the account belongs to a person, not to aaka.
+        # Anyone who messages them — a colleague, a stranger, a wrong number —
+        # would otherwise get an automated "you're almost in" reply from their
+        # personal account, and an invite code in someone else's message would
+        # silently bind them. Neither is acceptable when aaka is a guest on a
+        # human's account, so linked mode answers unknown senders with silence.
+        if source == "signal" and _signal_linked_mode():
+            return ""
         # Invite-code onboarding: a valid one-time code in the message
         # auto-registers the sender (binds their handle → member) and welcomes
         # them, before the "ask the admin" fallback. DMs only.
