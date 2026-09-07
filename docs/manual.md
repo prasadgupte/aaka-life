@@ -552,8 +552,15 @@ one list, and nothing is inferred:
 | Everything else — groups, DMs, strangers | Silent |
 
 ```bash
-python3 admin/signal_chats.py     # lists every chat with its id, marks the allowed ones
+python3 admin/signal_chats.py     # every group AND person, with ids, marking which are allowed
 ```
+
+Signal identifies people by a **uuid** as well as a phone number, and sharing
+the number is optional — for many contacts the uuid is the only id you get.
+Either works in the allowlist. There is no self-service onboarding on a linked
+device: the invite-code flow is disabled there on purpose, because it works by
+replying to people aaka does not yet know, from your personal account. Onboard
+someone by taking their id from the command above and listing it yourself.
 
 Then put the ids you want in `.env`:
 

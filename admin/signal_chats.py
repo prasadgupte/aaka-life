@@ -72,6 +72,38 @@ def main() -> int:
             print(f"             members: {members}")
             print(f"             id: {gid}\n")
 
+    # Contacts: how you find a person's id. Signal identifies people by uuid as
+    # well as by number, and number sharing is optional — for many contacts the
+    # uuid is the ONLY id you get, so it is what goes in the allowlist.
+    try:
+        cdata = _rpc("listContacts")
+        contacts = cdata.get("result") or []
+    except Exception:
+        contacts = []
+
+    people = []
+    for c in contacts:
+        num = str(c.get("number") or "").strip()
+        uid = str(c.get("uuid") or "").strip()
+        if account and (num == account or uid in account):
+            continue  # that's us
+        name = (c.get("name") or c.get("nickName") or c.get("givenName")
+                or c.get("profileName") or "").strip()
+        if not (num or uid):
+            continue
+        people.append((name, num, uid))
+
+    if people:
+        print(f"People aaka can see ({len(people)}):\n")
+        for name, num, uid in sorted(people, key=lambda p: (not p[0], p[0].lower())):
+            mark = "ALLOWED " if ({num, uid} - {""}) & allowed else "silent  "
+            print(f"  [{mark}] {name or '(no profile name)'}")
+            if num:
+                print(f"             number: {num}")
+            print(f"             uuid:   {uid or '(unknown)'}\n")
+        print("Use the number when you have it, otherwise the uuid — either")
+        print("works in the allowlist.\n")
+
     print("To let aaka speak in a chat, add its id to .env:\n")
     print("  SIGNAL_ALLOWED_CHATS=<id>[,<id>…]\n")
     print("Anything not listed is silent. A member messaging you privately is")
