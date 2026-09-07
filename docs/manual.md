@@ -542,6 +542,31 @@ card, so it still looks and behaves like a bot to your family.
 Two consequences: there are no inline buttons (aaka sends numbered options and
 you reply with a number), and the number you choose matters a great deal.
 
+**Which chats aaka may answer in (linked device).** Deny by default. The rule is
+one list, and nothing is inferred:
+
+| Chat | Answers? |
+|---|---|
+| Note to Self | Always — your private command line to aaka, nobody else sees it |
+| Anything in `SIGNAL_ALLOWED_CHATS` | Yes |
+| Everything else — groups, DMs, strangers | Silent |
+
+```bash
+python3 admin/signal_chats.py     # lists every chat with its id, marks the allowed ones
+```
+
+Then put the ids you want in `.env`:
+
+```
+SIGNAL_ALLOWED_CHATS=<group-id>,<phone-or-uuid>
+```
+
+A family member messaging you privately is deliberately **not** enough on its
+own. On a linked device aaka answers *as you*, into your real conversation, so
+letting it speak there has to be a decision you make rather than a side effect
+of adding someone to the roster. `SIGNAL_GROUP_ID` still works and is folded
+into the same list.
+
 **On a linked device aaka is deliberately deaf to two things.** It never
 answers anyone it doesn't recognise — on your own account a stranger's "hi"
 would otherwise get an automated "you're almost in" reply from you — and it

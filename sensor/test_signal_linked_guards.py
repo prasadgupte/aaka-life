@@ -52,6 +52,47 @@ def _linked(on: bool):
     os.environ["SIGNAL_LINKED_MODE"] = "true" if on else "false"
 
 
+def test_note_to_self_is_always_allowed():
+    """The operator's own chat is their only way to reach aaka on a linked
+    device, and nobody else can see it."""
+    _linked(True)
+    os.environ["SIGNAL_ACCOUNT"] = "+15550000000"
+    os.environ.pop("SIGNAL_ALLOWED_CHATS", None)
+    os.environ.pop("SIGNAL_GROUP_ID", None)
+    check("note to self allowed with nothing configured",
+          rs._is_allowed_channel("+15550000000", "+15550000000", "signal") is True)
+
+
+def test_known_member_dm_is_not_implicit_consent():
+    """A member DMing the operator is not consent: the reply would look like it
+    came from the operator, in their private conversation."""
+    known = _member_handle()
+    _linked(True)
+    os.environ["SIGNAL_ACCOUNT"] = "+15550000000"
+    os.environ.pop("SIGNAL_ALLOWED_CHATS", None)
+    os.environ.pop("SIGNAL_GROUP_ID", None)
+    check("known member's DM is blocked until opted in",
+          rs._is_allowed_channel(known, known, "signal") is False)
+    os.environ["SIGNAL_ALLOWED_CHATS"] = known
+    check("…and allowed once listed",
+          rs._is_allowed_channel(known, known, "signal") is True)
+    os.environ.pop("SIGNAL_ALLOWED_CHATS", None)
+
+
+def test_allowlist_accepts_either_group_spelling():
+    _linked(True)
+    os.environ["SIGNAL_ACCOUNT"] = "+15550000000"
+    os.environ["SIGNAL_ALLOWED_CHATS"] = "FAMILYID=="
+    check("bare group id matches the group: form",
+          rs._is_allowed_channel("someone", "group:FAMILYID==", "signal") is True)
+    os.environ["SIGNAL_ALLOWED_CHATS"] = "group:FAMILYID=="
+    check("group: form matches the bare id",
+          rs._is_allowed_channel("someone", "FAMILYID==", "signal") is True)
+    check("the school group is still blocked",
+          rs._is_allowed_channel("someone", "group:SCHOOLID==", "signal") is False)
+    os.environ.pop("SIGNAL_ALLOWED_CHATS", None)
+
+
 def test_groups_need_explicit_config_in_linked_mode():
     known = _member_handle()
     check("demo roster yields a known handle", bool(known))
@@ -68,8 +109,10 @@ def test_groups_need_explicit_config_in_linked_mode():
               rs._is_allowed_channel(known, "group:FAMILYGROUPID==", "signal") is True)
         check("a different group is still blocked",
               rs._is_allowed_channel(known, "group:SCHOOLGROUPID==", "signal") is False)
-        check("DMs from a known member are unaffected",
-              rs._is_allowed_channel(known, known, "signal") is True)
+        # A member DM is now opt-in too (see the dedicated test above) — the
+        # group allowlist is not the only thing that got stricter.
+        check("member DMs are opt-in, not implicit",
+              rs._is_allowed_channel(known, known, "signal") is False)
     finally:
         if prev_group is None:
             os.environ.pop("SIGNAL_GROUP_ID", None)
@@ -116,6 +159,9 @@ def test_unknown_sender_still_onboarded_for_a_dedicated_number():
 
 
 def main():
+    test_note_to_self_is_always_allowed()
+    test_known_member_dm_is_not_implicit_consent()
+    test_allowlist_accepts_either_group_spelling()
     test_groups_need_explicit_config_in_linked_mode()
     test_dedicated_number_keeps_the_old_group_behaviour()
     test_unknown_sender_is_answered_with_silence_in_linked_mode()

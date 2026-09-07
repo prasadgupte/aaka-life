@@ -375,6 +375,69 @@ def _signal_linked_mode() -> bool:
     return os.environ.get("SIGNAL_LINKED_MODE", "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _signal_account_ids() -> set:
+    """Identifiers meaning "this account": the configured number and its uuid."""
+    ids = {os.environ.get("SIGNAL_ACCOUNT", "").strip()}
+    ids.discard("")
+    try:
+        import json as _json
+        from pathlib import Path as _P
+        env = os.environ.get("SIGNAL_DATA_DIR", "").strip()
+        if env:
+            root = _P(env)
+        else:
+            xdg = os.environ.get("XDG_DATA_HOME", "").strip()
+            root = (_P(xdg) if xdg else _P.home() / ".local" / "share") / "signal-cli"
+        store = _json.loads((root / "data" / "accounts.json").read_text())
+        for acct in store.get("accounts") or []:
+            num = str(acct.get("number") or "").strip()
+            if num and (not ids or num in ids or len(ids) == 0):
+                ids.add(num)
+                uid = str(acct.get("uuid") or "").strip()
+                if uid:
+                    ids.add(uid)
+    except Exception:
+        pass
+    return ids
+
+
+def _signal_allowed_chats() -> set:
+    """Chats where aaka may speak, from SIGNAL_ALLOWED_CHATS (comma-separated
+    group ids, phone numbers or uuids). SIGNAL_GROUP_ID is folded in for
+    back-compat. Group ids are accepted with or without the "group:" prefix."""
+    raw = ",".join([
+        os.environ.get("SIGNAL_ALLOWED_CHATS", ""),
+        os.environ.get("SIGNAL_GROUP_ID", ""),
+    ])
+    out: set = set()
+    for tok in raw.split(","):
+        t = tok.strip()
+        if not t:
+            continue
+        out.add(t)
+        out.add(t[len("group:"):] if t.startswith("group:") else f"group:{t}")
+    return out
+
+
+def _signal_chat_allowed(sender_id: str, channel_id: str) -> bool:
+    """Deny-by-default gate for linked-device Signal.
+
+    On a linked device aaka has no account of its own: it answers *as the
+    operator*, into their real conversations, and it can see every chat and
+    group they are in. "Which chats may it speak in" therefore has to be an
+    explicit list, not something inferred — a known member sending a DM is NOT
+    consent, because the reply would appear to come from the operator.
+
+    Note to Self is the one always-on chat: it is the operator talking to
+    themselves, nobody else can see it, and it is their only way to reach aaka
+    on a linked device.
+    """
+    own = _signal_account_ids()
+    if own and (sender_id in own or channel_id in own):
+        return True
+    return bool(_signal_allowed_chats() & {channel_id, sender_id})
+
+
 def _is_allowed_channel(sender_id: str, channel_id: str, source: str = "") -> bool:
     """
     Allow if sender is a known family member (DM) OR channel matches a known group.
@@ -388,12 +451,8 @@ def _is_allowed_channel(sender_id: str, channel_id: str, source: str = "") -> bo
     in a school group would make aaka answer in front of everyone, as them. So in
     linked mode a group is allowed only when its id is explicitly configured.
     """
-    is_group = bool(channel_id) and channel_id != sender_id
-    if is_group and source == "signal" and _signal_linked_mode():
-        _sg = os.environ.get("SIGNAL_GROUP_ID", "").strip()
-        if not _sg:
-            return False
-        return channel_id in (_sg, f"group:{_sg}")
+    if source == "signal" and _signal_linked_mode():
+        return _signal_chat_allowed(sender_id, channel_id)
     if aaka_config.member_by_sender(sender_id):
         return True
     _signal_group = os.environ.get("SIGNAL_GROUP_ID", "").strip()
