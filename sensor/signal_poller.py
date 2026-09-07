@@ -81,6 +81,44 @@ def _account() -> str:
     return os.environ.get("SIGNAL_ACCOUNT", "").strip()
 
 
+def _account_ids() -> set:
+    """Every identifier that means "this account": the E.164 number AND the
+    account's own UUID.
+
+    Signal addresses recipients by either, and which one an envelope carries is
+    not ours to choose — a note-to-self sync from the phone can name the
+    destination by uuid alone. Comparing only against the number silently loses
+    those, which reads as "aaka ignores me" rather than as a bug.
+    """
+    ids = {a for a in (_account(),) if a}
+    try:
+        store = _accounts_store()
+        for acct in store.get("accounts") or []:
+            num = str(acct.get("number") or "").strip()
+            if num and (not _account() or num == _account()):
+                ids.add(num)
+                uid = str(acct.get("uuid") or "").strip()
+                if uid:
+                    ids.add(uid)
+    except Exception:
+        pass
+    return ids
+
+
+def _accounts_store() -> dict:
+    """Read signal-cli's account store. Never shell out: signal-cli holds an
+    exclusive lock on the account dir while the daemon runs, so any subcommand
+    would block indefinitely."""
+    env = os.environ.get("SIGNAL_DATA_DIR", "").strip()
+    if env:
+        root = Path(env)
+    else:
+        xdg = os.environ.get("XDG_DATA_HOME", "").strip()
+        root = (Path(xdg) if xdg else Path.home() / ".local" / "share") / "signal-cli"
+    path = root / "data" / "accounts.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
 def _attachments_dir() -> Path:
     env = os.environ.get("SIGNAL_ATTACHMENTS_DIR", "").strip()
     if env:
@@ -240,10 +278,12 @@ def _sync_self_text(env: dict) -> "dict | None":
     sent = (env.get("syncMessage") or {}).get("sentMessage")
     if not isinstance(sent, dict):
         return None
-    acct = _account()
-    dest = str(sent.get("destinationNumber") or sent.get("destinationUuid")
-               or sent.get("destination") or "")
-    if not acct or dest != acct:
+    ids = _account_ids()
+    # Any of the destination spellings may be present; match on all of them.
+    dests = {str(sent.get(k) or "").strip()
+             for k in ("destinationNumber", "destinationUuid", "destination")}
+    dests.discard("")
+    if not ids or not (dests & ids):
         return None
     return sent
 
