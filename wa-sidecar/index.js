@@ -503,6 +503,29 @@ async function handleSendMedia(req, res) {
   }
 }
 
+// Pairing-page styles live in ONE file shared with the Signal pairing page
+// (admin/signal_pair.py), so the two cannot drift apart visually. The fallback
+// keeps this page legible if the sidecar is running without the repo beside it —
+// it is a shape, not a second copy of the design.
+const PAIRING_CSS = (() => {
+  try {
+    return fs.readFileSync(
+      path.join(__dirname, '..', 'executor', 'webui', 'brand', 'pairing.css'), 'utf8');
+  } catch (e) {
+    return `:root{--teal:#00B4A2;--ink:#1E2030;--muted:#556170;--bg:#FFF5F0}
+body{margin:0;font:16px/1.5 -apple-system,system-ui,sans-serif;background:var(--bg);
+  color:var(--ink);display:flex;min-height:100vh;align-items:center;justify-content:center}
+.card{background:#fff;border-radius:20px;padding:32px;max-width:420px;width:92%;text-align:center}
+.brand{font-weight:800;font-size:22px}.brand b{color:var(--teal)}
+.qr img{width:256px;height:256px}.sub{color:var(--muted);font-size:14px}
+.code{font:700 34px/1.1 ui-monospace,Menlo,monospace;letter-spacing:6px;padding:18px}
+.steps{text-align:left;font-size:13.5px;color:var(--muted)}
+.ok{color:var(--teal);font-size:44px}
+.warn{background:#fff7ed;border-radius:10px;padding:12px}
+.pill{font-size:12px;color:var(--muted)}`;
+  }
+})();
+
 // ── Pairing web page (live QR / code, like wa-backup's frontend) ────────────
 // Self-contained: polls /status every 2s and renders whatever the sidecar is
 // doing — a live (auto-rotating) QR by default, or the 8-char pairing code when
@@ -511,21 +534,7 @@ const PAIR_PAGE = `<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Link WhatsApp · aaka</title>
 <style>
-  :root{--teal:#00B4A2;--ink:#1E2030;--muted:#556170;--bg:#FFF5F0;--sand:#F0DDD4}  /* aaka canonical (tokens.css) */
-  *{box-sizing:border-box}body{margin:0;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    background:var(--bg);color:var(--ink);display:flex;min-height:100vh;align-items:center;justify-content:center}
-  .card{background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(15,20,25,.10);padding:32px;max-width:420px;width:92%;text-align:center}
-  .brand{font-weight:800;font-size:22px;letter-spacing:-.5px}.brand b{color:var(--teal)}
-  h1{font-size:19px;margin:.6em 0 .2em}p.sub{color:var(--muted);margin:.2em 0 1.2em;font-size:14px}
-  .qr{width:264px;height:264px;margin:8px auto;border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:center;border:1px solid #eef1f3}
-  .qr img{width:256px;height:256px;image-rendering:pixelated}
-  .code{font:700 34px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:6px;color:var(--ink);
-    background:#f0fbfa;border:1px dashed var(--teal);border-radius:12px;padding:18px;margin:8px 0}
-  .steps{text-align:left;font-size:13.5px;color:var(--muted);margin:14px 4px 0;padding-left:18px}
-  .steps li{margin:3px 0}.spin{width:34px;height:34px;border:3px solid #e3e8eb;border-top-color:var(--teal);
-    border-radius:50%;animation:s .8s linear infinite;margin:26px auto}@keyframes s{to{transform:rotate(360deg)}}
-  .ok{color:var(--teal);font-size:44px}.warn{color:#c2410c;font-size:14px;background:#fff7ed;border-radius:10px;padding:12px;margin-top:8px}
-  .pill{display:inline-block;font-size:12px;color:var(--muted);margin-top:14px}
+${PAIRING_CSS}
 </style></head><body>
 <div class="card">
   <div class="brand">&amp; aaka<b>.</b></div>

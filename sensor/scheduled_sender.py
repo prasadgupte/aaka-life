@@ -7,6 +7,8 @@ Dispatches by channel:
   email     → skills.mail.gmail.send_email_to_member (uses /config/tokens/token_aakash.json)
   telegram  → gateway.egress.send(OutboundMessage)
   whatsapp  → gateway.egress.send(OutboundMessage)
+  signal    → gateway.egress.send(OutboundMessage)  (needs signal-cli on this host —
+              see SIGNAL_PLACEMENT in gateway/config.py; this cron runs on the VPS)
 """
 import json
 import os
@@ -34,7 +36,10 @@ def _send_email(payload: dict) -> dict:
     )
 
 
-def _send_telegram_or_whatsapp(channel: str, payload: dict) -> dict:
+_CHAT_CHANNELS = ("telegram", "whatsapp", "signal")
+
+
+def _send_chat(channel: str, payload: dict) -> dict:
     from gateway.egress import send
     from gateway.types import MessageKind, OutboundMessage
 
@@ -65,8 +70,8 @@ def main() -> None:
             payload = json.loads(msg["payload"])
             if channel == "email":
                 result = _send_email(payload)
-            elif channel in ("telegram", "whatsapp"):
-                result = _send_telegram_or_whatsapp(channel, payload)
+            elif channel in _CHAT_CHANNELS:
+                result = _send_chat(channel, payload)
             else:
                 raise ValueError(f"unknown channel: {channel!r}")
             mark_scheduled_sent(mid, result)

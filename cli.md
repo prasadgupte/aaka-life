@@ -25,6 +25,40 @@ docker compose run --rm sensor \
 
 ---
 
+## Signal channel (signal-cli)
+
+```bash
+# 1. Start the daemon (dedicated number — see INSTALL.md Phase 5b)
+signal-cli -a "$SIGNAL_ACCOUNT" daemon --http 127.0.0.1:18794
+
+# 2. Is it alive? (liveness endpoint, then the adapter's own status())
+curl -sf -o /dev/null http://127.0.0.1:18794/api/v1/check && echo up
+python3 -c "from gateway.channels.signal_cli import status; print(status())"
+
+# 3. Find a groupId for SIGNAL_GROUP_ID
+python3 -c "from gateway.channels.signal_cli import list_groups; print(list_groups())"
+
+# 4. Run the inbound poller in the foreground (Ctrl-C to stop)
+SIGNAL_CLI_URL=http://127.0.0.1:18794 python3 sensor/signal_poller.py
+SIGNAL_POLL_MODE=rpc python3 sensor/signal_poller.py   # no SSE endpoint
+
+# 5. Route a Signal-shaped envelope through the router without any daemon
+python3 - <<'PY'
+from sensor.signal_poller import _build_format_a
+from sensor.router_sensor import route
+print(route(_build_format_a("+15550000000", "+15550000000", 1735000000000,
+                            "/menu", sender_name="Sam")))
+PY
+
+# 6. Offline tests (mock daemon + mock SSE stream — no signal-cli, no account)
+python3 gateway/channels/signal_cli_test.py
+python3 sensor/test_signal_poller.py
+```
+
+Recipients are `"+E.164"`, a Signal uuid, or `"group:<base64 groupId>"`.
+
+---
+
 ## Sensor dry-run
 
 ```bash
@@ -34,6 +68,14 @@ docker compose run --rm sensor \
 
 docker compose run --rm sensor \
   python3 sensor/router_sensor.py --dry-run "/week"
+
+# Same intent arriving over Signal (chat_id prefix picks the channel).
+# "signal:group:<id>" is how the poller addresses a group.
+python3 sensor/router_sensor.py --dry-run 'Conversation info (untrusted metadata):
+```json
+{"chat_id": "signal:+15550000000", "message_id": "1735000000000", "sender_id": "+15550000000", "sender_name": "Sam", "conversation_label": "id:+15550000000"}
+```
+/menu'
 
 # LLM extraction intents
 docker compose run --rm sensor \

@@ -333,7 +333,7 @@ def bot_info() -> dict:
 @mcp.tool()
 def list_members() -> dict:
     """List everyone the assistant knows: id, name, role, admin, source
-    (yaml|invite), and the WhatsApp/Telegram handles bound to each."""
+    (yaml|invite), and the WhatsApp/Telegram/Signal handles bound to each."""
     from sensor import wa_onboard
     out = []
     for m in aaka_config.members():
@@ -343,7 +343,9 @@ def list_members() -> dict:
             "role": m.get("role", ""),
             "admin": bool(m.get("admin")),
             "source": m.get("source", "yaml"),
-            "whatsapp_field": m.get("whatsapp", ""),
+            "whatsapp_field": aaka_config.member_handle(m, "whatsapp"),
+            "telegram_field": aaka_config.member_handle(m, "telegram"),
+            "signal_field": aaka_config.member_handle(m, "signal"),
             "bound_handles": wa_onboard.handles_for(m.get("id", "")),
         })
     return {"members": out}
@@ -360,8 +362,9 @@ def add_member(name: str) -> dict:
 @mcp.tool()
 def set_contact(member: str, handle: str, channel: str = "whatsapp") -> dict:
     """Bind a contact handle to an existing member (id or name) so they're
-    recognized — without editing aaka.yaml. `handle` is a WhatsApp @lid/+E.164
-    or a Telegram id. `channel` is informational (the allowlist is generic)."""
+    recognized — without editing aaka.yaml. `handle` is a WhatsApp @lid/+E.164,
+    a Telegram id, or a Signal +E.164/uuid. `channel` (whatsapp|telegram|signal)
+    is informational — the allowlist is generic and matches any handle."""
     from sensor import wa_onboard
     a = member.strip().lower()
     target = next((m for m in aaka_config.members()
@@ -373,9 +376,15 @@ def set_contact(member: str, handle: str, channel: str = "whatsapp") -> dict:
 
 
 @mcp.tool()
-def invite(name: str) -> dict:
+def invite(name: str, channel: str = "") -> dict:
     """Create a one-time invite for a member (creating the member if new) and
-    return a wa.me deep link the invitee taps to auto-register. No config editing."""
+    return the deep links the invitee taps to auto-register. No config editing.
+
+    Links are returned for every channel that can build one; `channel`
+    (whatsapp|telegram|signal) is an optional hint recorded in the result — the
+    same code works on whichever channel they actually message from. Signal
+    deep links cannot pre-fill text, so the invitee sends `prefilled_text`
+    themselves."""
     from sensor import wa_onboard
     a = name.strip().lower()
     target = next((m for m in aaka_config.members()
@@ -384,10 +393,15 @@ def invite(name: str) -> dict:
     if not target:
         target = aaka_config.add_dynamic_member(name)
         created = True
-    code = wa_onboard.create_invite(target["id"], target.get("name", name))
-    url, text = wa_onboard.invite_link(code, target.get("name", name))
+    nm = target.get("name", name)
+    code = wa_onboard.create_invite(target["id"], nm)
+    url, text = wa_onboard.invite_link(code, nm)
+    sg_url, sg_text = wa_onboard.signal_invite_link(code, nm)
     return {"ok": True, "member": target["id"], "created": created,
-            "code": code, "wa_me_link": url, "prefilled_text": text}
+            "code": code, "channel": channel or "any",
+            "wa_me_link": url, "tg_link": wa_onboard.tg_invite_link(code, nm),
+            "signal_link": sg_url, "signal_text": sg_text,
+            "prefilled_text": text}
 
 
 @mcp.tool()

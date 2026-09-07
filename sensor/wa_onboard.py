@@ -297,6 +297,27 @@ def tg_bot_username() -> str | None:
     return None
 
 
+def aaka_signal_number() -> str:
+    """aaka's own Signal number (+E.164) from SIGNAL_ACCOUNT. "" when unset."""
+    return os.environ.get("SIGNAL_ACCOUNT", "").strip()
+
+
+def signal_invite_link(code: str, name: str = "") -> tuple[str, str]:
+    """Return (signal_me_url, instructions).
+
+    Signal's deep links cannot pre-fill message text the way wa.me and t.me can
+    (https://signal.me/#p/<number> only opens the chat), so the invitee has to
+    send the coded line themselves — the instructions carry it. Empty URL when
+    SIGNAL_ACCOUNT is unset.
+    """
+    bot = _bot_name()
+    who = f", it's {name}" if name else ""
+    text = f"Hi {bot}{who} ({code})"
+    num = aaka_signal_number()
+    url = f"https://signal.me/#p/{num}" if num else ""
+    return url, text
+
+
 def tg_invite_link(code: str, name: str = "") -> str:
     """https://t.me/<bot>?start=<code>. Tapping it delivers `/start <code>` to
     the bot, which the signup path binds like any coded message. Empty string if

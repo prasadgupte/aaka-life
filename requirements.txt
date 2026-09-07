@@ -9,3 +9,5 @@ uvicorn[standard]>=0.29
 croniter>=1.4
 pymupdf>=1.25
 mcp>=1.0,<2
+# QR rendering: admin/signal_pair.py (Signal linking page) + tools/epc_qr.py
+qrcode[pil]>=7.4

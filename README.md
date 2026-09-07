@@ -9,7 +9,7 @@
 
 ### An AI assistant for your family — private by design, no token-burn
 
-**Local-first family calendar assistant, delivered over WhatsApp &amp; Telegram.**
+**Local-first family calendar assistant, delivered over Telegram, WhatsApp &amp; Signal.**
 
 [aaka.life](https://aaka.life) · [Install](#install) · [What it can do](#what-it-can-do) · [Architecture](#architecture-away--home)
 
@@ -76,6 +76,7 @@ A compact tour. Full reference in [`docs/manual.md`](docs/manual.md).
 | **Birthdays** | `bday`, morning push with one-tap wish links |
 | **Engagement** | `/engage` — three-zone ladder, streaks, next-step nudges |
 | **Agents** | A pub/sub gateway lets external agents (travel, coach, etc.) send messages and request replies through Aaka's channels |
+| **Channels** | Telegram (default), plus WhatsApp, Signal and Slack — same commands everywhere; turn one on with `ENABLED_CHANNELS` |
 
 Single-letter shortcuts: `d` today, `w` week, `t` tasks, `b` lists, `n` notes,
 `m` mail, `c` calendar, `f` file-drop, `x` expenses, `p` pdf, `s` status.
@@ -138,7 +139,8 @@ config.
 aaka-repo/
 ├── sensor/               Away — VPS-side: receive, triage, queue
 ├── executor/             Home — Mac-side: poll queue, execute, reply
-├── gateway/              channel-agnostic adapter (Telegram + WhatsApp via OpenClaw)
+├── gateway/              channel-agnostic egress/ingress + per-channel adapters
+│   └── channels/         telegram · whatsapp (sidecar) · slack · signal_cli
 │   └── agent_api.py      FastAPI agent pub/sub gateway (port 18790)
 ├── skills/               intent handlers (calendar, tasks, drop, notes, mail, ...)
 ├── aaka_queue/           SQLite queue (butler.db) + schema

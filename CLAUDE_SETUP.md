@@ -329,6 +329,91 @@ Test: from a **member's** phone, send `status` to the paired number → the repl
 back over WhatsApp. If nothing: `tail -30 "$HOME/aaka/config/logs/wa_sidecar.log"`
 (session) and `wa_inbound.log` (routing), or run `bash admin/diagnose.sh`.
 
+
+### 11 — Signal [optional]
+
+Signal runs through **signal-cli**'s JSON-RPC daemon — a separate binary, not a
+Python dependency. Two always-on services: the daemon (`:18794`, loopback only)
+and `sensor/signal_poller.py`, which consumes its SSE stream. On the VPS these
+are `deploy/aaka-signal-cli.service` + `deploy/aaka-signal-poller.service`; on
+the Mac `deploy.sh` installs the equivalent launchd agents.
+
+**Get a dedicated number first.** signal-cli can either *register* its own
+number or *link* to an existing account as a secondary device. Register a
+dedicated number — a cheap prepaid SIM or any number that can receive one SMS.
+Linking makes aaka **be** the operator's personal Signal account: it would see
+every private conversation they have, and it can't appear as a separate contact
+in the family chat, which is the whole model. Linking is fine for a five-minute
+test (`signal-cli link -n aaka` prints a QR); it is not how to run this.
+
+**Use `bash admin/setup_signal.sh`.** It prompts for link-vs-register, opens a
+browser pairing page (`admin/signal_pair.py`, port 18795, loopback) whose code
+refreshes itself so the user cannot miss the window, handles the captcha for the
+register path, and writes `.env`. Drive it for the user rather
+than reproducing its steps by hand; only fall back to raw signal-cli if it fails.
+
+**You install; the user only does what needs a human.** Exactly two steps
+require them: solving the registration captcha in a browser, and reading back
+the code that arrives by SMS or voice call. Everything else is yours — do not
+hand them a list of commands to run.
+
+1. Install signal-cli and a JRE — **`bash admin/deploy.sh` does this for you**
+   once `signal` is in `ENABLED_CHANNELS`. It uses Homebrew on the Mac and
+   apt + the pinned release tarball on the VPS, then installs the services.
+   Only fall back to installing by hand if that fails.
+2. Register the dedicated number (once). Run this yourself and walk the user
+   through the captcha and the code:
+   ```bash
+   signal-cli -a +15550000000 register          # add --voice for a landline
+   # Signal usually answers with a captcha challenge. Send the user the URL it
+   # prints, have them solve it and paste back the token, then:
+   signal-cli -a +15550000000 register --captcha signalcaptcha://...
+   signal-cli -a +15550000000 verify 123456     # the code that arrives
+   ```
+   **Check the number first.** Ask whether it is currently active on a phone.
+   If it is, stop: registering deregisters Signal on that device, and there is
+   no undo. Signal has no bot accounts, so this is a real account either way —
+   the model is WhatsApp's, not Telegram's.
+3. Add to `.env`:
+   ```
+   ENABLED_CHANNELS=telegram,signal
+   SIGNAL_ACCOUNT=+15550000000
+   # SIGNAL_PLACEMENT=sensor   # default; the daemon runs where the outbox is flushed
+   ```
+4. Re-run `bash admin/deploy.sh` (Mac) or install the two systemd units on the
+   VPS and `systemctl enable --now aaka-signal-cli aaka-signal-poller`.
+5. Verify: `bash admin/diagnose.sh` → the **Signal** block should show the
+   daemon reachable, a JSON-RPC version, and the poller running.
+
+**Where the daemon has to live.** Replies to *queued* intents (calendar writes,
+tasks that need the executor) are not sent by the Mac — the executor writes them
+to the outbox and `sensor/flush_outbox.py` runs from **cron on the VPS** and
+performs the send. So the signal-cli daemon belongs next to that flusher.
+`SIGNAL_PLACEMENT=sensor` (the default) says so. If you set
+`SIGNAL_PLACEMENT=executor`, the VPS flusher deliberately **skips** Signal rows
+and logs why, rather than failing every minute — zero-token replies still work,
+queued ones stay pending. `SIGNAL_CLI_URL` is a plain base URL, so a tunnel is
+also an option.
+
+**Capture who's allowed — same rule as WhatsApp.** Ask the user which Signal
+number they'll message aaka from and add it to *their* member in `aaka.yaml` as
+`signal: "+E.164"`, or run `/invite <name>` and let them bind themselves. An
+unrecognised sender gets their handle back with "share it with whoever set me
+up", never silence.
+
+**No buttons.** Signal has no inline keyboards, so anywhere Telegram shows
+buttons aaka sends a numbered list ("1. Yes  2. No") and you reply with the
+number. Signal's `signal.me` links also can't pre-fill text, so an `/invite`
+gives the invitee a link *plus* the one line to send.
+
+Test: from a **member's** phone, send `status` to the aaka number → the reply
+comes back over Signal. If nothing: `tail -30
+"$HOME/aaka/config/logs/signal_poller.log"` (routing) and `signal_cli.log`
+(session), or run `bash admin/diagnose.sh`.
+
+> Status: implemented and unit-tested against a mock signal-cli daemon. Not yet
+> verified end-to-end against a live Signal account.
+
 ---
 
 ## The 7 milestones

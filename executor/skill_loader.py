@@ -219,7 +219,14 @@ class SkillLoader:
             if owner is None:
                 return
 
-            channel = str(owner.get("telegram") or owner.get("whatsapp") or "")
+            # First channel the owner is actually reachable on. `source` must
+            # match so sensor/flush_outbox.py picks the right egress adapter.
+            channel = source = ""
+            for _ch in ("telegram", "whatsapp", "signal"):
+                channel = aaka_config.member_handle(owner, _ch)
+                if channel:
+                    source = _ch
+                    break
             if not channel:
                 return
 
@@ -231,7 +238,7 @@ class SkillLoader:
                 channel_id=channel,
                 sender=channel,
                 text=text,
-                source="telegram",
+                source=source,
             )
         except Exception:
             pass  # non-fatal: audit log already records the UnknownUser event

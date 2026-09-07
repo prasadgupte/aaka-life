@@ -33,8 +33,12 @@ sys.path.insert(0, str(REPO_DIR))
 import aaka_config
 
 def _member_sender_id(member: dict) -> str:
-    """Return the best sender ID for a demo member (whatsapp → telegram → id)."""
-    return member.get("whatsapp") or member.get("telegram") or member.get("id", "")
+    """Best sender ID for a demo member (whatsapp → telegram → signal → id)."""
+    for channel in ("whatsapp", "telegram", "signal"):
+        handle = aaka_config.member_handle(member, channel)
+        if handle:
+            return handle
+    return member.get("id", "")
 
 
 def _switch_member(name: str) -> tuple[dict | None, str]:

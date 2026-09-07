@@ -59,10 +59,17 @@ def _get_slack():
     from gateway.channels import slack
     return slack
 
+def _get_signal():
+    # Module is signal_cli.py, not signal.py — a gateway/channels/signal.py would
+    # shadow the stdlib `signal` module for anything importing from that dir.
+    from gateway.channels import signal_cli
+    return signal_cli
+
 _CHANNEL_DISPATCH = {
     "telegram": _get_telegram,
     "whatsapp": _get_whatsapp,
     "slack": _get_slack,
+    "signal": _get_signal,
 }
 
 _KIND_METHOD = {

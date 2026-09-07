@@ -368,6 +368,37 @@ def check_whatsapp() -> dict:
         "note": "" if connected else "Optional — Aaka is Telegram-first. WhatsApp is available as an add-on channel.",
     }
 
+def check_signal() -> dict:
+    enabled = "signal" in [c.strip() for c in os.environ.get("ENABLED_CHANNELS", "telegram").split(",")]
+    # Real status = the signal-cli daemon's JSON-RPC `version` (not just an env var).
+    try:
+        sys.path.insert(0, str(REPO_DIR))
+        from gateway.channels.signal_cli import status as _signal_status
+        st = _signal_status(timeout=2)
+    except Exception as exc:
+        st = {"ok": False, "version": "", "error": str(exc)}
+    account = os.environ.get("SIGNAL_ACCOUNT", "") or _env_from_dotenv().get("SIGNAL_ACCOUNT", "")
+    connected = enabled and bool(st.get("ok")) and bool(account)
+    if not enabled:
+        value = "not enabled"
+    elif not account:
+        value = "SIGNAL_ACCOUNT not set"
+    elif st.get("ok"):
+        value = f"signal-cli {st.get('version') or 'running'}"
+    else:
+        value = str(st.get("error", "daemon not reachable"))[:60]
+    return {
+        "id": "signal",
+        "tier": 3,
+        "label": "Signal",
+        "ok": connected,
+        "value": value,
+        "fix": ("Install signal-cli (brew install signal-cli), register a dedicated number, "
+                "add 'signal' to ENABLED_CHANNELS + SIGNAL_ACCOUNT=+E.164 to .env, then run "
+                "admin/deploy.sh (see CLAUDE_SETUP.md §11)."),
+        "note": "" if connected else "Optional — Aaka is Telegram-first. Signal is an add-on channel.",
+    }
+
 # ── Tier analysis ─────────────────────────────────────────────────────────────
 
 # Feature milestones (kept 0–3 internally; labels are user-facing, not "tiers").
@@ -402,6 +433,7 @@ def run_checks(tier_filter: int | None = None) -> list[dict]:
         check_gemini_key(),
         check_vps(),
         check_whatsapp(),
+        check_signal(),
     ]
     if tier_filter is not None:
         return [c for c in all_checks if c["tier"] == tier_filter]

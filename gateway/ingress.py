@@ -48,6 +48,7 @@ from typing import Optional
 class Channel(str, Enum):
     TELEGRAM = "telegram"
     WHATSAPP = "whatsapp"
+    SIGNAL = "signal"
     EMAIL = "email"
     AGENT = "agent"   # injected by agent API
 
@@ -72,7 +73,7 @@ class ParsedMessage:
     """Normalized inbound message ready for intent routing."""
     text: str
     sender_id: str
-    channel: str              # "telegram" | "whatsapp" | "email" | "agent"
+    channel: str              # "telegram" | "whatsapp" | "signal" | "email" | "agent"
     channel_id: str           # canonical chat/group ID
     message_id: Optional[str]
     source: str
@@ -82,7 +83,8 @@ class ParsedMessage:
     # Filename with OpenClaw's ---uuid suffix stripped, e.g. "invoice.pdf"
     original_filename: Optional[str] = None
 
-    # True when the WhatsApp sender is the account's own phone (self-DM)
+    # True when the sender is the account's own phone (WhatsApp self-DM, or a
+    # Signal note-to-self / own-device sync message)
     is_self_dm: bool = False
 
     # Sender's display name (WhatsApp pushName / Telegram name) when known —
@@ -257,6 +259,7 @@ def _media_roots() -> list[Path]:
         cfg / "data" / "telegram_media",   # sensor/telegram_poller.py
         cfg / "data" / "staging",          # webui uploads + router staging
         cfg / "wa-media",                  # WhatsApp receiver media (WA_MEDIA_DIR)
+        cfg / "data" / "signal_media",     # sensor/signal_poller.py (SEC-3)
     ]
     wa_media = os.environ.get("WA_MEDIA_DIR", "").strip()
     if wa_media:
@@ -355,7 +358,8 @@ def normalize(msg: InboundMessage, *, trust_envelope: bool = True) -> Optional[P
             message_id = str(meta.get("message_id", message_id or ""))
             sender_name = str(meta.get("sender_name", "") or "")
             # channel + channel_id from "chat_id": "<channel>:<id>" (telegram:… /
-            # whatsapp:…). Defaults to telegram for back-compat with older envelopes.
+            # whatsapp:… / signal:…). Defaults to telegram for back-compat with
+            # older envelopes that carried a bare chat id.
             chat_id = meta.get("chat_id", "")
             if chat_id.startswith("whatsapp:"):
                 channel = "whatsapp"
@@ -363,6 +367,9 @@ def normalize(msg: InboundMessage, *, trust_envelope: bool = True) -> Optional[P
             elif chat_id.startswith("telegram:"):
                 channel = "telegram"
                 channel_id = chat_id[len("telegram:"):]
+            elif chat_id.startswith("signal:"):
+                channel = "signal"
+                channel_id = chat_id[len("signal:"):]
             else:
                 channel = "telegram"
             # "conversation_label": "id:<chat_id>" overrides channel_id when present

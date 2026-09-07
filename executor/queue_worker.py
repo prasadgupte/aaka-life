@@ -579,10 +579,10 @@ def _exec_gmail_label(payload: dict) -> dict:
 
 def _exec_bday_wish(payload: dict) -> dict:
     """Send birthday wishes to a contact via WhatsApp (preferred) or email."""
-    from skills.outbox.send_contact import send_to_contact
+    from skills.outbox.send_contact import phone_channel, send_to_contact
     phone = payload.get("phone", "") or payload.get("mobile", "")
     email = payload.get("email", "")
-    channel = "whatsapp" if phone else "email"
+    channel = phone_channel() if phone else "email"
     addr = phone if phone else email
     if not addr:
         return {"sent": False, "error": "No phone or email in payload",
@@ -590,7 +590,7 @@ def _exec_bday_wish(payload: dict) -> dict:
     result = send_to_contact(
         name=payload["name"],
         first_name=payload["first_name"],
-        phone=phone if channel == "whatsapp" else "",
+        phone=phone if channel != "email" else "",
         email=email if channel == "email" else "",
         message=payload["message"],
         from_member_id=payload.get("from_member_id", ""),

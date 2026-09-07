@@ -30,6 +30,51 @@ if [[ ! -f "$TARGET" && -f "$SAMPLE" ]]; then
 fi
 # ──────────────────────────────────────────────────────────────────────────
 
+# Pin the signal-cli version we install on Linux. Homebrew tracks its own on the
+# Mac. Override with SIGNAL_CLI_VERSION=… to test a newer build.
+SIGNAL_CLI_VERSION="${SIGNAL_CLI_VERSION:-0.14.7}"
+
+ensure_signal_cli() {
+    # Install signal-cli if it is missing. Signal has no bot API, so the channel
+    # is driven by this unofficial client against a REAL account — the binary is
+    # a hard dependency of the Signal channel, not an optional extra. Returns 0
+    # when signal-cli is available afterwards, 1 when the caller must skip.
+    if command -v signal-cli &>/dev/null; then
+        ok "signal-cli present: $(signal-cli --version 2>/dev/null | head -1)"
+        return 0
+    fi
+    if [ "$INSTANCE" = "vps" ] || [ "$(uname -s)" = "Linux" ]; then
+        info "Installing signal-cli $SIGNAL_CLI_VERSION + JRE (apt)…"
+        apt-get update -qq
+        # Headless JRE only — signal-cli is a JVM app and needs no desktop stack.
+        apt-get install -y -qq openjdk-21-jre-headless curl >/dev/null 2>&1 || {
+            fail "apt could not install openjdk-21-jre-headless"; return 1; }
+        local _url="https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}.tar.gz"
+        local _tmp; _tmp="$(mktemp -d)"
+        if ! curl -fsSL "$_url" -o "$_tmp/signal-cli.tar.gz"; then
+            fail "download failed: $_url"; rm -rf "$_tmp"; return 1
+        fi
+        rm -rf /opt/signal-cli
+        mkdir -p /opt/signal-cli
+        tar -xzf "$_tmp/signal-cli.tar.gz" -C /opt/signal-cli --strip-components=1
+        ln -sf /opt/signal-cli/bin/signal-cli /usr/local/bin/signal-cli
+        rm -rf "$_tmp"
+    else
+        if ! command -v brew &>/dev/null; then
+            fail "Homebrew not found — install it, or install signal-cli by hand, then re-run deploy."
+            return 1
+        fi
+        info "Installing signal-cli via Homebrew (pulls its own JRE)…"
+        brew install signal-cli >/dev/null 2>&1 || { fail "brew install signal-cli failed"; return 1; }
+    fi
+    if command -v signal-cli &>/dev/null; then
+        ok "signal-cli installed: $(signal-cli --version 2>/dev/null | head -1)"
+        return 0
+    fi
+    fail "signal-cli still not on PATH after install"
+    return 1
+}
+
 if [ "$INSTANCE" = "vps" ]; then
     # ── VPS ───────────────────────────────────────────────────────────────
 
@@ -143,6 +188,65 @@ ENVEOF
             ok "Executor pubkey appended to $AUTH_KEYS"
         else
             warn "No key pasted — skipping. Add manually: echo '<pubkey>' >> $AUTH_KEYS"
+        fi
+    fi
+
+    header "8. Signal channel (&Away)"
+    # The Signal daemon belongs on whichever host flushes the outbox, and that is
+    # this one: sensor/flush_outbox.py runs from cron here, so a Mac-only daemon
+    # would leave every queued-intent reply unsent. Hence sensor is the default
+    # placement and the units live here.
+    _EC="${ENABLED_CHANNELS:-}"
+    if [ -z "$_EC" ] && [ -f "$AAKA_CONFIG_DIR/.env" ]; then
+        _EC="$(grep -E '^ENABLED_CHANNELS=' "$AAKA_CONFIG_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\042\047 ')"
+    fi
+    _EC="${_EC:-telegram}"
+    _SP="${SIGNAL_PLACEMENT:-}"
+    if [ -z "$_SP" ] && [ -f "$AAKA_CONFIG_DIR/.env" ]; then
+        _SP="$(grep -E '^SIGNAL_PLACEMENT=' "$AAKA_CONFIG_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\042\047 ')"
+    fi
+    _SP="${_SP:-sensor}"
+    _SA="${SIGNAL_ACCOUNT:-}"
+    if [ -z "$_SA" ] && [ -f "$AAKA_CONFIG_DIR/.env" ]; then
+        _SA="$(grep -E '^SIGNAL_ACCOUNT=' "$AAKA_CONFIG_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\042\047 ')"
+    fi
+
+    if ! echo "$_EC" | grep -q "signal"; then
+        info "Signal not in ENABLED_CHANNELS — skipping (Telegram-only &Away)."
+    elif [ "$_SP" != "sensor" ]; then
+        info "SIGNAL_PLACEMENT=$_SP — the daemon runs on the Mac; nothing to install here."
+    elif ! ensure_signal_cli; then
+        warn "signal-cli unavailable — Signal services NOT installed on &Away."
+    elif [ -z "$_SA" ]; then
+        warn "SIGNAL_ACCOUNT not set in $AAKA_CONFIG_DIR/.env — units NOT installed."
+        info "Register a DEDICATED number first (never one already on a phone —"
+        info "that would deregister Signal there):"
+        info "  signal-cli -a +E164 register       # add --voice for a landline"
+        info "  signal-cli -a +E164 verify CODE"
+        info "Then set SIGNAL_ACCOUNT=+E164 and re-run this script."
+    else
+        for unit in aaka-signal-cli aaka-signal-poller; do
+            U_SRC="$REPO_DIR/deploy/$unit.service"
+            if [ -f "$U_SRC" ]; then
+                sed -e "s|/opt/aaka-repo|$REPO_DIR|g" \
+                    -e "s|/opt/aaka-config|$AAKA_CONFIG_DIR|g" \
+                    "$U_SRC" > "/etc/systemd/system/$unit.service"
+                ok "installed /etc/systemd/system/$unit.service"
+            else
+                warn "unit not found: $U_SRC"
+            fi
+        done
+        systemctl daemon-reload
+        systemctl enable --now aaka-signal-cli aaka-signal-poller 2>/dev/null \
+            && ok "aaka-signal-cli + aaka-signal-poller enabled and started" \
+            || warn "systemctl enable/start failed — check: journalctl -u aaka-signal-cli -n 50"
+        # Read the account store instead of invoking the CLI: signal-cli locks
+        # the account dir, so a subcommand blocks for as long as the daemon we
+        # just started holds it.
+        _SDD="${SIGNAL_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/signal-cli}"
+        if ! grep -q -- "$_SA" "$_SDD/data/accounts.json" 2>/dev/null; then
+            warn "$_SA is not registered on this host — the daemon will fail until it is."
+            info "  bash admin/setup_signal.sh    (link, or register a dedicated number)"
         fi
     fi
 
@@ -299,10 +403,69 @@ SSHBLOCK
                     warn "WhatsApp plist not found: $WA_SRC"
                 fi
             done
-            info "WhatsApp always-on: sidecar :18792 + receiver :18793. Pair once at http://127.0.0.1:18792/"
+            # Open the sidecar's pairing page rather than printing a URL and
+            # hoping. Its QR rotates, so the page is the reliable way to pair.
+            WA_PAIR_URL="http://127.0.0.1:${WA_SIDECAR_PORT:-18792}/"
+            info "WhatsApp always-on: sidecar :18792 + receiver :18793."
+            if [ -z "${AAKA_NO_BROWSER:-}" ] && command -v open &>/dev/null; then
+                # Give launchd a moment to actually bring the sidecar up first.
+                ( sleep 3; open "$WA_PAIR_URL" >/dev/null 2>&1 ) &
+                info "Opening the pairing page: $WA_PAIR_URL"
+            else
+                info "Pair once at $WA_PAIR_URL"
+            fi
         fi
     else
         info "WhatsApp not in ENABLED_CHANNELS — skipping sidecar services (Telegram-only install)."
+    fi
+
+    # Signal — signal-cli JSON-RPC daemon + poller. Only when signal is enabled.
+    # Placement matters: replies to QUEUED intents are flushed from cron on the
+    # VPS, so the daemon belongs next to that flusher (SIGNAL_PLACEMENT=sensor,
+    # the default → deploy/aaka-signal-cli.service + aaka-signal-poller.service).
+    # These Mac launchd agents are for SIGNAL_PLACEMENT=executor only.
+    if echo "$_EC" | grep -q "signal"; then
+        _SP="${SIGNAL_PLACEMENT:-}"
+        if [ -z "$_SP" ] && [ -f "$AAKA_CONFIG_DIR/.env" ]; then
+            _SP="$(grep -E '^SIGNAL_PLACEMENT=' "$AAKA_CONFIG_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'\'' ')"
+        fi
+        _SP="${_SP:-sensor}"
+        _SA="${SIGNAL_ACCOUNT:-}"
+        if [ -z "$_SA" ] && [ -f "$AAKA_CONFIG_DIR/.env" ]; then
+            _SA="$(grep -E '^SIGNAL_ACCOUNT=' "$AAKA_CONFIG_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'\'' ')"
+        fi
+        SIGNAL_CLI_BIN="$(command -v signal-cli || true)"
+        PYTHON_BIN="$REPO_DIR/venv/bin/python3"
+        if [ "$_SP" != "executor" ]; then
+            info "SIGNAL_PLACEMENT=$_SP — signal-cli runs on the VPS. Install deploy/aaka-signal-cli.service + deploy/aaka-signal-poller.service there; skipping Mac launchd agents."
+        elif [ -z "$SIGNAL_CLI_BIN" ] && { ensure_signal_cli; SIGNAL_CLI_BIN="$(command -v signal-cli || true)"; [ -z "$SIGNAL_CLI_BIN" ]; }; then
+            warn "signal-cli unavailable — Signal services NOT installed."
+        elif [ -z "$_SA" ]; then
+            warn "SIGNAL_ACCOUNT not set in .env — Signal services NOT installed. Add SIGNAL_ACCOUNT=+E.164 (a dedicated number) and re-run deploy."
+        elif [ ! -x "$PYTHON_BIN" ]; then
+            warn "venv python missing ($PYTHON_BIN) — Signal poller NOT installed. Create the venv and re-run deploy."
+        else
+            for sg in signalcli signalpoller; do
+                SG_SRC="$REPO_DIR/executor/com.aaka.$sg.plist"
+                SG_DST="$HOME/Library/LaunchAgents/com.aaka.$sg.plist"
+                if [ -f "$SG_SRC" ]; then
+                    sed -e "s|\${AAKA_BASE}|$REPO_DIR|g" \
+                        -e "s|\${AAKA_CONFIG_DIR}|$AAKA_CONFIG_DIR|g" \
+                        -e "s|\${SIGNAL_CLI_BIN}|$SIGNAL_CLI_BIN|g" \
+                        -e "s|\${SIGNAL_ACCOUNT}|$_SA|g" \
+                        -e "s|\${PYTHON_BIN}|$PYTHON_BIN|g" \
+                        "$SG_SRC" > "$SG_DST"
+                    launchctl unload "$SG_DST" 2>/dev/null || true
+                    launchctl load "$SG_DST"
+                    ok "com.aaka.$sg installed and loaded"
+                else
+                    warn "Signal plist not found: $SG_SRC"
+                fi
+            done
+            info "Signal always-on: signal-cli daemon :18794 (loopback) + poller. Verify with admin/diagnose.sh."
+        fi
+    else
+        info "Signal not in ENABLED_CHANNELS — skipping signal-cli services."
     fi
 
     header "Step 5 — Create vault scaffold"
