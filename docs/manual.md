@@ -238,6 +238,38 @@ No need to type `/` — just use the letter:
 
 ---
 
+## Reminders (recurring, contextual)
+
+Standing prompts that appear in that day's schedule and morning brief — "sport
+bag on days with sport". They are **not tasks**: nothing to tick, nothing goes
+overdue. Use tasks for anything you want tracked to completion; use a reminder
+for something only useful on the morning it applies.
+
+Set them up by asking Claude (MCP), not by editing YAML:
+
+> "remind me about Ari's sport bag on days with sport"
+> "Rumi has sports on Mondays — remind about regular shoes, not on holidays"
+
+Two conditions, combinable:
+
+| Condition | Meaning |
+|---|---|
+| `weekday` | `mon`, or `mon,wed` |
+| `event_matches` | Regex over today's events, e.g. `sport\|PE` |
+| `unless_matches` | Suppresses it, e.g. `holiday\|no school` |
+
+**Prefer `event_matches` when the reminder depends on an activity.** It follows
+the calendar, so it keeps working when sport moves to another day. A weekday
+rule silently goes wrong when the timetable changes, and a reminder that fires
+on the wrong day costs you trust in all of them.
+
+`preview_reminders` shows what would fire on a given date against the real
+calendar — worth running once after adding a rule. Matching is deterministic and
+costs **zero tokens**: the LLM helps you write a rule, and is never involved in
+evaluating one.
+
+Stored in `config/reminders.yaml`, managed like `tools.yaml`.
+
 ## Notes & file drops
 
 ```

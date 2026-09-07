@@ -757,6 +757,20 @@ def _build_today_schedule(mid: str, sender: str = "", *, include_tasks: bool = T
     ctx = {"name": name, **_analyze_today_content(raw)}
     reply = get_voice().apply("today_schedule", raw, ctx)
 
+    # ── Reminders (contextual, zero-token) ───────────────────────────────
+    # Rules that fire on a weekday and/or on what today's calendar actually
+    # contains ("sport bag on days with sport"). Deliberately evaluated here
+    # rather than stored as tasks: these are notes on a day, not work items to
+    # complete, and keying off the calendar means they follow the timetable
+    # instead of a weekday someone guessed at setup time.
+    try:
+        from skills.reminders.rules import render as _render_reminders
+        _rem = _render_reminders(raw, member=mid)
+        if _rem:
+            reply += "\n" + _rem
+    except Exception as _rex:  # never let a bad rule break the schedule
+        _log.warning("reminder rendering failed: %s", _rex)
+
     # ── Task counts (compact — pokes /tasks for details) ─────────────────
     if include_tasks:
         try:

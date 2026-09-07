@@ -142,6 +142,9 @@ automatically via `.mcp.json` when you run `claude` in this directory.
 | `invite(name)` | Mint a one-time code + wa.me link to onboard someone (creates member if new) |
 | `remove_member(member_id)` | Remove a dynamic member + unbind handles (yaml members protected) |
 | `list_tools()` | Registered aaka Tools + schedule/placement/last-run (see `docs/aaka-tools.md`) |
+| `add_reminder(text, member, weekday, event_matches, unless_matches)` | Recurring contextual reminder appended to that day's schedule + morning brief → `config/reminders.yaml` |
+| `list_reminders()` / `remove_reminder(id)` / `set_reminder_enabled(id, on)` | Manage them |
+| `preview_reminders(date, member)` | What would fire on a date, against the real calendar — check a rule before trusting it |
 | `register_tool(name, run, ...)` | Register/update a Tool (script, cron, placement, secrets) → `config/tools.yaml` |
 | `run_tool(name, args)` | Run a Tool now and report back; returns its structured result |
 | `set_tool_enabled(name, enabled)` | Enable/disable a Tool |

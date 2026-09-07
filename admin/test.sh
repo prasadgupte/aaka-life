@@ -2882,6 +2882,9 @@ check "wa_onboard: invite mint → signup binds handle → recognized (one-time)
 check "tool_runner: manifest → run → structured result → log → cron/placement" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_tool_runner.py"
 
+check "reminders: event-conditional + weekday rules, unless, scoping, bad input" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' skills/reminders/test_rules.py"
+
 check "config getters survive empty/minimal config (no KeyError; read system.*)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"
 import aaka_config as c
