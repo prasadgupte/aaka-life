@@ -45,6 +45,7 @@ INTENT_PATTERNS: list[tuple[str, list[str]]] = [
     ("tools_list",     [r"^/tools\b"]),
     ("mcp_view",       [r"^/mcp\b"]),
     ("security_audit", [r"^/security\b"]),
+    ("secure_scan",    [r"^/secure\b"]),
     ("agent_dispatch", [r"^/ask\b"]),
     ("list_tasks",     [r"^/tasks\b"]),
     ("edit_task",      [r"^/edit\b"]),

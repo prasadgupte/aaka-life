@@ -1273,6 +1273,39 @@ def _handle_mcp(message: str, sender_id: str) -> str:
     return f"❓ Unknown view `/mcp {sub}`. Try `/mcp` for the list."
 
 
+def _handle_secure(message: str, sender_id: str, channel_id: str = "",
+                   source: str = "", message_id: str = "") -> str:
+    """Admin-only: `/secure home|away` → read-only exposure scan of the home (Mac)
+    or away (VPS) machine (admin/exposure_report.py via the secure-home/secure-away
+    tools). 'away' runs inline on the sensor; 'home' hands off to the executor (Mac)
+    and reports back — the sensor can't reach the home machine directly."""
+    requester = aaka_config.member_by_sender(sender_id)
+    if not requester or not aaka_config.member_is_admin(requester.get("id", "")):
+        return "\U0001F512 Only an admin can run security tooling."
+    arg = re.sub(r"^/secure\b", "", message, flags=re.I).strip().lower()
+    if arg in ("", "help", "-h", "?"):
+        return ("\U0001F512 *Secure scan* (read-only: ports \u00b7 endpoints \u00b7 token powers \u00b7 secrets)\n"
+                "\u2022 `/secure away` \u2014 exposure map of the VPS\n"
+                "\u2022 `/secure home` \u2014 exposure map of the home Mac")
+    if arg not in ("home", "away"):
+        return "Usage: `/secure home` or `/secure away`."
+    from sensor import tool_runner
+    tool = "secure-home" if arg == "home" else "secure-away"
+    entry = tool_runner.load_manifest().get(tool) or {}
+    role = os.environ.get("AAKA_ROLE", "executor")
+    if entry.get("placement", "executor") == "executor" and role == "sensor":
+        from aaka_queue.queue import write_item
+        write_item(intent="tool_run", raw_message=message, sender=sender_id,
+                   channel_id=channel_id or sender_id, source=source or "telegram",
+                   payload={"tool": tool, "args": "", "sender": sender_id,
+                            "channel_id": channel_id or sender_id,
+                            "source": source or "telegram", "message_id": message_id})
+        return "\u23f3 Scanning the *home* machine \u2014 I\u2019ll report back."
+    res = tool_runner.run_and_report(tool, "")
+    head = "\u2705" if res.get("ok") else "\u26a0\ufe0f"
+    return f"{head} {res.get('summary') or res.get('error') or tool}"
+
+
 def _handle_security(message: str, sender_id: str) -> str:
     """Admin-only security tooling. Read-only, safe to run before a deploy:
       /security          → hardening self-audit (admin/security_check.py)
@@ -2421,6 +2454,11 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
 
     if intent == "security_audit":
         return _reply(_handle_security(message, sender_id),
+                      channel_id=channel_id, sender=sender_id,
+                      message_id=message_id, dry_run=dry_run, source=source)
+
+    if intent == "secure_scan":
+        return _reply(_handle_secure(message, sender_id, channel_id, source, message_id),
                       channel_id=channel_id, sender=sender_id,
                       message_id=message_id, dry_run=dry_run, source=source)
 
