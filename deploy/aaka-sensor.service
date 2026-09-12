@@ -13,7 +13,8 @@ Environment=AAKA_BASE=/opt/aaka-repo
 Environment=AAKA_ROLE=sensor
 Environment=AAKA_CONTEXT=family
 Environment=LLM_PROVIDER=gemini
-Environment=ENABLED_CHANNELS=telegram
+# ENABLED_CHANNELS comes from the EnvironmentFile above (e.g. telegram,signal)
+# so switching a channel on is a .env edit, not a unit edit. Default: telegram.
 Environment=QUEUE_DB=/opt/aaka-config/data/queue/butler.db
 ExecStart=/opt/aaka-repo/venv/bin/python -u sensor/telegram_multibot.py
 Restart=always
