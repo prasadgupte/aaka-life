@@ -1669,6 +1669,20 @@ def _reply(
     return text
 
 
+def _with_today_gist(welcome: str, sender_id: str) -> str:
+    """Append today's schedule to a first-contact greeting. Best-effort — never
+    let the gist break the welcome."""
+    try:
+        _nm = aaka_config.member_by_sender(sender_id)
+        if _nm:
+            _gist = _build_today_schedule(_nm["id"], sender=sender_id, include_tasks=False)
+            if _gist and _gist.strip() and "No calendar data" not in _gist:
+                return f"{welcome}\n\n———\n*Here's what today looks like:*\n\n{_gist}"
+    except Exception as _ge:  # pragma: no cover - defensive
+        _log.warning("welcome today-gist failed: %s", _ge)
+    return welcome
+
+
 # ── Main routing logic ─────────────────────────────────────────────────────────
 
 _HELP_MAP = {
@@ -1882,18 +1896,8 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                     if _linked_mode(source):
                         grant_chat(source, sender_id)
                     # Delight the first contact: now that their handle is bound,
-                    # append today's gist from the family calendar. Best-effort —
-                    # never let it break the welcome.
-                    try:
-                        _nm = aaka_config.member_by_sender(sender_id)
-                        if _nm:
-                            _gist = _build_today_schedule(_nm["id"], sender=sender_id,
-                                                          include_tasks=False)
-                            if _gist and _gist.strip() and "No calendar data" not in _gist:
-                                welcome = f"{welcome}\n\n———\n*Here's what today looks like:*\n\n{_gist}"
-                    except Exception as _ge:  # pragma: no cover - defensive
-                        _log.warning("welcome today-gist failed: %s", _ge)
-                    return welcome
+                    # append today's gist from the family calendar.
+                    return _with_today_gist(welcome, sender_id)
             except Exception as _e:  # pragma: no cover - defensive
                 _log.warning("invite signup check failed: %s", _e)
         # Linked device: aaka is a guest on a human's account. Someone who
@@ -1941,6 +1945,20 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
     # ── Acknowledge receipt with 👀 reaction ──────────────────────────────────
     if not dry_run:
         _react_read(message_id, source, channel_id, sender_id)
+
+    # ── /start — Telegram's Start button ──────────────────────────────────────
+    # Every Telegram DM begins with the user pressing Start, which sends
+    # `/start` (or `/start <code>` from an invite link). A member already on the
+    # roster used to land in "Sorry, I didn't understand that" as their very
+    # first reply. Greet them the way a redeemed invite does: welcome + today.
+    if sender_id == channel_id and message.strip().lower().split()[:1] == ["/start"]:
+        _sm = aaka_config.member_by_sender(sender_id)
+        if _sm:
+            from sensor import wa_onboard
+            _who = _sm.get("nick") or _sm.get("name") or sender_name or ""
+            return _reply(_with_today_gist(wa_onboard.welcome_text(_who), sender_id),
+                          channel_id=channel_id, sender=sender_id, message_id=message_id,
+                          dry_run=dry_run, source=source)
 
     # ── Outbox flush skipped here — openclaw subprocess deadlocks when called
     #    from within an openclaw-spawned process.  Outbox items are flushed by

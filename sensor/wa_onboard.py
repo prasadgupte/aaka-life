@@ -215,7 +215,12 @@ def try_signup(handle: str, sender_name: str, text: str) -> str | None:
     inv["bound_ts"] = int(time.time())
     _save_json(_invites_path(), invites)
 
-    name = inv.get("name") or sender_name or ""
+    return welcome_text(inv.get("name") or sender_name or "")
+
+
+def welcome_text(name: str = "") -> str:
+    """The first-contact greeting: sent when an invite code is redeemed and
+    when a known member presses Telegram's Start button (`/start`)."""
     bot = _bot_name()
     hi = f"🎉 Hi {name}, you're all set!" if name else "🎉 You're all set!"
     return (
