@@ -444,6 +444,41 @@ def member_handle(member: dict, channel: str) -> str:
     return ""
 
 
+# Order in which a scheduled push (summary, tool report, nudge) reaches a member
+# who has several handles. Only channels in ENABLED_CHANNELS count — a WhatsApp
+# number on the roster is not a route when the sidecar is switched off.
+CHANNEL_PREFERENCE = ("telegram", "whatsapp", "signal")
+
+
+def enabled_channels() -> list:
+    return [c.strip() for c in os.environ.get("ENABLED_CHANNELS", "telegram").split(",")
+            if c.strip()]
+
+
+def preferred_handle(member: dict, enabled: "list | None" = None) -> "tuple[str, str]":
+    """(handle, channel) for the first enabled channel `member` is reachable on;
+    ("", "") when there is none. The channel name doubles as the outbox `source`
+    so sensor/flush_outbox.py picks the matching egress adapter."""
+    on = set(enabled if enabled is not None else enabled_channels())
+    for channel in CHANNEL_PREFERENCE:
+        if channel not in on:
+            continue
+        handle = member_handle(member or {}, channel)
+        if handle:
+            return handle, channel
+    return "", ""
+
+
+def member_targets(enabled: "list | None" = None) -> dict:
+    """{member_id: (handle, channel)} for every roster member a push can reach."""
+    out = {}
+    for m in members():
+        handle, channel = preferred_handle(m, enabled)
+        if handle:
+            out[m["id"]] = (handle, channel)
+    return out
+
+
 def member_by_sender(sender: str) -> dict | None:
     """Resolve E.164 phone, WhatsApp JID, Signal number/uuid, email, or Telegram
     ID → member dict. Returns None if unrecognised."""

@@ -41,10 +41,12 @@ homework:
   run: ~/tools/homework/check.py   # script | module | agent invocation
   placement: sensor            # sensor | executor  (see Placement)
   browser: remote              # none | remote | local  (only if it scrapes)
-  schedule: "0 7 * * *"        # cron; omit for on-demand only
+  schedule: "0 7 * * *"        # cron in the family's timezone (aaka.yaml); omit for on-demand only
   command: "/homework"         # optional: a command users can invoke (see Commands)
-  report_to: <member-id>       # who hears results
+  report_to: <member-id>       # who hears results — one id or a list [kid, parent]
+  report_ok: true              # false → the tool delivers its own output; only errors are reported
   on_error: alert              # alert | digest | silent
+  timeout: 120                 # seconds
   secrets: secrets/homework/   # vault path (outside git); passed to the tool
   enabled: true
 ```
@@ -147,6 +149,18 @@ Every run reports — a run that produces nothing still says so:
 
 Runs are logged to `$AAKA_CONFIG_DIR/logs/tools/<name>.jsonl` (start, exit, summary,
 error) so `/tools` and `tool_logs()` can show history.
+
+Reports reach each recipient on their preferred **enabled** channel (telegram →
+whatsapp → signal), so a Signal-only member gets them too. From the executor,
+non-Telegram reports are queued to the outbox and delivered by the sensor, where
+the Signal/WhatsApp daemons live.
+
+**Missed slots are caught up.** The executor is a laptop that sleeps or is off.
+Each scheduler tick also checks whether a tool's most recent slot went by since
+its last logged run (within 7 days) and, if so, runs it once, flagged
+`catch_up: <slot>` in the log. The latest missed slot only — a machine that was
+off for three days does not fire three times. A tool that has never run waits
+for its first real slot.
 
 ## Auth & the secrets vault
 

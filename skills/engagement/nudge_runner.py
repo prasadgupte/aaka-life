@@ -32,19 +32,13 @@ log = logging.getLogger("nudge_runner")
 
 import aaka_config
 
-# Order in which we reach a member when several handles are configured. The
-# outbox `source` we write is the channel name, so sensor/flush_outbox.py picks
-# the matching egress adapter.
-_CHANNEL_PREFERENCE = ("telegram", "whatsapp", "signal")
-
-
 def _preferred_channel(member: dict) -> "tuple[str, str]":
-    """(handle, channel) for the first channel this member is reachable on."""
-    for channel in _CHANNEL_PREFERENCE:
-        handle = aaka_config.member_handle(member or {}, channel)
-        if handle:
-            return handle, channel
-    return "", _CHANNEL_PREFERENCE[0]
+    """(handle, channel) for the first *enabled* channel this member is reachable
+    on — the same rule scheduled summaries and tool reports use. The outbox
+    `source` we write is the channel name, so sensor/flush_outbox.py picks the
+    matching egress adapter."""
+    handle, channel = aaka_config.preferred_handle(member or {})
+    return handle, channel or "telegram"
 
 
 def _send_to_member(member_id: str, text: str, dry_run: bool = False) -> bool:

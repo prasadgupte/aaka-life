@@ -8,7 +8,7 @@ Priority order:
   1. conflict_alert  (urgent — not rate-limited by daily cap)
   2. morning_brief   (07:00–08:00, once/day)
   3. feature_tip     (level just advanced, not yet tipped)
-  4. weekly_digest   (Sunday 18:00–19:00, once/week)
+  4. weekly_digest   — retired (the Sunday 19:00 week overview covers it)
   5. silence_nudge   (3+ days silent, once per 3-day window)
   6. email_fallback  (7+ days silent, email configured)
   7. admin_alert     (14+ days silent, tell owner)
@@ -110,20 +110,20 @@ def decide(member_id: str) -> Optional[NudgeDecision]:
         if text:
             return NudgeDecision(tip_key, member_id, {"text": text})
 
-    # ── 4. Weekly digest (Sunday 18:00–19:00, not nudged today) ────────────
-    if _local_weekday(member_id) == 6 and _local_hour(member_id) == 18 and not nudged_today(member_id):
-        from skills.engagement.weekly_digest import build_weekly_digest
-        text = build_weekly_digest(member_id)
-        if text:
-            return NudgeDecision("weekly_digest", member_id, {"text": text})
+    # ── 4. Weekly digest — retired. It was gated on "not nudged today", and
+    # the 11:00 overdue nudge (which, with its old family-wide fallback, fired
+    # almost every day) always won, so nobody ever received it. The Sunday
+    # 19:00 week overview in sensor/scheduled_summaries.py covers the same
+    # ground; one Sunday-evening digest is enough.
 
     # ── 4.5. Overdue task nudge (daily at 11:00, not yet nudged today) ──────
+    # Only the member's OWN overdue tasks. There used to be a fallback to every
+    # overdue task in the family when they had none, which meant a member who
+    # never uses tasks got nagged daily about someone else's paperwork.
     if _local_hour(member_id) == 11 and not nudged_today(member_id):
         try:
             from skills.tasks.local_tasks import list_open
             overdue = list_open(owner=member_id, due_filter="overdue")
-            if not overdue:
-                overdue = list_open(due_filter="overdue")
             if overdue:
                 n = len(overdue)
                 top3 = overdue[:3]

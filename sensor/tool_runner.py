@@ -9,16 +9,26 @@ A tool is a manifest entry in $AAKA_CONFIG_DIR/config/tools.yaml:
     run: /Users/Shared/aaka-repo/tools/webuntis/check.py
     args: "--days 7"
     placement: sensor            # sensor | executor  (informational here)
-    schedule: "0 7 * * *"
+    schedule: "0 7 * * *"        # in the family's configured timezone, on either side
     command: "/homework"
-    report_to: <member-id>
+    report_to: <member-id>       # or a list: [kid, parent]
+    report_ok: true              # false → the tool delivers its own output; only errors reported
     on_error: alert              # alert | digest | silent
     secrets: webuntis            # → $AAKA_CONFIG_DIR/secrets/webuntis (or absolute)
     enabled: true
 
 The tool prints one JSON line: {"ok", "summary", "details", "error"} and exits
-0/non-zero. This runner is shared by the sensor cron and the executor dispatcher;
-`placement` only decides which side schedules it.
+0/non-zero. `run` is a Python file (run with this interpreter) or a `.sh` (bash).
+This runner is shared by the sensor cron and the executor dispatcher; `placement`
+only decides which side schedules it.
+
+Reports go to each recipient's preferred enabled channel (telegram → whatsapp →
+signal), so a Signal-only member gets them too.
+
+Missed slots are caught up: the executor side lives on a laptop that sleeps or is
+off, so when the scheduler ticks and finds the tool's most recent slot went by
+since its last run (within CATCH_UP_WINDOW_MIN), it runs it once — the latest
+missed slot only, never one run per missed slot.
 """
 from __future__ import annotations
 
@@ -157,15 +167,16 @@ def _run_watchdog(name: str, entry: dict) -> dict:
     reminder = entry.get("reminder") or (
         f"Heads-up — today's *{watch}* didn't run. The home machine may have been off; "
         f"I'll catch it up when it's back.")
-    recipients = entry.get("recipients") or (
-        [entry["report_to"]] if entry.get("report_to") else [])
+    recipients = _recipients(entry.get("recipients") or entry.get("report_to"))
     for r in recipients:
         _send(r, "⏰ " + reminder)
     return {"ok": True, "silent": True, "summary": f"{watch}: MISSING — reminded {len(recipients)}"}
 
 
-def run_tool(name: str, entry: dict | None = None, extra_args: str = "") -> dict:
-    """Execute one tool. Returns the structured result dict (never raises)."""
+def run_tool(name: str, entry: dict | None = None, extra_args: str = "",
+             *, catch_up: str = "") -> dict:
+    """Execute one tool. Returns the structured result dict (never raises).
+    `catch_up` = the ISO slot being caught up, recorded in the log line."""
     entry = entry or load_manifest().get(name) or {}
     if entry.get("kind") == "watchdog":
         return _run_watchdog(name, entry)
@@ -173,7 +184,8 @@ def run_tool(name: str, entry: dict | None = None, extra_args: str = "") -> dict
     if not run:
         return {"ok": False, "error": "no_such_tool", "summary": f"tool '{name}' has no run target"}
 
-    cmd = [sys.executable, run] + (entry.get("args", "").split() if entry.get("args") else [])
+    interp = ["bash"] if str(run).endswith(".sh") else [sys.executable]
+    cmd = interp + [run] + (entry.get("args", "").split() if entry.get("args") else [])
     if extra_args:
         cmd += extra_args.split()
     env = dict(os.environ)
@@ -198,23 +210,49 @@ def run_tool(name: str, entry: dict | None = None, extra_args: str = "") -> dict
     result.setdefault("summary", "")
     result.setdefault("details", "")
     result.setdefault("error", None)
-    _log(name, {"ok": result.get("ok"), "error": result.get("error"),
-                "summary": result.get("summary", "")[:200], "ms": int((time.time() - t0) * 1000)})
+    rec = {"ok": result.get("ok"), "error": result.get("error"),
+           "summary": result.get("summary", "")[:200], "ms": int((time.time() - t0) * 1000)}
+    if catch_up:
+        rec["catch_up"] = catch_up
+    _log(name, rec)
     return result
 
 
-def _send(member_id: str, text: str) -> None:
-    """Deliver a report to a member via their preferred channel (best-effort)."""
-    try:
-        from message_send import send
-        m = next((x for x in aaka_config.members() if x.get("id") == member_id), None)
-        if not m:
-            return
-        tg = m.get("telegram_id") or m.get("telegram")
-        if tg:
-            send(text, channel="telegram", to=str(tg), silent=True)
-    except Exception:
-        pass
+def _recipients(value) -> list:
+    """`report_to` / `recipients` accept one member id or a list of them."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [v.strip() for v in value.split(",") if v.strip()]
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _send(member_id, text: str) -> None:
+    """Deliver a report to one member or a list of them, each via their
+    preferred enabled channel (best-effort).
+
+    Telegram goes out directly from either side. Every other channel's daemon
+    lives with the sensor (SIGNAL_PLACEMENT / the WhatsApp sidecar), so from
+    the executor those reports are queued to the outbox instead — vps_sync
+    pushes them and the sensor's flush_outbox delivers."""
+    side = os.environ.get("AAKA_ROLE", "executor")
+    for mid in _recipients(member_id):
+        try:
+            m = next((x for x in aaka_config.members() if x.get("id") == mid), None)
+            if not m:
+                continue
+            handle, channel = aaka_config.preferred_handle(m)
+            if not handle:
+                continue
+            if channel == "telegram" or side == "sensor":
+                from message_send import send
+                send(text, channel=channel, to=handle, silent=True)
+            else:
+                from aaka_queue.queue import write_outbox
+                write_outbox(channel_id=handle, sender="tool_runner", text=text,
+                             source=channel, ttl_minutes=6 * 60, silent=True)
+        except Exception:
+            pass
 
 
 def report(name: str, entry: dict, result: dict) -> None:
@@ -231,7 +269,8 @@ def report(name: str, entry: dict, result: dict) -> None:
         if m:
             tag = f"👤 *{m.get('name', mid)}* — "
     if result.get("ok"):
-        _send(report_to, tag + (result.get("summary") or f"✅ {name}: done."))
+        if entry.get("report_ok", True):
+            _send(report_to, tag + (result.get("summary") or f"✅ {name}: done."))
         return
     err = result.get("error")
     on_error = entry.get("on_error", "alert")
@@ -245,28 +284,87 @@ def report(name: str, entry: dict, result: dict) -> None:
     _send(admin, msg)
 
 
-def run_and_report(name: str, extra_args: str = "") -> dict:
+def run_and_report(name: str, extra_args: str = "", *, catch_up: str = "") -> dict:
     entry = load_manifest().get(name) or {}
     if entry and not entry.get("enabled", True):
         return {"ok": False, "error": "disabled", "summary": f"{name} is disabled"}
-    result = run_tool(name, entry, extra_args)
+    result = run_tool(name, entry, extra_args, catch_up=catch_up)
     report(name, entry, result)
     return result
 
 
-def run_due(side: str | None = None) -> list:
-    """Run every enabled tool whose cron matches now AND whose placement is this
-    side (sensor|executor). Called every minute by each side's scheduler."""
+CATCH_UP_WINDOW_MIN = 7 * 24 * 60   # a laptop can be off over a long weekend
+
+
+def _now_local():
+    """Wall clock in the family's timezone — the VPS runs UTC, the schedule
+    is written in Berlin (or wherever aaka.yaml says)."""
     from datetime import datetime
+    from zoneinfo import ZoneInfo
+    try:
+        return datetime.now(ZoneInfo(aaka_config.timezone()))
+    except Exception:
+        return datetime.now().astimezone()
+
+
+def _last_slot(expr: str, now, window_min: int = CATCH_UP_WINDOW_MIN):
+    """Most recent minute before `now` (exclusive) that `expr` matches, within
+    `window_min`; None if there is none."""
+    from datetime import timedelta
+    t = now.replace(second=0, microsecond=0)
+    for _ in range(window_min):
+        t -= timedelta(minutes=1)
+        if _cron_matches(expr, t):
+            return t
+    return None
+
+
+def _last_run_at(name: str):
+    """When the tool last ran (aware UTC datetime), from its log; None if never."""
+    from datetime import datetime, timezone
+    last = (logs_tail(name, 1) or [{}])[-1]
+    ts = last.get("ts", "")
+    try:
+        return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def _missed_slot(entry: dict, name: str, now) -> "str | None":
+    """ISO time of the latest slot this tool should have run at but did not,
+    or None. Only tools that have run before are caught up — a brand-new
+    entry waits for its first real slot rather than firing on registration."""
+    slot = _last_slot(entry["schedule"], now)
+    if slot is None:
+        return None
+    last = _last_run_at(name)
+    if last is None or last >= slot:
+        return None
+    return slot.isoformat(timespec="minutes")
+
+
+def run_due(side: str | None = None, now=None) -> list:
+    """Run every enabled tool whose cron matches now AND whose placement is this
+    side (sensor|executor). Called every minute by each side's scheduler.
+
+    A tool whose latest slot went by without a run (the machine was asleep or
+    off) is run once now, flagged `catch_up` in its log — the latest missed
+    slot only, so a laptop that was off for three days does not fire three
+    times."""
     side = side or os.environ.get("AAKA_ROLE", "executor")
+    now = now or _now_local()
     ran = []
     for name, entry in load_manifest().items():
         if not entry.get("enabled", True) or not entry.get("schedule"):
             continue
         if entry.get("placement", "executor") != side:
             continue
-        if _cron_matches(entry["schedule"], datetime.now()):
+        if _cron_matches(entry["schedule"], now):
             ran.append((name, run_and_report(name)))
+            continue
+        missed = _missed_slot(entry, name, now)
+        if missed:
+            ran.append((name, run_and_report(name, catch_up=missed)))
     return ran
 
 

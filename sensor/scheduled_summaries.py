@@ -50,14 +50,11 @@ def _telegram_group_id() -> str:
     return os.environ.get("TELEGRAM_GROUP_ID", "")
 
 
-def _member_telegram_ids() -> dict[str, str]:
-    """Return {member_id: telegram_chat_id} for members with Telegram configured."""
-    result = {}
-    for m in aaka_config.members():
-        tg = m.get("telegram")
-        if tg:
-            result[m["id"]] = str(tg)
-    return result
+def _member_targets() -> dict[str, tuple[str, str]]:
+    """{member_id: (handle, channel)} — each member's preferred *enabled* channel
+    (telegram → whatsapp → signal), so a Signal-only kid gets the same pushes a
+    Telegram parent does. The channel is written as the outbox `source`."""
+    return aaka_config.member_targets()
 
 
 def _read_md(filename: str) -> str:
@@ -198,14 +195,15 @@ def send_saturday_heads_up(dry_run: bool = False) -> None:
         _send_to_outbox(group_id, text, dry_run=dry_run)
 
     # Per-member DM
-    for mid, tg_id in _member_telegram_ids().items():
+    targets = _member_targets()
+    for mid, (handle, channel) in targets.items():
         member_content = _read_md(f"weekly_{mid}.md") or content
         member_issues = analyze_fix("week", member_id=mid)
         member_merged = merge_fixes_inline(member_content, member_issues)
         member_text = f"{REPLY_PREFIX}📣 Your week ahead:\n\n{member_merged}"
-        _send_to_outbox(tg_id, member_text, dry_run=dry_run)
+        _send_to_outbox(handle, member_text, source=channel, dry_run=dry_run)
 
-    print(f"[ok] Saturday heads-up queued (group={'yes' if group_id else 'no'}, members={len(_member_telegram_ids())})")
+    print(f"[ok] Saturday heads-up queued (group={'yes' if group_id else 'no'}, members={len(targets)})")
 
 
 def _weekly_completion_digest() -> str:
@@ -252,14 +250,15 @@ def send_sunday_overview(dry_run: bool = False) -> None:
     if group_id:
         _send_to_outbox(group_id, text, dry_run=dry_run)
 
-    for mid, tg_id in _member_telegram_ids().items():
+    targets = _member_targets()
+    for mid, (handle, channel) in targets.items():
         member_content = _read_md(f"weekly_{mid}.md") or content
         member_issues = analyze_fix("week", member_id=mid)
         member_merged = merge_fixes_inline(member_content, member_issues)
         member_text = f"{REPLY_PREFIX}📅 Your week:\n\n{member_merged}{completion_digest}"
-        _send_to_outbox(tg_id, member_text, dry_run=dry_run)
+        _send_to_outbox(handle, member_text, source=channel, dry_run=dry_run)
 
-    print(f"[ok] Sunday overview queued (group={'yes' if group_id else 'no'}, members={len(_member_telegram_ids())})")
+    print(f"[ok] Sunday overview queued (group={'yes' if group_id else 'no'}, members={len(targets)})")
 
 
 def send_birthday_morning(dry_run: bool = False) -> None:
@@ -268,21 +267,21 @@ def send_birthday_morning(dry_run: bool = False) -> None:
     Kept for --birthday CLI flag backward compat.
     """
     from skills.contacts.birthday_list import query as bday_query
-    member_ids = _member_telegram_ids()
-    if not member_ids:
-        print("[skip] No members with Telegram configured")
+    targets = _member_targets()
+    if not targets:
+        print("[skip] No members reachable on an enabled channel")
         return
 
     sent = 0
-    for mid, tg_id in member_ids.items():
-        text = bday_query("", sender_id=tg_id)  # saves numbered list under tg_id
+    for mid, (handle, channel) in targets.items():
+        text = bday_query("", sender_id=handle)  # saves numbered list under the handle
         if "No birthdays" in text or "No birthday data" in text:
             continue
         full_text = f"{REPLY_PREFIX}🎂 Birthdays coming up:\n\n{text}"
-        _send_to_outbox(tg_id, full_text, dry_run=dry_run)
+        _send_to_outbox(handle, full_text, source=channel, dry_run=dry_run)
         sent += 1
 
-    print(f"[ok] Birthday morning DM queued for {sent}/{len(member_ids)} member(s)")
+    print(f"[ok] Birthday morning DM queued for {sent}/{len(targets)} member(s)")
 
 
 def _member_emoji(member: dict) -> str:
@@ -340,9 +339,9 @@ def send_daily_morning(dry_run: bool = False) -> None:
     """
     from sensor.router_sensor import _build_today_schedule
 
-    member_tg = _member_telegram_ids()
-    if not member_tg:
-        print("[skip] No members with Telegram configured")
+    targets = _member_targets()
+    if not targets:
+        print("[skip] No members reachable on an enabled channel")
         return
 
     date_header = _now_local().strftime("%a %-d %b")
@@ -351,8 +350,8 @@ def send_daily_morning(dry_run: bool = False) -> None:
     from skills.tasks.local_tasks import summary_for_push
     task_block = summary_for_push()
 
-    for mid, tg_id in member_tg.items():
-        schedule = _build_today_schedule(mid, sender=tg_id, include_tasks=False)
+    for mid, (handle, channel) in targets.items():
+        schedule = _build_today_schedule(mid, sender=handle, include_tasks=False)
         calendar_part, bday_part = _split_birthdays(schedule)
         calendar_part = _flag_first_event(calendar_part)
 
@@ -362,9 +361,9 @@ def send_daily_morning(dry_run: bool = False) -> None:
         if bday_part:
             text += bday_part  # already starts with \n\n🎂 ...
 
-        _send_to_outbox(tg_id, text, dry_run=dry_run)
+        _send_to_outbox(handle, text, source=channel, dry_run=dry_run)
 
-    print(f"[ok] Daily morning queued for {len(member_tg)} member(s)")
+    print(f"[ok] Daily morning queued for {len(targets)} member(s)")
 
 
 def send_birthday_auto(dry_run: bool = False) -> None:
@@ -508,12 +507,13 @@ def send_daily_tomorrow(dry_run: bool = False) -> None:
     if group_id:
         _send_to_outbox(group_id, text, dry_run=dry_run)
 
-    for mid, tg_id in _member_telegram_ids().items():
+    targets = _member_targets()
+    for mid, (handle, channel) in targets.items():
         member_content = _format_member_tomorrow(mid) or content
         member_text = f"{REPLY_PREFIX}📅 Your tomorrow:\n\n{member_content}"
-        _send_to_outbox(tg_id, member_text, dry_run=dry_run)
+        _send_to_outbox(handle, member_text, source=channel, dry_run=dry_run)
 
-    print(f"[ok] Daily tomorrow queued (group={'yes' if group_id else 'no'}, members={len(_member_telegram_ids())})")
+    print(f"[ok] Daily tomorrow queued (group={'yes' if group_id else 'no'}, members={len(targets)})")
 
 
 # ── Time-gated check ─────────────────────────────────────────────────────────
