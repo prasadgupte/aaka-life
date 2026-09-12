@@ -113,6 +113,23 @@ def test_groups_need_explicit_config_in_linked_mode():
         # group allowlist is not the only thing that got stricter.
         check("member DMs are opt-in, not implicit",
               rs._is_allowed_channel(known, known, "signal") is False)
+        # The operator's OWN account posting in an unlisted group: the sender
+        # is "this account", which used to short-circuit the gate the way the
+        # self-chat does. Only the chat being the self-chat may do that.
+        prev_acct = os.environ.get("SIGNAL_ACCOUNT")
+        os.environ["SIGNAL_ACCOUNT"] = "+15550000000"
+        try:
+            check("operator's own message in an unlisted group is blocked",
+                  rs._is_allowed_channel("+15550000000", "group:SCHOOLGROUPID==", "signal") is False)
+            check("operator's own message in the family group is allowed",
+                  rs._is_allowed_channel("+15550000000", "group:FAMILYGROUPID==", "signal") is True)
+            check("Note to Self (chat == account) stays always-on",
+                  rs._is_allowed_channel("+15550000000", "+15550000000", "signal") is True)
+        finally:
+            if prev_acct is None:
+                os.environ.pop("SIGNAL_ACCOUNT", None)
+            else:
+                os.environ["SIGNAL_ACCOUNT"] = prev_acct
     finally:
         if prev_group is None:
             os.environ.pop("SIGNAL_GROUP_ID", None)

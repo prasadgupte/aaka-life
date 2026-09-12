@@ -503,8 +503,11 @@ def _chat_allowed(source: str, sender_id: str, channel_id: str) -> bool:
     from the operator, in their private conversation. Only the self-chat and
     explicitly listed ids are allowed.
     """
+    # The self-chat is the CHAT being the account, not the sender: the
+    # operator's own messages arrive with sender == account in every chat they
+    # post in, including the school group.
     own = _own_ids(source)
-    if own and (sender_id in own or channel_id in own):
+    if own and channel_id in own:
         return True
     known = _allowed_chats(source) | _granted_chats(source)
     return bool(known & {channel_id, sender_id})
@@ -568,7 +571,7 @@ def _signal_chat_allowed(sender_id: str, channel_id: str) -> bool:
     on a linked device.
     """
     own = _signal_account_ids()
-    if own and (sender_id in own or channel_id in own):
+    if own and channel_id in own:   # the chat is the self-chat, whoever wrote
         return True
     return bool(_signal_allowed_chats() & {channel_id, sender_id})
 
