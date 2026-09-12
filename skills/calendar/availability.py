@@ -218,9 +218,11 @@ def conflicts_for_event(
                     singleEvents=True,
                 ).execute()
                 for item in result.get("items", []):
-                    title = item.get("summary", "").strip()
-                    if not title:
+                    if item.get("status") == "cancelled":
                         continue
+                    # Free/busy-only calendars return no summary; the slot is
+                    # still taken. See fetch_day_events.
+                    title = item.get("summary", "").strip() or "Busy"
                     ev_start = item["start"].get("dateTime", item["start"].get("date", ""))
                     ev_end   = item["end"].get("dateTime", item["end"].get("date", ""))
                     # Format times as HH:MM for display
@@ -504,7 +506,7 @@ def fetch_day_events(
     except Exception:
         return []
 
-    seen: set[str] = set()
+    seen: set[tuple[str, str, str]] = set()
     results: list[dict] = []
     for cal_id in calendar_ids:
         try:
@@ -517,11 +519,24 @@ def fetch_day_events(
                 orderBy="startTime",
             ).execute().get("items", [])
             for item in items:
-                title = item.get("summary", "").strip()
-                if not title or title.lower() in seen:
+                if item.get("status") == "cancelled":
                     continue
-                seen.add(title.lower())
+                # A calendar shared as free/busy only (a work account, typically)
+                # returns each event with no summary. That is still a real
+                # commitment with a real start and end, so keep it as "Busy"
+                # rather than dropping it and reporting the day as empty.
+                title = item.get("summary", "").strip() or "Busy"
                 all_day = "date" in item["start"]
+                # Dedupe on time as well as title: the same invite on two
+                # calendars collapses, but two different "Busy" blocks survive.
+                key = (
+                    title.lower(),
+                    item["start"].get("dateTime") or item["start"].get("date", ""),
+                    item["end"].get("dateTime") or item["end"].get("date", ""),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
                 if all_day:
                     results.append({"title": title, "start": "", "end": "", "all_day": True})
                 else:
@@ -539,6 +554,8 @@ def fetch_day_events(
                     })
         except Exception:
             continue
+    # orderBy is per calendar; across calendars the list arrives interleaved.
+    results.sort(key=lambda e: (not e["all_day"], e["start"]))
     return results
 
 

@@ -93,6 +93,34 @@ def _exec_cal_direct_vps(intent: str, payload: dict) -> str:
     else:
         raise ValueError(f"No VPS direct path for intent: {intent}")
 
+
+def _sensor_can_read_calendar() -> bool:
+    """True when this node holds a Google token the calendar readers can use.
+
+    Calendar *writes* already gate on token_vps.json and fall back to the
+    queue; the readers never did, so a VPS with no credentials answered
+    "nothing on the calendar" instead of asking home. Gate on the same path
+    the readers resolve, so the answer matches what they will actually find.
+    """
+    from skills.calendar.availability import _token_path
+    return _token_path().exists()
+
+
+def _handoff_calendar_read(intent: str, message: str, sender_id: str, channel_id: str,
+                           source: str, message_id, what: str) -> str:
+    """Queue a calendar read for the home executor and tell the user.
+
+    Mirrors the tool_run handoff. The executor's _exec_day_schedule and
+    _exec_plan_slots read raw_message from the *payload*, not the column, so
+    it has to be in both.
+    """
+    write_item(intent=intent, raw_message=message, sender=sender_id,
+               channel_id=channel_id or sender_id, source=source or "telegram",
+               payload={"raw_message": message, "sender": sender_id,
+                        "channel_id": channel_id or sender_id,
+                        "source": source or "telegram", "message_id": message_id})
+    return f"⏳ Checking {what} on the home machine — I'll report back."
+
 # Comma-separated allowlist; empty = all intents enabled
 _ENABLED_INTENTS: set[str] = set(os.environ.get("SENSOR_ENABLED_INTENTS", "").split(",")) - {""}
 
@@ -3166,12 +3194,15 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
             )
         return _reply(f"{REPLY_PREFIX}{preview_msg}", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
 
-    # ── plan_slots: direct execution on sensor (VPS calendar token) ─────────────
+    # ── plan_slots: direct on sensor if it holds a token, else hand off home ──
     if intent == "plan_slots":
         _plan_args = re.sub(r'^/plan\s*', '', message, flags=re.I).strip()
         if not _plan_args:
             from skills.calendar.plan import describe as _plan_describe
             return _reply(f"{REPLY_PREFIX}{_plan_describe()}", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
+        if aaka_config.role() == "away" and not _sensor_can_read_calendar():
+            _txt = _handoff_calendar_read("plan_slots", message, sender_id, channel_id, source, message_id, "free slots")
+            return _reply(f"{REPLY_PREFIX}{_txt}", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
         from skills.calendar.plan import parse_plan_args, find_plan_slots, format_plan_reply
         try:
             _args = parse_plan_args(_plan_args)
@@ -3196,8 +3227,11 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
         except Exception as _plan_exc:
             return _reply(f"{REPLY_PREFIX}⚠️ /plan failed: {_plan_exc}", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
 
-    # ── day_schedule: direct execution on sensor (VPS calendar token) ───────────
+    # ── day_schedule: direct on sensor if it holds a token, else hand off home ──
     if intent == "day_schedule":
+        if aaka_config.role() == "away" and not _sensor_can_read_calendar():
+            _txt = _handoff_calendar_read("day_schedule", message, sender_id, channel_id, source, message_id, "that day")
+            return _reply(f"{REPLY_PREFIX}{_txt}", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
         from skills.calendar.plan import parse_day_date
         from skills.calendar.availability import fetch_day_events
         _day_args = re.sub(r'^/day\s*', '', message, flags=re.I).strip()

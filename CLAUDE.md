@@ -311,8 +311,8 @@ Register an agent: `python3 admin/register_agent.py <id> "<Display Name>"`
 | `edit_task` | /edit N \<change\> | — | update due/owner/priority/title (0 tokens) |
 | `delete_task` | /del N | — | permanently remove task (0 tokens) |
 | `birthday_list` | /bday, bday | — | upcoming birthdays from contacts (0 tokens) |
-| `day_schedule` | /day | — | detailed day view for a specific date (0 tokens) |
-| `plan_slots` | /plan | — | find free slots in calendar (VPS direct) |
+| `day_schedule` | /day | — | detailed day view for a specific date; runs on the sensor if it holds a calendar token, else hands off to home. Free/busy-only calendars (work) show as `Busy` (0 tokens) |
+| `plan_slots` | /plan | — | find free slots in calendar; sensor-direct with a token, else hands off to home. Free/busy-only calendars count as taken |
 | `block_cal` | /block | — | block time on calendar (confirm → VPS direct) |
 | `file_sync` | (auto) | — | background sync of sensor files to vault |
 | `engage_report` | /engage, engage | — | engagement level, features tried, next steps (0 tokens) |
