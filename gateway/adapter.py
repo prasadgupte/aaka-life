@@ -105,17 +105,20 @@ class GatewayAdapter:
     # ── LLM calls ─────────────────────────────────────────────────────────────
 
     def call_llm(self, prompt: str, timeout: int = 60,
-                 provider: "str | None" = None) -> str:
+                 provider: "str | None" = None,
+                 images: "list[dict] | None" = None) -> str:
         """
         One-shot LLM call via the selected provider (LLM_PROVIDER, default: gemini).
 
         Providers are direct API / local — no OpenClaw. See gateway/llm_providers.py.
+        `images` = optional list of {data (base64), media_type, label}; a provider
+        without vision raises llm_providers.VisionUnsupported before calling out.
         Returns the text response. Raises RuntimeError on failure.
         """
         from gateway import llm_providers
         name = llm_providers.provider_name(provider)
         try:
-            text = llm_providers.complete(prompt, timeout, provider=name)
+            text = llm_providers.complete(prompt, timeout, provider=name, images=images)
             self._log_llm_usage(name, "ok")
             return text
         except Exception as exc:
@@ -123,11 +126,13 @@ class GatewayAdapter:
             raise
 
     def _call_llm_fallback(self, prompt: str, timeout: int,
-                           _gemini_only: bool = False) -> str:
+                           _gemini_only: bool = False,
+                           images: "list[dict] | None" = None) -> str:
         """Fallback LLM entry used by gateway.agent_api's /v1/llm route.
         _gemini_only=True forces the Gemini provider."""
         return self.call_llm(prompt, timeout,
-                             provider="gemini" if _gemini_only else None)
+                             provider="gemini" if _gemini_only else None,
+                             images=images)
 
     def _log_llm_usage(self, model: str, status: str, *,
                        prompt_tokens: "int | None" = None,

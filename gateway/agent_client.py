@@ -891,6 +891,26 @@ class AakaClient:
 
     # ── LLM ─────────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def llm_image(path_or_bytes, *, label: str = "", media_type: str = "") -> dict:
+        """Build one entry for `llm(images=[...])` from a file path or raw bytes.
+
+        media_type is inferred from the extension (.png / .jpg / .jpeg) when not
+        given; bytes without a media_type default to image/png.
+        """
+        import base64 as _b64
+        from pathlib import Path as _Path
+        if isinstance(path_or_bytes, (str, _Path)):
+            p = _Path(path_or_bytes)
+            data = p.read_bytes()
+            if not media_type:
+                media_type = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+        else:
+            data = bytes(path_or_bytes)
+            media_type = media_type or "image/png"
+        return {"data": _b64.b64encode(data).decode("ascii"),
+                "media_type": media_type, "label": label}
+
     def llm(
         self,
         prompt: str,
@@ -898,7 +918,9 @@ class AakaClient:
         response_format: str = "json",
         complexity: str = "low",
         timeout: int = 120,
-    ) -> str:
+        images: Optional[list[dict]] = None,
+        raw: bool = False,
+    ):
         """Call an LLM via the agent gateway. Returns the response text.
 
         Uses the local Claude subscription (zero marginal cost) with Gemini fallback.
@@ -908,20 +930,33 @@ class AakaClient:
             response_format: "json" (structured output) or "text" (plain text).
             complexity: "low" (haiku), "medium" (sonnet), "high" (opus).
             timeout: Max seconds to wait for LLM response.
+            images: Optional list of {data (base64), media_type, label} — build
+                them with `AakaClient.llm_image(...)`. Max 4, each ≤ 2 MB decoded,
+                ≤ 8 MB total. Refer to them in the prompt as "Image 1", "Image 2 (label)".
+            raw: Return the whole response dict (text, model, provider,
+                duration_ms, saw_images) instead of just the text. Use it with
+                images so you can tell whether the answer was vision-backed.
 
         Example:
             data = client.llm('Extract {name, date} from: "Dinner May 10"')
             parsed = json.loads(data)
 
             summary = client.llm("Summarize: ...", response_format="text", complexity="medium")
+
+            r = client.llm("Explain the question in Image 1 to a ten-year-old.",
+                           images=[client.llm_image("q14.png", label="the question")],
+                           response_format="text", raw=True)
+            r["text"], r["saw_images"]   # saw_images == 0 → answer was text-only
         """
         body = {
             "prompt": prompt,
             "response_format": response_format,
             "complexity": complexity,
         }
+        if images:
+            body["images"] = images
         result = self._post("/v1/llm", body, timeout=timeout + 10)
-        return result["text"]
+        return result if raw else result["text"]
 
     def register_tag(
         self,

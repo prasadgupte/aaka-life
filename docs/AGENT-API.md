@@ -85,6 +85,7 @@ Base URL: `http://localhost:18790`
 | `GET` | `/v1/jobs` | List agent's jobs | `X-Agent-Key` |
 | `PATCH` | `/v1/jobs/{id}` | Update schedule/payload/enabled | `X-Agent-Key` |
 | `DELETE` | `/v1/jobs/{id}` | Remove a job | `X-Agent-Key` |
+| `POST` | `/v1/llm` | One-shot LLM call (Claude CLI, Gemini fallback); optional images | `X-Agent-Key` |
 | `GET` | `/health` | Health check (no auth) | None |
 
 ### Starting the gateway
@@ -410,6 +411,52 @@ client.send_photo(
 | `sender` | str | no | Telegram chat ID override |
 | `silent` | bool | no | send without notification sound |
 | `reply_options` | list[str] | no | inline keyboard buttons |
+
+### LLM calls — text, or text + images
+
+```python
+# Text only — unchanged
+data = client.llm('Extract {name, date} from: "Dinner May 10"')            # JSON string
+summary = client.llm("Summarize: ...", response_format="text", complexity="medium")
+
+# With images — refer to them as "Image 1", "Image 2 (label)" in the prompt
+r = client.llm(
+    "Explain the question in Image 1 to a ten-year-old. The answer options are pictures, "
+    "see Image 2.",
+    images=[client.llm_image("q14.png", label="the question"),
+            client.llm_image("q14-options.png", label="the options")],
+    response_format="text", complexity="high", raw=True,
+)
+r["text"]; r["saw_images"]    # saw_images < len(images) → not (fully) vision-backed
+```
+
+**`POST /v1/llm` request body:**
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `prompt` | str | yes | |
+| `response_format` | `json` \| `text` | no | default `json` (prepends a "JSON only" instruction) |
+| `complexity` | `low` \| `medium` \| `high` | no | haiku / sonnet / opus on the Claude path; default `low` |
+| `images` | list | no | ≤ 4 of `{data: base64 (no data: prefix), media_type: image/png \| image/jpeg, label: str}`; each ≤ 2 MB decoded, ≤ 8 MB total |
+
+**Response:** `{text, model, provider, duration_ms, saw_images}`.
+
+How images travel: on the Claude-CLI path each one is written to a private temp
+dir, the prompt gets a line per image (`Image 1 (the question): /…/1.png`), and
+`claude -p` runs with only the `Read` tool, allowed only inside that dir; the
+dir is deleted afterwards. `saw_images` counts the images the model actually
+read (a denied or failed Read does not count). If it read none, the call falls
+through to Gemini, which takes the images inline (`saw_images` = all). Nothing
+ever returns a text-only answer while claiming to have seen the picture.
+
+| Status | Body | When |
+|--------|------|------|
+| 413 | `{error: too_many_images \| image_too_large \| images_too_large, …}` | count or size cap hit |
+| 422 | `{error: bad_image, index, reason}` | base64 does not decode |
+| 422 | `{error: vision_unsupported, provider}` | the fallback provider cannot take images |
+| 502 | `LLM call failed: …` | both providers failed |
+
+Each call appends `{images, saw_images}` to `logs/llm-usage.jsonl` when images were sent.
 
 ### LinkedIn posts
 

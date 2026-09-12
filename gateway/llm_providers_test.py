@@ -81,6 +81,42 @@ def main():
     _patch({}, {"content": [{"type": "text", "text": "dispatched"}]})
     check("complete(): dispatches to selected provider", lp.complete("x", provider="anthropic") == "dispatched")
 
+    # ── Images ──
+    imgs = [{"data": "AAAA", "media_type": "image/png", "label": "the figure"},
+            {"data": "BBBB", "media_type": "image/jpeg"}]
+    os.environ["GEMINI_API_KEY"] = "test-gem-key"
+    cap = {}
+    _patch(cap, {"candidates": [{"content": {"parts": [{"text": "saw it"}]}}]})
+    out = lp.gemini("what is it", timeout=9, images=imgs)
+    parts = cap["body"]["contents"][0]["parts"]
+    check("gemini+images: returns text", out == "saw it")
+    check("gemini+images: label, image, label, image, prompt", len(parts) == 5)
+    check("gemini+images: label text precedes image", parts[0] == {"text": "Image 1 (the figure):"})
+    check("gemini+images: inline_data carries mime + base64",
+          parts[1] == {"inline_data": {"mime_type": "image/png", "data": "AAAA"}})
+    check("gemini+images: unlabeled image gets plain label", parts[2] == {"text": "Image 2:"})
+    check("gemini+images: jpeg mime honoured", parts[3]["inline_data"]["mime_type"] == "image/jpeg")
+    check("gemini+images: prompt is last", parts[4] == {"text": "what is it"})
+
+    cap = {}
+    _patch(cap, {"content": [{"type": "text", "text": "claude saw it"}]})
+    out = lp.anthropic("what is it", timeout=9, images=imgs[:1])
+    content = cap["body"]["messages"][0]["content"]
+    check("anthropic+images: returns text", out == "claude saw it")
+    check("anthropic+images: content becomes a block list", isinstance(content, list) and len(content) == 3)
+    check("anthropic+images: image block shape",
+          content[1] == {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AAAA"}})
+    check("anthropic+images: prompt is last block", content[2] == {"type": "text", "text": "what is it"})
+
+    try:
+        lp.complete("x", provider="claude-cli", images=imgs)
+        check("claude-cli + images raises VisionUnsupported", False)
+    except lp.VisionUnsupported as e:
+        check("claude-cli + images raises VisionUnsupported", e.provider == "claude-cli")
+    _patch({}, {"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
+    check("complete(): images pass through to gemini", lp.complete("x", provider="gemini", images=imgs) == "ok")
+    check("complete(): images=None unchanged", lp.complete("x", provider="gemini") == "ok")
+
     # ── Errors ──
     try:
         lp.complete("x", provider="nope")

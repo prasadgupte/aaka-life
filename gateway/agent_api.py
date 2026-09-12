@@ -9,9 +9,11 @@ Telegram/WhatsApp channels and poll for user replies.
 Auth: X-Agent-Key header (SHA-256 hash checked against agent_registry).
 """
 import asyncio
+import base64
 import json
 import os
 import shutil
+import tempfile as _tempfile
 import subprocess
 import sys
 import time
@@ -1197,10 +1199,25 @@ def delete_action(action_id: str, agent: dict = Depends(_require_agent)):
 _CLAUDE_MODEL_MAP = {"low": "haiku", "medium": "sonnet", "high": "opus"}
 
 
+# Vision limits — mathe-trainer sends a question crop + at most a few option
+# crops; anything bigger is a mistake on the caller's side, not a use case.
+_LLM_MAX_IMAGES = 4
+_LLM_MAX_IMAGE_BYTES = 2 * 1024 * 1024
+_LLM_MAX_TOTAL_IMAGE_BYTES = 8 * 1024 * 1024
+_LLM_IMAGE_EXT = {"image/png": "png", "image/jpeg": "jpg"}
+
+
+class LlmImage(BaseModel):
+    data: str                    # base64 PNG/JPEG, no data: prefix
+    media_type: Literal["image/png", "image/jpeg"] = "image/png"
+    label: str = ""              # e.g. "the figure", "option (C)" — echoed into the prompt
+
+
 class LlmRequest(BaseModel):
     prompt: str
     response_format: Literal["json", "text"] = "json"
     complexity: Literal["low", "medium", "high"] = "low"
+    images: list[LlmImage] = []  # optional; ≤ 4, each ≤ 2 MB decoded, ≤ 8 MB total
 
 
 class LlmResponse(BaseModel):
@@ -1208,43 +1225,170 @@ class LlmResponse(BaseModel):
     model: str
     provider: str       # "claude" | "gemini"
     duration_ms: int
+    saw_images: int = 0  # how many of the request's images the provider actually received
 
 
-def _call_claude_cli(prompt: str, model_alias: str, timeout: int) -> str:
-    """Run Claude CLI in print mode. Returns response text. Raises RuntimeError on failure."""
+def _decode_llm_images(images: list[LlmImage]) -> list[bytes]:
+    """Validate the request's images. 413 on count/size, 422 on bad base64."""
+    if len(images) > _LLM_MAX_IMAGES:
+        raise HTTPException(status_code=413, detail={
+            "error": "too_many_images", "max": _LLM_MAX_IMAGES, "got": len(images)})
+    raw: list[bytes] = []
+    for i, img in enumerate(images, 1):
+        try:
+            blob = base64.b64decode(img.data, validate=True)
+        except Exception:
+            raise HTTPException(status_code=422, detail={
+                "error": "bad_image", "index": i, "reason": "not valid base64"})
+        if not blob:
+            raise HTTPException(status_code=422, detail={
+                "error": "bad_image", "index": i, "reason": "empty"})
+        if len(blob) > _LLM_MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail={
+                "error": "image_too_large", "index": i,
+                "max_bytes": _LLM_MAX_IMAGE_BYTES, "got": len(blob)})
+        raw.append(blob)
+    total = sum(len(b) for b in raw)
+    if total > _LLM_MAX_TOTAL_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail={
+            "error": "images_too_large", "max_bytes": _LLM_MAX_TOTAL_IMAGE_BYTES, "got": total})
+    return raw
+
+
+def _image_line(i: int, img: LlmImage, path: str) -> str:
+    label = img.label.strip()
+    return f"Image {i} ({label}): {path}" if label else f"Image {i}: {path}"
+
+
+def _parse_claude_stream(stdout: str, image_paths: set[str]) -> tuple[str, int]:
+    """Walk `--output-format stream-json` output. Returns (result_text, images_read).
+
+    An image counts as read only when its Read tool_use got a non-error
+    tool_result carrying an image block — a permission denial or a missing
+    file leaves the model answering blind, and that must not count.
+    """
+    read_paths: dict[str, str] = {}   # tool_use_id → file_path
+    seen: set[str] = set()
+    result_text = ""
+    result_error = ""
+    for line in stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        kind = ev.get("type")
+        msg = ev.get("message") or {}
+        content = msg.get("content")
+        if kind == "assistant" and isinstance(content, list):
+            for b in content:
+                if b.get("type") == "tool_use" and b.get("name") == "Read":
+                    path = str((b.get("input") or {}).get("file_path", ""))
+                    if path in image_paths:
+                        read_paths[b.get("id", "")] = path
+        elif kind == "user" and isinstance(content, list):
+            for b in content:
+                if b.get("type") != "tool_result" or b.get("is_error"):
+                    continue
+                path = read_paths.get(b.get("tool_use_id", ""))
+                blocks = b.get("content")
+                got_image = isinstance(blocks, list) and any(
+                    isinstance(c, dict) and c.get("type") == "image" for c in blocks)
+                if path and got_image:
+                    seen.add(path)
+        elif kind == "result":
+            result_text = str(ev.get("result") or "")
+            if ev.get("is_error") or ev.get("subtype") not in (None, "success"):
+                result_error = ev.get("subtype") or "error"
+    if result_error:
+        raise RuntimeError(f"claude stream ended with {result_error}: {result_text[:200]}")
+    return result_text.strip(), len(seen)
+
+
+def _call_claude_cli(prompt: str, model_alias: str, timeout: int,
+                     images: "list[LlmImage] | None" = None,
+                     image_bytes: "list[bytes] | None" = None) -> tuple[str, int]:
+    """Run Claude CLI in print mode. Returns (response text, images seen).
+
+    With images: each one is written to a private temp dir, the prompt gets one
+    line per image naming the file, and the CLI runs with *only* the Read tool,
+    allowed *only* inside that dir, so `claude -p` can look at them and nothing
+    else. Raises RuntimeError on failure — including when images were sent but
+    the model read none of them, so the caller falls through to a provider that
+    takes images natively rather than returning a text-only guess.
+    """
     claude_bin = shutil.which("claude")
     if not claude_bin:
         raise RuntimeError("claude not on PATH")
 
-    result = subprocess.run(
-        [claude_bin, "-p", prompt,
-         "--model", model_alias,
-         "--output-format", "json",
-         "--no-session-persistence"],
-        capture_output=True, text=True, timeout=timeout,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[:300]}")
+    if not images:
+        result = subprocess.run(
+            [claude_bin, "-p", prompt,
+             "--model", model_alias,
+             "--output-format", "json",
+             "--no-session-persistence"],
+            capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[:300]}")
+        try:
+            data = json.loads(result.stdout)
+            return data.get("result", result.stdout).strip(), 0
+        except (json.JSONDecodeError, TypeError):
+            return result.stdout.strip(), 0
 
+    tmp = _tempfile.mkdtemp(prefix="aaka-llm-")   # 0700
     try:
-        data = json.loads(result.stdout)
-        return data.get("result", result.stdout).strip()
-    except (json.JSONDecodeError, TypeError):
-        return result.stdout.strip()
+        paths: list[str] = []
+        for i, (img, blob) in enumerate(zip(images, image_bytes or []), 1):
+            path = os.path.join(tmp, f"{i}.{_LLM_IMAGE_EXT[img.media_type]}")
+            with open(path, "wb") as fh:
+                fh.write(blob)
+            paths.append(path)
+        listing = "\n".join(_image_line(i, img, p) for i, (img, p) in enumerate(zip(images, paths), 1))
+        full_prompt = (
+            f"{listing}\n"
+            "Read every image above with the Read tool before answering.\n\n"
+            f"{prompt}"
+        )
+        # Permission rule paths: `//` = absolute (a single `/` is project-relative).
+        result = subprocess.run(
+            [claude_bin, "-p", full_prompt,
+             "--model", model_alias,
+             "--output-format", "stream-json", "--verbose",
+             "--no-session-persistence",
+             "--tools", "Read",
+             "--allowedTools", f"Read(/{tmp}/**)"],
+            capture_output=True, text=True, timeout=timeout,
+            stdin=subprocess.DEVNULL, cwd=tmp,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[:300]}")
+        text, seen = _parse_claude_stream(result.stdout, set(paths))
+        if seen == 0:
+            raise RuntimeError(
+                f"claude cli read none of the {len(images)} image(s) — "
+                "vision via Read tool unavailable in this print-mode run")
+        return text, seen
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _call_gemini_fallback(prompt: str, timeout: int) -> tuple[str, str]:
+def _call_gemini_fallback(prompt: str, timeout: int,
+                          images: "list[LlmImage] | None" = None) -> tuple[str, str]:
     """Call Gemini API. Returns (text, model_name). Raises on failure."""
     from gateway.adapter import GatewayAdapter
     adapter = GatewayAdapter()
     # _gemini_only=True: skip the Claude-CLI path the agent_api just tried.
-    text = adapter._call_llm_fallback(prompt, timeout, _gemini_only=True)
+    text = adapter._call_llm_fallback(
+        prompt, timeout, _gemini_only=True,
+        images=[img.model_dump() for img in images] if images else None)
     model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
     return text, model
 
 
 def _log_llm_endpoint(model: str, provider: str, status: str,
-                      duration_ms: int, agent_id: str, error: str = "") -> None:
+                      duration_ms: int, agent_id: str, error: str = "",
+                      images: int = 0, saw_images: int = 0) -> None:
     config_dir = os.environ.get("AAKA_CONFIG_DIR", "/config")
     log_path = Path(config_dir) / "logs" / "llm-usage.jsonl"
     entry = {
@@ -1256,6 +1400,9 @@ def _log_llm_endpoint(model: str, provider: str, status: str,
         "agent_id": agent_id,
         "source": "agent_api",
     }
+    if images:
+        entry["images"] = images
+        entry["saw_images"] = saw_images
     if error:
         entry["error"] = error
     try:
@@ -1284,30 +1431,46 @@ def call_llm_endpoint(body: LlmRequest, agent: dict = Depends(_require_agent)):
     else:
         effective_prompt = body.prompt
 
+    images = body.images or None
+    image_bytes = _decode_llm_images(body.images) if images else []
+    n_images = len(image_bytes)
+
     t0 = time.monotonic()
     provider = "claude"
     model_used = model_alias
+    saw_images = 0
 
     try:
-        text = _call_claude_cli(effective_prompt, model_alias, timeout=120)
+        text, saw_images = _call_claude_cli(
+            effective_prompt, model_alias, timeout=180 if images else 120,
+            images=images, image_bytes=image_bytes)
     except (RuntimeError, subprocess.TimeoutExpired):
-        # Fallback to Gemini
+        # Fallback to Gemini — which takes images inline, so a Claude-CLI run
+        # that could not read them still ends in a vision-backed answer.
         provider = "gemini"
         try:
-            text, model_used = _call_gemini_fallback(effective_prompt, timeout=60)
+            text, model_used = _call_gemini_fallback(effective_prompt, timeout=60, images=images)
+            saw_images = n_images
         except Exception as exc:
             duration_ms = int((time.monotonic() - t0) * 1000)
-            _log_llm_endpoint(model_used, provider, "error", duration_ms, agent["id"], str(exc))
+            _log_llm_endpoint(model_used, provider, "error", duration_ms, agent["id"],
+                              str(exc), images=n_images)
+            from gateway.llm_providers import VisionUnsupported
+            if isinstance(exc, VisionUnsupported):
+                raise HTTPException(status_code=422, detail={
+                    "error": "vision_unsupported", "provider": exc.provider})
             raise HTTPException(status_code=502, detail=f"LLM call failed: {exc}")
 
     duration_ms = int((time.monotonic() - t0) * 1000)
-    _log_llm_endpoint(model_used, provider, "ok", duration_ms, agent["id"])
+    _log_llm_endpoint(model_used, provider, "ok", duration_ms, agent["id"],
+                      images=n_images, saw_images=saw_images)
 
     return LlmResponse(
         text=text,
         model=model_used,
         provider=provider,
         duration_ms=duration_ms,
+        saw_images=saw_images,
     )
 
 
@@ -1405,10 +1568,6 @@ def retire_tag_endpoint(tag: str, agent: dict = Depends(_require_agent)):
 # ── PDF endpoints ─────────────────────────────────────────────────────────────
 # File transfer uses base64 JSON — consistent with the existing JSON-only API,
 # acceptable for localhost and files up to 50 MB.
-
-import base64
-import tempfile as _tempfile
-
 
 class PdfCompressRequest(BaseModel):
     file_b64: str
