@@ -311,6 +311,19 @@ def group_name() -> str:
     return _load().get("group_name", "Household")
 
 
+def people_names() -> list[str]:
+    """Display names of the humans — no bot, no household pseudo-member."""
+    return [m["name"] for m in members() if m.get("role") not in ("bot", "family")]
+
+
+def group_member_id() -> str | None:
+    """Id of the shared/whole-household member (role: family), or None."""
+    for m in members():
+        if m.get("role") == "family":
+            return m["id"]
+    return None
+
+
 def carriers() -> list[str]:
     return [m["name"] for m in members() if m.get("is_carrier")]
 

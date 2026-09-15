@@ -2985,6 +2985,9 @@ assert any(r.endswith('data/signal_media') for r in roots), roots
 print('signal_media allowlisted')
 \""
 
+check "drop/note: @ is reserved for members; unknown @name → everyone? (never silently the sender)" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_drop_at_member.py"
+
 check "tool_runner: manifest → run → structured result → log → cron/placement" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_tool_runner.py"
 
