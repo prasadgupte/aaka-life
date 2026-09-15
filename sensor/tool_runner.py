@@ -197,7 +197,14 @@ def run_tool(name: str, entry: dict | None = None, extra_args: str = "",
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=entry.get("timeout", 120), env=env)
         raw = (proc.stdout or "").strip().splitlines()
-        result = json.loads(raw[-1]) if raw else {}
+        # Structured tools print a JSON dict as their last stdout line; plain
+        # scripts (bash wrappers, human-readable digests) don't — fall through
+        # to the exit-code path instead of surfacing a JSONDecodeError as a
+        # runner_error on a run that actually succeeded.
+        try:
+            result = json.loads(raw[-1]) if raw else {}
+        except ValueError:
+            result = {}
         if not isinstance(result, dict) or "ok" not in result:
             result = {"ok": proc.returncode == 0,
                       "summary": (proc.stdout or proc.stderr or "").strip()[:400],

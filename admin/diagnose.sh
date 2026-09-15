@@ -1226,6 +1226,24 @@ else
     info "native sensor not installed here (Docker or Mac executor) — skipping"
 fi
 
+# ── Tool runs mis-reported as runner_error ───────────────────────────────────
+# A tool whose last stdout line is prose used to be logged as runner_error
+# ("Expecting value: line 1 column 1") even when it exited 0 and did its job
+# (iserv-digest, 2026-09-14/15). Any such record in the tool logs means this
+# host runs a tool_runner.py from before the fix.
+header "Tool runner result parsing"
+_TLOGS="${AAKA_CONFIG_DIR:-$HOME/.aaka}/logs/tools"
+if [ -d "$_TLOGS" ] && ls "$_TLOGS"/*.jsonl >/dev/null 2>&1; then
+    _BAD=$(grep -l '"error": "runner_error".*Expecting value' "$_TLOGS"/*.jsonl 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.jsonl$//' | tr '\n' ' ')
+    if [ -n "$_BAD" ]; then
+        warn "tool logs carry JSON-decode runner_errors (${_BAD}) — plain-text tools were mis-reported; update sensor/tool_runner.py"
+    else
+        ok "no JSON-decode runner_errors in tool logs"
+    fi
+else
+    info "no tool logs yet — skipping"
+fi
+
 # ── Inbound envelope trust (SEC-1 / SEC-3) ────────────────────────────────────
 # Behavioural probe (security_check.py greps the source; this actually parses).
 # A message BODY that carries its own "Conversation info" envelope must NOT be
