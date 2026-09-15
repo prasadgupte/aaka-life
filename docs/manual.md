@@ -298,6 +298,8 @@ Notes append to a per-topic log file (`vault/Notes/<you>/fin.md`). No file explo
 - `f flo172 invoice` → `_shared/properties/flo172/invoices/`
 - Unrecognized tags → `00-Inbox/<you>/` (with a warning)
 
+**Another member's vault (admins):** put the member first — `f ari health` or `f @ari #health` (the `@` is optional, same as `t @ari`). Without a member the file lands in *your* vault.
+
 **Wrong folder?** Use `/undo #hash` to move the file back to Inbox, then re-drop with correct tags.
 
 **Smart drop prompt:** Send a photo/PDF without `/drop` and the bot asks what to do:

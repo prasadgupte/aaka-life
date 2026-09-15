@@ -868,6 +868,21 @@ assert 'requires a file' in reply, f'unexpected reply: {reply}'
 print('OK')
 "
 
+check "member_by_name accepts the @name form (f @ari → ari's vault, not the sender's)" \
+  $PYTHON -c "
+import sys, os; sys.path.insert(0, '$REPO_DIR')
+os.environ.setdefault('AAKA_CONFIG_DIR', os.path.expanduser('~/.aaka'))
+import aaka_config
+ms = aaka_config.members()
+if not ms:
+    print('OK (no members configured)'); sys.exit(0)
+m = ms[0]
+assert (aaka_config.member_by_name('@' + m['id']) or {}).get('id') == m['id'], '@id not resolved'
+assert (aaka_config.member_by_name('@' + m['name'].upper()) or {}).get('id') == m['id'], '@Name not resolved'
+assert aaka_config.member_by_name('@') is None
+print('OK')
+"
+
 check "media auto-detect sets intent to drop_file" \
   $PYTHON -c "
 import sys; sys.path.insert(0, '$REPO_DIR')
