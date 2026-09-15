@@ -1234,11 +1234,12 @@ fi
 header "Tool runner result parsing"
 _TLOGS="${AAKA_CONFIG_DIR:-$HOME/.aaka}/logs/tools"
 if [ -d "$_TLOGS" ] && ls "$_TLOGS"/*.jsonl >/dev/null 2>&1; then
-    _BAD=$(grep -l '"error": "runner_error".*Expecting value' "$_TLOGS"/*.jsonl 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.jsonl$//' | tr '\n' ' ')
+    # only the LATEST record per tool counts — older ones are history, not a live symptom
+    _BAD=$(for _f in "$_TLOGS"/*.jsonl; do tail -n 1 "$_f" | grep -q '"error": "runner_error".*Expecting value' && basename "$_f" .jsonl; done | tr '\n' ' ')
     if [ -n "$_BAD" ]; then
-        warn "tool logs carry JSON-decode runner_errors (${_BAD}) — plain-text tools were mis-reported; update sensor/tool_runner.py"
+        warn "latest run of ${_BAD}is a JSON-decode runner_error — plain-text tool mis-reported; update sensor/tool_runner.py"
     else
-        ok "no JSON-decode runner_errors in tool logs"
+        ok "no tool's latest run is a JSON-decode runner_error"
     fi
 else
     info "no tool logs yet — skipping"

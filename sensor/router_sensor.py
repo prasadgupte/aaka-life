@@ -2876,11 +2876,15 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
         _note_guessed = ""
         if (not _actor_member and _first_line_words and _first_line_words[0].startswith("@")
                 and len(_first_line_words[0]) > 1):
-            # "@" is reserved for members — unknown @word guesses the household, visibly
+            # "@" is reserved for members — an unknown @word is consumed, never a topic.
+            # Admins: guess the household (role: family); everyone else / no household
+            # member configured: the sender's own vault. Either way the ack says so.
+            _note_guessed = _first_line_words[0]
             _gid = aaka_config.group_member_id()
-            if _gid:
+            if _gid and aaka_config.member_is_admin(_sender_namespace):
                 _actor_member = aaka_config.member_by_name(_gid)
-                _note_guessed = _first_line_words[0]
+            else:
+                _actor_member = aaka_config.member_by_name(_sender_namespace)
         if _actor_member and _actor_member["id"] != _sender_namespace:
             # Cross-member note — require admin
             if not aaka_config.member_is_admin(_sender_namespace):
@@ -2957,7 +2961,7 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
         _body_preview = _preview_body.replace('\n', ' · ')[:80]
         reply_parts = [f"📝 #{topic} — {_body_preview}{'…' if len(_preview_body) > 80 else ''}\n\n↪ `n {topic}` to read · `n {topic} <text>` to add"]
         if _note_guessed:
-            reply_parts.append(f"❓ `{_note_guessed}` isn't a member — noted for everyone. "
+            reply_parts.append(f"❓ `{_note_guessed}` isn't a member — noted for {'everyone' if namespace != _sender_namespace else 'you'}. "
                                f"Members: {', '.join(aaka_config.people_names())}.")
 
         # Stage the file for executor to move to vault

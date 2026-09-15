@@ -87,7 +87,23 @@ def main():
     check("non-admin @nobody → own vault, marked as a guess", p.get("actor") == "bob" and "you?/" in reply and "❓" in reply)
 
     reply, p = run("n @nobody health saw the doc")
-    check("n @nobody → household note with the guess marker", "❓" in reply and "@nobody" in reply and "#health" in reply)
+    check("n @nobody → household note with the guess marker",
+          "❓" in reply and "@nobody" in reply and "#health" in reply and "for everyone" in reply)
+    reply, p = run("n @nobody health saw the doc", sender="222")
+    check("non-admin n @nobody → own note, marked as a guess, not refused",
+          "Only admins" not in reply and "#health" in reply and "for you" in reply)
+
+    # no household member configured → still consumed, still marked, own vault
+    (CFG / "config" / "aaka.yaml").write_text(
+        "timezone: Europe/Berlin\nmembers:\n"
+        "  - {id: alice, name: Alice, telegram_id: '111', role: admin, admin: true, namespace: alice}\n")
+    aaka_config._load.cache_clear() if hasattr(aaka_config._load, "cache_clear") else None
+    reply, p = run("n @nobody health saw the doc")
+    check("no role: family member → n @nobody is the sender's note, marked",
+          "#@nobody" not in reply and "#health" in reply and "❓" in reply and "for you" in reply)
+    reply, p = run("f @nobody #health")
+    check("no role: family member → f @nobody is the sender's file, marked",
+          p.get("actor") == "alice" and "you?/" in reply and "❓" in reply)
 
     shutil.rmtree(CFG, ignore_errors=True)
     print("\nall drop @member checks passed" if not FAILS else f"\n{FAILS} FAILED")
