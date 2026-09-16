@@ -2873,6 +2873,18 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
         namespace = _sender_namespace
         _word_idx = 0
         _actor_member = aaka_config.member_by_name(_first_line_words[0].lower()) if _first_line_words else None
+        _note_guessed = ""
+        if (not _actor_member and _first_line_words and _first_line_words[0].startswith("@")
+                and len(_first_line_words[0]) > 1):
+            # "@" is reserved for members — an unknown @word is consumed, never a topic.
+            # Admins: guess the household (role: family); everyone else / no household
+            # member configured: the sender's own vault. Either way the ack says so.
+            _note_guessed = _first_line_words[0]
+            _gid = aaka_config.group_member_id()
+            if _gid and aaka_config.member_is_admin(_sender_namespace):
+                _actor_member = aaka_config.member_by_name(_gid)
+            else:
+                _actor_member = aaka_config.member_by_name(_sender_namespace)
         if _actor_member and _actor_member["id"] != _sender_namespace:
             # Cross-member note — require admin
             if not aaka_config.member_is_admin(_sender_namespace):
@@ -2948,6 +2960,9 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
         _preview_body = re.sub(r'https?://\S+', '[link]', body)
         _body_preview = _preview_body.replace('\n', ' · ')[:80]
         reply_parts = [f"📝 #{topic} — {_body_preview}{'…' if len(_preview_body) > 80 else ''}\n\n↪ `n {topic}` to read · `n {topic} <text>` to add"]
+        if _note_guessed:
+            reply_parts.append(f"❓ `{_note_guessed}` isn't a member — noted for {'everyone' if namespace != _sender_namespace else 'you'}. "
+                               f"Members: {', '.join(aaka_config.people_names())}.")
 
         # Stage the file for executor to move to vault
         if drop_name is not None:
@@ -3090,14 +3105,24 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
             else:
                 clean_words.append(_w)
 
-        # 4. Check first word for member actor
+        # 4. Check first word for member actor. "@" is reserved for members:
+        #    an @word that is nobody we know is never silently the sender —
+        #    guess the household vault and say so ("everyone?"), so it is
+        #    visible and one /undo away.
         actor = None
+        actor_guessed = ""
         _sender_namespace = _namespace_for_sender(sender_id) or (aaka_config.carriers()[0] if aaka_config.carriers() else "user")
         if clean_words:
             _first = clean_words[0]
             _member = aaka_config.member_by_name(_first)
             if _member:
                 actor = _member["id"]
+                clean_words = clean_words[1:]
+            elif _first.startswith("@") and len(_first) > 1:
+                # admins: guess the household; others can only file in their own vault
+                _gid = aaka_config.group_member_id()
+                actor = _gid if (_gid and aaka_config.member_is_admin(_sender_namespace)) else _sender_namespace
+                actor_guessed = _first
                 clean_words = clean_words[1:]
 
         # 5. Check next word for known area (dynamically scanned from vault)
@@ -3195,11 +3220,15 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
         # Build sensor preview
         from skills.drop.format import render_smart_drop_preview, render_legacy_drop_preview
         if actor:
+            _guess_label = "everyone?" if actor != _sender_namespace else "you?"
             preview_msg = render_smart_drop_preview(
-                safe_name=safe_name, actor=actor, area=area,
+                safe_name=safe_name, actor=_guess_label if actor_guessed else actor, area=area,
                 hash_tags=hash_tags, custom_name=custom_name,
                 skip_compress=skip_compress, hash_line=hash_line,
             )
+            if actor_guessed:
+                preview_msg += (f"\n❓ `{actor_guessed}` isn't a member — filed for {'everyone' if actor != _sender_namespace else 'you'}. "
+                                f"Members: {', '.join(aaka_config.people_names())}. Wrong? `/undo` + re-drop.")
         else:
             from tools.inbox_router import preview_destination
             size_kb = file_size // 1024

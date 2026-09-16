@@ -311,6 +311,19 @@ def group_name() -> str:
     return _load().get("group_name", "Household")
 
 
+def people_names() -> list[str]:
+    """Display names of the humans — no bot, no household pseudo-member."""
+    return [m["name"] for m in members() if m.get("role") not in ("bot", "family")]
+
+
+def group_member_id() -> str | None:
+    """Id of the shared/whole-household member (role: family), or None."""
+    for m in members():
+        if m.get("role") == "family":
+            return m["id"]
+    return None
+
+
 def carriers() -> list[str]:
     return [m["name"] for m in members() if m.get("is_carrier")]
 
@@ -635,8 +648,11 @@ def member_can_access_shared(member_id: str) -> bool:
 
 
 def member_by_name(name: str) -> dict | None:
-    """Find member by display name or id (case-insensitive)."""
-    name_lower = name.lower()
+    """Find member by display name or id (case-insensitive). A leading "@" is
+    accepted so `f @ari`, `n @ari …` behave like `t @ari`."""
+    name_lower = name.lower().lstrip("@")
+    if not name_lower:
+        return None
     for m in members():
         if m.get("name", "").lower() == name_lower or m.get("id", "").lower() == name_lower:
             return m

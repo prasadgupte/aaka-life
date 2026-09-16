@@ -115,6 +115,19 @@ def main():
     res = tr.run_tool("shtool", {"run": str(sh)})
     check(".sh target runs under bash", res.get("ok") is True and res.get("summary") == "from bash")
 
+    # ── plain-text output: exit code decides, never a runner_error ──
+    # (iserv-digest 2026-09-14/15: the digest ran and sent, but its last stdout
+    # line was prose → JSONDecodeError → reported as a failed run.)
+    plain = _TMP / "plain.sh"
+    plain.write_text("#!/bin/bash\necho 'delta: 3 room(s) read'\n")
+    res = tr.run_tool("plain", {"run": str(plain)})
+    check("non-JSON last line + exit 0 → ok, summary = the text",
+          res.get("ok") is True and res.get("error") is None and "3 room" in res.get("summary", ""))
+    plain.write_text("#!/bin/bash\necho 'fetch failed' >&2; exit 1\n")
+    res = tr.run_tool("plain", {"run": str(plain)})
+    check("non-JSON output + exit 1 → bad_output, not runner_error",
+          res.get("ok") is False and res.get("error") == "bad_output")
+
     # ── schedule in the family's timezone + catch-up of the latest missed slot ──
     from datetime import timezone as _tz, timedelta
     from zoneinfo import ZoneInfo
