@@ -48,6 +48,76 @@ def _emit(d: dict) -> int:
     return 0 if d.get("ok") else 1
 
 
+# ── "what's new" marking ──────────────────────────────────────────────────────
+# An assignment first seen within HW_NEW_HOURS is prefixed ❗ and bolded, so the
+# evening message shows what came in since yesterday instead of the same list
+# again. State: one small JSON per member in $AAKA_CONFIG_DIR/data/webuntis/
+# ({homework key: first-seen ISO}). The very first run only records — nothing is
+# "new" when there is no earlier run to compare against.
+HW_NEW_HOURS = 24
+HW_SEEN_KEEP_DAYS = 30
+
+
+def _hw_key(h: dict) -> str:
+    """WebUntis' own homework id; falls back to lesson+due+text if it is missing."""
+    return str(h.get("id") or f"{h.get('lessonId')}|{h.get('dueDate')}|{(h.get('text') or '')[:40]}")
+
+
+def _hw_seen_path(member: str) -> str:
+    cfg = os.environ.get("AAKA_CONFIG_DIR", "")
+    if not cfg:
+        return ""
+    slug = re.sub(r"[^A-Za-z0-9_-]", "", member or "")
+    return os.path.join(cfg, "data", "webuntis", f"hw_seen{('_' + slug) if slug else ''}.json")
+
+
+def _mark_new(open_hw: list, member: str = "", now: "dt.datetime | None" = None) -> set:
+    """Keys of the open assignments first seen within HW_NEW_HOURS; updates the seen-file.
+    Returns an empty set when there is no state dir or no earlier run."""
+    path = _hw_seen_path(member)
+    if not path:
+        return set()
+    now = now or dt.datetime.now(dt.timezone.utc)
+    first_run = not os.path.exists(path)
+    try:
+        with open(path) as f:
+            seen = json.load(f)
+        if not isinstance(seen, dict):
+            seen = {}
+    except Exception:
+        seen = {}
+    keys = {_hw_key(h) for h in open_hw}
+    new: set = set()
+    for k in keys:
+        if k not in seen:
+            seen[k] = now.isoformat(timespec="seconds")
+        try:
+            first = dt.datetime.fromisoformat(seen[k])
+        except (TypeError, ValueError):
+            first = now
+        if not first_run and (now - first) <= dt.timedelta(hours=HW_NEW_HOURS):
+            new.add(k)
+    cutoff = now - dt.timedelta(days=HW_SEEN_KEEP_DAYS)
+
+    def _keep(k: str, v: str) -> bool:
+        if k in keys:
+            return True
+        try:
+            return dt.datetime.fromisoformat(v) >= cutoff
+        except (TypeError, ValueError):
+            return False
+    seen = {k: v for k, v in seen.items() if _keep(k, v)}
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(seen, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass  # marking is best-effort; never fail the homework read over it
+    return new
+
+
 def _hhmm(t) -> str:
     t = int(t)
     return f"{t // 100:02d}:{t % 100:02d}"
@@ -175,8 +245,9 @@ def _creds(member: str = "") -> dict:
     raise FileNotFoundError(candidates[0])
 
 
-def _homework(s, base: str, school: str, me: dict, days: int) -> dict:
-    """Fetch + cross-check homework (never a silent false 'none'). Returns a dict."""
+def _homework(s, base: str, school: str, me: dict, days: int, member: str = "") -> dict:
+    """Fetch + cross-check homework (never a silent false 'none'). Returns a dict.
+    Assignments first seen in the last HW_NEW_HOURS are marked ❗ + bold."""
     try:
         tok = s.get(f"{base}/api/token/new", timeout=15)
         if tok.status_code != 200 or not tok.text.strip():
@@ -211,13 +282,19 @@ def _homework(s, base: str, school: str, me: dict, days: int) -> dict:
         n = len(homeworks)
         note = f" ({n} completed)" if n else ""
         return _ok(f"📚 No open homework in the next {days} days{note}. (confirmed ✓)")
+    new_keys = _mark_new(open_hw, member)
     lines = []
     for h in open_hw:
         due = str(h.get("dueDate", ""))
         due_fmt = f"{due[6:8]}.{due[4:6]}" if len(due) == 8 else due
         text = (h.get("text") or h.get("remark") or "").strip()
-        lines.append(f"• {subject_of(h)} (due {due_fmt}): {text}")
-    return _ok(f"📚 {len(open_hw)} open homework:\n" + "\n".join(lines[:8]), "\n".join(lines))
+        line = f"{subject_of(h)} (due {due_fmt}): {text}"
+        if _hw_key(h) in new_keys:
+            lines.append(f"❗ *{line.replace('*', '∗')}*")   # new since the last run → bold + bang
+        else:
+            lines.append(f"• {line}")
+    n_new = f" ({len(new_keys)} new ❗)" if new_keys else ""
+    return _ok(f"📚 {len(open_hw)} open homework{n_new}:\n" + "\n".join(lines[:8]), "\n".join(lines))
 
 
 def main() -> int:
@@ -279,10 +356,10 @@ def main() -> int:
     if mode == "timetable":
         r = _timetable(s, base, school, me, args.date, args.days)
     elif mode == "homework":
-        r = _homework(s, base, school, me, args.days)
+        r = _homework(s, base, school, me, args.days, member)
     else:  # digest = tomorrow's timetable + homework, in one message
         tt = _timetable(s, base, school, me, "tomorrow", 1)
-        hw = _homework(s, base, school, me, args.days)
+        hw = _homework(s, base, school, me, args.days, member)
         parts = [x["summary"] if x["ok"] else f"⚠️ {x['error']}: {x['summary']}" for x in (tt, hw)]
         err = None if (tt["ok"] and hw["ok"]) else (tt.get("error") or hw.get("error"))
         r = _R(tt["ok"] or hw["ok"], "\n\n".join(parts), "\n\n".join(parts), err)
