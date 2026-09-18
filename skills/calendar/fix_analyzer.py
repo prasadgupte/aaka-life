@@ -31,10 +31,19 @@ FIX_LIST_PATH = aaka_config.CALENDAR_DIR / ".fix_list.json"
 
 
 def _date_range(period: str) -> tuple[str, str]:
-    """Return (start_date, end_date) as YYYY-MM-DD strings for the given period."""
+    """Return (start_date, end_date) as YYYY-MM-DD strings for the given period.
+
+    "today"    — the current calendar day
+    "tomorrow" — the next calendar day (the 21:00 "Tomorrow at a glance" brief plans
+                 the next day, so today's leftovers must not appear in it)
+    "week"     — today through the end of next Sunday
+    """
     today = datetime.date.today()
     if period == "today":
         return str(today), str(today)
+    if period == "tomorrow":
+        tomorrow = today + datetime.timedelta(days=1)
+        return str(tomorrow), str(tomorrow)
     # "week": today through end of next Sunday
     days_until_sunday = (6 - today.weekday()) % 7
     if days_until_sunday == 0:
@@ -250,7 +259,7 @@ def analyze_fix(period: str = "week", member_id: str | None = None) -> list[dict
     Analyze the calendar for issues in the given period.
 
     Args:
-        period: "today" or "week"
+        period: "today", "tomorrow" or "week"
         member_id: if set, scope issues to this member only
 
     Returns numbered list of issues (each dict has "num" key).

@@ -1803,6 +1803,32 @@ assert isinstance(formatted, str), f'Expected str, got {type(formatted)}'
 print('OK')
 "
 
+# The 21:00 "Tomorrow at a glance" brief must scan TOMORROW for fix issues. It used to
+# pass "today", which the analyzer resolves against the wall clock, so today's
+# unaccepted/clashing events showed up in tomorrow's brief under today's date.
+check "fix_analyzer: 'tomorrow' period is the next calendar day" \
+  $PYTHON -c "
+import sys, datetime; sys.path.insert(0, '$REPO_DIR')
+import os; os.environ.setdefault('AAKA_CONFIG_DIR', os.path.expanduser('~/.aaka'))
+from skills.calendar.fix_analyzer import _date_range
+t = datetime.date.today(); tm = t + datetime.timedelta(days=1)
+assert _date_range('today') == (str(t), str(t)), _date_range('today')
+assert _date_range('tomorrow') == (str(tm), str(tm)), _date_range('tomorrow')
+assert _date_range('week')[0] == str(t)
+print('OK')
+"
+
+check "scheduled_summaries: 21:00 brief asks the analyzer for tomorrow, not today" \
+  $PYTHON -c "
+import inspect, sys; sys.path.insert(0, '$REPO_DIR')
+import os; os.environ.setdefault('AAKA_CONFIG_DIR', os.path.expanduser('~/.aaka'))
+from sensor.scheduled_summaries import send_daily_tomorrow
+src = inspect.getsource(send_daily_tomorrow)
+assert '_fix_summary(\"tomorrow\")' in src, 'send_daily_tomorrow must call _fix_summary(\"tomorrow\")'
+assert '_fix_summary(\"today\")' not in src, 'regression: 21:00 brief scanning today'
+print('OK')
+"
+
 check "sensor: t #fix dry-run" \
   $PYTHON "$REPO_DIR/sensor/router_sensor.py" --dry-run "t #fix"
 
