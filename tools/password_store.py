@@ -37,6 +37,17 @@ KEYCHAIN_SERVICE = "aaka-password-store"
 PBKDF2_ITERATIONS = 600_000
 
 
+def _audit_read(name: str) -> None:
+    """One bold-red line per plaintext secret read: which entry, which caller. Never the value."""
+    import sys
+    caller = Path(sys.argv[0]).name if sys.argv and sys.argv[0] else "<repl>"
+    msg = f"[pw-access] entry={name} agent={os.environ.get('PII_AGENT', '<unset>')} caller={caller}"
+    if os.environ.get("NO_COLOR"):
+        print(msg, file=sys.stderr, flush=True)
+    else:
+        print(f"\033[1;31m{msg}\033[0m", file=sys.stderr, flush=True)
+
+
 def _get_master_from_keychain() -> str:
     result = subprocess.run(
         ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
@@ -165,15 +176,23 @@ class PasswordStore:
     # ------------------------------------------------------------------
 
     def get_entry(self, name: str) -> dict:
-        """Full entry including password. For programmatic use only."""
+        """Full entry including password. For programmatic use only.
+
+        Prints one bold-red ``[pw-access]`` line to stderr naming the entry and
+        the calling script — never the secret — so every plaintext read is
+        visible on the console, like the ``[pii-access]`` / ``[google-auth]``
+        lines elsewhere. Respects NO_COLOR. Use the value in-process (an HTTP
+        header, a POP3 login); never print it or return it to a chat surface.
+        """
         entries = self._load_vault()
         for e in entries:
             if e["name"] == name:
+                _audit_read(name)
                 return e
         raise KeyError(f"No entry with name: {name!r}")
 
     def get_password(self, name: str) -> str:
-        """Return password string for a named entry. API use only."""
+        """Return password string for a named entry. API use only (red-lines via get_entry)."""
         return self.get_entry(name)["password"]
 
     # ------------------------------------------------------------------

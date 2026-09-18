@@ -500,8 +500,10 @@ def send_daily_tomorrow(dry_run: bool = False) -> None:
         print("[skip] No events for tomorrow")
         return
 
-    tomorrow = (datetime.date.today() + datetime.timedelta(days=1))
-    fix_text = _fix_summary("today")  # tomorrow is "today" for the next check
+    # The 21:00 brief plans the NEXT day. "today" here used to resolve against the
+    # wall clock (i.e. the day that is ending), so an unaccepted or clashing event
+    # from today leaked into tomorrow's brief under yesterday's date header.
+    fix_text = _fix_summary("tomorrow")
     text = f"{REPLY_PREFIX}📅 Tomorrow at a glance:\n\n{content}{fix_text}"
 
     if group_id:
