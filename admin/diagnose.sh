@@ -826,6 +826,12 @@ run_check "fix_analyzer importable" \
 run_check "scheduled_summaries importable" \
   $PYTHON -c "import sensor.scheduled_summaries; print('OK')"
 
+# A butler.db inside the repo means some process imported aaka_queue without
+# QUEUE_DB/AAKA_CONFIG_DIR and wrote to the wrong database (heartbeats, outbox rows
+# that nothing ever syncs). 2026-09-18: that hid the iserv-digest heartbeat for a week.
+run_check "no stray repo-local aaka_queue/butler.db (writes went to the real DB)" \
+  bash -c "test ! -s '$REPO_DIR/aaka_queue/butler.db' && echo OK || { echo 'stray DB: $REPO_DIR/aaka_queue/butler.db — find the process missing QUEUE_DB, then remove the file'; exit 1; }"
+
 run_check "gog.update_event importable" \
   $PYTHON -c "from skills.calendar.gog import update_event; print('OK')"
 

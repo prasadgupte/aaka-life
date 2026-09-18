@@ -189,6 +189,14 @@ def run_tool(name: str, entry: dict | None = None, extra_args: str = "",
     if extra_args:
         cmd += extra_args.split()
     env = dict(os.environ)
+    # Hand the child the same runtime roots the runner has. A tool that imports
+    # aaka modules directly (record_heartbeat, write_outbox) must hit the real
+    # butler.db, not the queue module's repo-local default — that mismatch made
+    # the iserv-digest heartbeat invisible to the VPS watchdog (2026-09-18).
+    cfg_dir = _config_dir()
+    env.setdefault("AAKA_CONFIG_DIR", str(cfg_dir))
+    env.setdefault("QUEUE_DB", str(cfg_dir / "data" / "queue" / "butler.db"))
+    env.setdefault("AAKA_BASE", str(BASE))
     sec = _secrets_dir(entry)
     if sec:
         env["AAKA_TOOL_SECRETS"] = sec

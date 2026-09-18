@@ -157,6 +157,45 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# ── 3d0. Tools run against the real butler.db (heartbeat / outbox from a child) ──
+# 2026-09-18: with only AAKA_CONFIG_DIR set, aaka_queue.queue defaulted to the
+# repo-local aaka_queue/butler.db, so the iserv-digest heartbeat never reached the
+# database vps_sync pushes → the VPS watchdog cried "didn't run" every evening.
+check "queue: default DB follows AAKA_CONFIG_DIR when QUEUE_DB is unset" \
+  env -u QUEUE_DB AAKA_CONFIG_DIR=/tmp/aaka-test-cfg $PYTHON -c "
+import sys; sys.path.insert(0, '$REPO_DIR')
+from aaka_queue.queue import QUEUE_DB
+assert str(QUEUE_DB) == '/tmp/aaka-test-cfg/data/queue/butler.db', QUEUE_DB
+print('OK')
+"
+
+check "tool_runner: child env carries QUEUE_DB + AAKA_CONFIG_DIR" \
+  $PYTHON -c "
+import inspect, sys; sys.path.insert(0, '$REPO_DIR')
+import os; os.environ.setdefault('AAKA_CONFIG_DIR', os.path.expanduser('~/.aaka'))
+from sensor import tool_runner as tr
+src = inspect.getsource(tr.run_tool)
+assert 'QUEUE_DB' in src and 'AAKA_CONFIG_DIR' in src, 'run_tool must pass the runtime roots to the child'
+print('OK')
+"
+
+check "webuntis: ❗ marks homework first seen since the last run (never on first run)" \
+  $PYTHON -c "
+import sys, os, tempfile, datetime as dt; sys.path.insert(0, '$REPO_DIR/tools/webuntis')
+import check
+d = tempfile.mkdtemp(); os.environ['AAKA_CONFIG_DIR'] = d
+hw = [{'id': 1, 'lessonId': 9, 'dueDate': '20260920', 'text': 'a'}, {'id': 2, 'lessonId': 9, 'dueDate': '20260921', 'text': 'b'}]
+t0 = dt.datetime(2026, 9, 18, 16, 0, tzinfo=dt.timezone.utc)
+assert check._mark_new(hw, 'kid', now=t0) == set(), 'first run must not flag anything'
+assert check._mark_new(hw, 'kid', now=t0 + dt.timedelta(hours=1)) == {'1', '2'}, 'same day: still new'
+assert check._mark_new(hw, 'kid', now=t0 + dt.timedelta(days=2)) == set(), 'two days later: old'
+hw.append({'id': 3, 'lessonId': 9, 'dueDate': '20260922', 'text': 'c'})
+assert check._mark_new(hw, 'kid', now=t0 + dt.timedelta(days=2, minutes=1)) == {'3'}, 'only the newcomer'
+assert os.path.exists(os.path.join(d, 'data', 'webuntis', 'hw_seen_kid.json'))
+os.environ.pop('AAKA_CONFIG_DIR'); assert check._mark_new(hw, 'kid') == set(), 'no config dir → no marking'
+print('OK')
+"
+
 # ── 3d. Tools gate: members run, strangers locked, management admin-only ─────
 # Running/listing/help is open to any recognized member; the old blanket
 # "Only an admin can manage tools" gate wrongly blocked a parent from running
