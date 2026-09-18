@@ -826,6 +826,15 @@ run_check "fix_analyzer importable" \
 run_check "scheduled_summaries importable" \
   $PYTHON -c "import sensor.scheduled_summaries; print('OK')"
 
+# 21:00 brief plans the next day: its fix block must use the "tomorrow" window
+# (2026-09-18: a Thursday conference leaked into Friday's brief because it scanned "today").
+run_check "21:00 tomorrow brief scans tomorrow for fix issues" \
+  $PYTHON -c "
+import inspect, sensor.scheduled_summaries as s
+src = inspect.getsource(s.send_daily_tomorrow)
+assert '_fix_summary(\"tomorrow\")' in src and '_fix_summary(\"today\")' not in src
+print('OK')"
+
 run_check "gog.update_event importable" \
   $PYTHON -c "from skills.calendar.gog import update_event; print('OK')"
 
