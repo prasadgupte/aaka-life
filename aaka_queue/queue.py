@@ -2,7 +2,7 @@
 Aaka — Shared SQLite queue API.
 
 Both Sensor (writes items) and Executor (reads + updates) import this module.
-DB path: $QUEUE_DB or <repo>/queue/butler.db by default.
+DB path: $QUEUE_DB, else $AAKA_CONFIG_DIR/data/queue/butler.db, else <repo>/aaka_queue/butler.db (dev).
 
 Connection management: one connection per thread, reused across calls.
 Schema and migrations run once per connection, not per call.
@@ -19,8 +19,20 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-# Resolve DB path: env var takes precedence (used in Docker / prod rsync)
-_DEFAULT_DB = Path(__file__).resolve().parent / "butler.db"
+# Resolve DB path: $QUEUE_DB wins (Docker / prod rsync). Otherwise, when a runtime
+# config dir is set, use ITS butler.db — so a script that imports this module
+# directly (a Tool run by the executor calling record_heartbeat/write_outbox)
+# lands in the same database as everything else. Only with neither set do we
+# fall back to the repo-local dev file. (2026-09-18: the iserv-digest heartbeat
+# went to aaka_queue/butler.db for a week → a false "didn't run" alarm every evening.)
+def _default_db() -> Path:
+    cfg = os.environ.get("AAKA_CONFIG_DIR")
+    if cfg:
+        return Path(cfg).expanduser() / "data" / "queue" / "butler.db"
+    return Path(__file__).resolve().parent / "butler.db"
+
+
+_DEFAULT_DB = _default_db()
 QUEUE_DB = Path(os.environ.get("QUEUE_DB", str(_DEFAULT_DB)))
 
 _SCHEMA = Path(__file__).resolve().parent / "schema.sql"
