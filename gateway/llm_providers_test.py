@@ -117,6 +117,66 @@ def main():
     check("complete(): images pass through to gemini", lp.complete("x", provider="gemini", images=imgs) == "ok")
     check("complete(): images=None unchanged", lp.complete("x", provider="gemini") == "ok")
 
+    # ── Retry / backoff on 429/503 ──
+    # 2026-09-19: a /cal add hit "Gemini overloaded (HTTP 429) on gemini-2.5-flash-lite" —
+    # the LAST fallback model — meaning the whole free-tier quota was hit, not one model,
+    # and every model failed with zero delay between them. gemini() now retries the full
+    # model list with backoff before giving up.
+    os.environ["GEMINI_API_KEY"] = "test-gem-key"
+    os.environ.pop("GEMINI_MODEL", None)
+    n_models = 1 + len(lp.GEMINI_FALLBACK_MODELS)
+    n_passes = len(lp.GEMINI_RETRY_BACKOFF_SECONDS) + 1
+    orig_sleep = lp.time.sleep
+    sleeps = []
+    lp.time.sleep = lambda s: sleeps.append(s)
+
+    calls = {"n": 0}
+
+    def _all_429(req, timeout=None):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, None)
+
+    urllib.request.urlopen = _all_429
+    try:
+        lp.gemini("x")
+        check("retry: exhausting every pass raises", False)
+    except RuntimeError as e:
+        check("retry: exhausting every pass raises",
+              "429" in str(e) and f"pass {n_passes}/{n_passes}" in str(e))
+    check("retry: tries every model on every pass", calls["n"] == n_models * n_passes)
+    check("retry: sleeps once between each pass, matching the backoff schedule",
+          sleeps == lp.GEMINI_RETRY_BACKOFF_SECONDS)
+
+    sleeps.clear(); calls["n"] = 0
+
+    def _fails_first_pass_then_ok(req, timeout=None):
+        calls["n"] += 1
+        if calls["n"] <= n_models:  # the whole first pass fails, second pass's first model works
+            raise urllib.error.HTTPError(req.full_url, 503, "Service Unavailable", {}, None)
+        return _FakeResp({"candidates": [{"content": {"parts": [{"text": "recovered"}]}}]})
+
+    urllib.request.urlopen = _fails_first_pass_then_ok
+    out = lp.gemini("x")
+    check("retry: recovers on a later pass instead of raising", out == "recovered")
+    check("retry: stops sleeping once it recovers", sleeps == [lp.GEMINI_RETRY_BACKOFF_SECONDS[0]])
+
+    sleeps.clear(); calls["n"] = 0
+
+    def _hard_400(req, timeout=None):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", {}, None)
+
+    urllib.request.urlopen = _hard_400
+    try:
+        lp.gemini("x")
+        check("retry: a non-retryable error (400) is not retried", False)
+    except RuntimeError as e:
+        check("retry: a non-retryable error (400) is not retried", "400" in str(e))
+    check("retry: 400 fails on the first call, no other models, no sleep",
+          calls["n"] == 1 and sleeps == [])
+
+    lp.time.sleep = orig_sleep
+
     # ── Errors ──
     try:
         lp.complete("x", provider="nope")

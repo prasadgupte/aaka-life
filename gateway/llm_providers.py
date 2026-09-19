@@ -27,11 +27,18 @@ import json
 import os
 import shutil
 import subprocess
+import time
 import urllib.error
 import urllib.request
 
 DEFAULT_PROVIDER = "gemini"
 GEMINI_FALLBACK_MODELS = ["gemini-flash-latest", "gemini-2.5-flash-lite"]
+# A 429/503 on every model in one pass means the whole free-tier quota is
+# hobbled, not one model — cycling models again instantly just repeats the
+# failure. Wait, then retry the full list. (2026-09-19: a /cal add hit "HTTP
+# 429 on gemini-2.5-flash-lite" — the LAST fallback — meaning all three had
+# already failed once with zero delay between them.)
+GEMINI_RETRY_BACKOFF_SECONDS = [2, 5]  # sleep before each retry pass (2 retries = 3 passes total)
 
 Images = "list[dict] | None"
 
@@ -84,30 +91,36 @@ def gemini(prompt: str, timeout: int = 60, images: Images = None) -> str:
         parts.append({"inline_data": {"mime_type": img.get("media_type", "image/png"),
                                       "data": img["data"]}})
     parts.append({"text": prompt})
+    body = json.dumps({
+        "contents": [{"parts": parts}],
+        "generationConfig": {"temperature": 0},
+    }).encode()
 
     last_exc: Exception = RuntimeError("No models to try")
-    for model in models:
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model}:generateContent?key={api_key}"
-        )
-        body = json.dumps({
-            "contents": [{"parts": parts}],
-            "generationConfig": {"temperature": 0},
-        }).encode()
-        req = urllib.request.Request(
-            url, data=body,
-            headers={"Content-Type": "application/json"}, method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = json.loads(resp.read())
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        except urllib.error.HTTPError as exc:
-            if exc.code in (503, 429):
-                last_exc = RuntimeError(f"Gemini overloaded (HTTP {exc.code}) on {model}")
-                continue  # try next model
-            raise RuntimeError(f"Gemini error (HTTP {exc.code}): {exc.reason}") from exc
+    passes = len(GEMINI_RETRY_BACKOFF_SECONDS) + 1
+    for attempt in range(passes):
+        if attempt > 0:
+            time.sleep(GEMINI_RETRY_BACKOFF_SECONDS[attempt - 1])
+        for model in models:
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model}:generateContent?key={api_key}"
+            )
+            req = urllib.request.Request(
+                url, data=body,
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    data = json.loads(resp.read())
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+            except urllib.error.HTTPError as exc:
+                if exc.code in (503, 429):
+                    last_exc = RuntimeError(
+                        f"Gemini overloaded (HTTP {exc.code}) on {model}"
+                        f" (pass {attempt + 1}/{passes})")
+                    continue  # try next model this pass
+                raise RuntimeError(f"Gemini error (HTTP {exc.code}): {exc.reason}") from exc
     raise last_exc
 
 
