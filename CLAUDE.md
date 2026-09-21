@@ -97,6 +97,10 @@ aaka-repo/                          ← repo root
 | `GEMINI_API_KEY` | — | Gemini API key (zeroclaw backend) |
 | `QUEUE_DB` | `$AAKA_CONFIG_DIR/data/queue/butler.db` | Queue DB path override |
 | `AGENT_API_PORT` | `18790` | Port for agent gateway (localhost only) |
+| `LLM_PROVIDER` | role default | `gemini` \| `anthropic` \| `claude-cli` \| `gateway`. Unset → **`gateway` on the executor (home)**, `gemini` on the sensor (away). The executor never calls a model vendor directly: every LLM call is one HTTP hop to aaka's own `/v1/llm` (Haiku via the local `claude`, Gemini only as the gateway's own last resort) and lands in the gateway's usage log |
+| `AAKA_LLM_GATEWAY_KEY` | — | `X-Agent-Key` the `gateway` provider sends — a registered agent's key (`python3 admin/register_agent.py executor "Aaka Executor"`), kept in the executor's `.env` |
+| `AAKA_LLM_GATEWAY_URL` | `http://127.0.0.1:$AGENT_API_PORT/v1/llm` | Endpoint the `gateway` provider posts to |
+| `AAKA_LLM_GATEWAY_COMPLEXITY` | `low` | `low` = Haiku, `medium` = Sonnet, `high` = Opus (`_CLAUDE_MODEL_MAP` in `gateway/agent_api.py`) |
 | `AAKA_LLM_LOCAL_FALLBACK` | `1` | When the configured LLM provider is out of budget (`LLMBudgetExceeded`), try a local `claude` binary (`claude-cli`) if one is installed — PATH or the usual install dirs. `0` disables. Never used for image prompts |
 | `ENABLED_CHANNELS` | `telegram` | Comma list of channels to run: `telegram,whatsapp,slack,signal` |
 | `SIGNAL_CLI_URL` | `http://127.0.0.1:18794` | signal-cli JSON-RPC daemon base URL (an SSH tunnel is fine) |
@@ -126,6 +130,12 @@ export GATEWAY_BACKEND=zeroclaw   # fallback
 ```
 
 `gateway/adapter.py` dispatches `send_message()` and `call_llm()` based on this var.
+
+**LLM provider by role** (`gateway/llm_providers.provider_name`): the **executor always goes
+through aaka's own gateway** — `LLM_PROVIDER` unset + `AAKA_ROLE=home/executor` → provider
+`gateway` → `POST /v1/llm` on `:18790` with `AAKA_LLM_GATEWAY_KEY`, complexity `low` = Haiku via
+the local `claude`. The sensor (`AAKA_ROLE=sensor`) talks to Gemini directly. Set `LLM_PROVIDER`
+explicitly to override either. `admin/diagnose.sh → "LLM provider"` shows what this side resolves to.
 
 ### Registered channels
 

@@ -191,6 +191,73 @@ def main():
     except RuntimeError as e:
         check("missing GEMINI_API_KEY raises", "GEMINI_API_KEY not set" in str(e))
 
+    # ── gateway (executor → aaka's own /v1/llm) ──
+    cap = {}
+    os.environ["AAKA_LLM_GATEWAY_KEY"] = "aaka-test-key"
+    os.environ.pop("AAKA_LLM_GATEWAY_URL", None)
+    os.environ.pop("AAKA_LLM_GATEWAY_COMPLEXITY", None)
+    _patch(cap, {"text": "  from-haiku ", "model": "haiku", "provider": "claude", "duration_ms": 5})
+    out = lp.gateway("hello", timeout=30)
+    check("gateway: returns the endpoint's text", out == "  from-haiku ")
+    check("gateway: POSTs to localhost:18790/v1/llm by default",
+          cap["url"] == "http://127.0.0.1:18790/v1/llm" and cap["method"] == "POST")
+    check("gateway: sends X-Agent-Key", cap["headers"].get("x-agent-key") == "aaka-test-key")
+    check("gateway: asks for text, complexity low (= Haiku)",
+          cap["body"]["response_format"] == "text" and cap["body"]["complexity"] == "low")
+    check("gateway: no images key when none given", "images" not in cap["body"])
+    check("gateway: waits at least as long as the endpoint's own claude timeout", cap["timeout"] >= 120)
+    lp.gateway("see", images=[{"data": "AAAA", "media_type": "image/jpeg", "label": "q"}])
+    check("gateway: images pass through with media_type + label",
+          cap["body"]["images"] == [{"data": "AAAA", "media_type": "image/jpeg", "label": "q"}])
+    os.environ["AAKA_LLM_GATEWAY_URL"] = "http://10.0.0.5:1/v1/llm"
+    lp.gateway("x")
+    check("gateway: AAKA_LLM_GATEWAY_URL overrides", cap["url"] == "http://10.0.0.5:1/v1/llm")
+    os.environ.pop("AAKA_LLM_GATEWAY_URL")
+
+    from urllib import error as _uerr
+    def _http(code, body):
+        def fake(req, timeout=None):
+            raise _uerr.HTTPError(req.full_url, code, "x", {}, io.BytesIO(body.encode()))
+        urllib.request.urlopen = fake
+    _http(401, '{"detail":"Invalid or revoked API key"}')
+    try:
+        lp.gateway("x"); check("gateway 401 raises", False)
+    except RuntimeError as e:
+        check("gateway: 401 says the key is the problem", "AAKA_LLM_GATEWAY_KEY" in str(e))
+    _http(422, '{"detail":{"error":"vision_unsupported","provider":"claude"}}')
+    try:
+        lp.gateway("x", images=[{"data": "A"}]); check("gateway vision raises", False)
+    except lp.VisionUnsupported:
+        check("gateway: endpoint's vision_unsupported becomes VisionUnsupported", True)
+    def _down(req, timeout=None):
+        raise _uerr.URLError("Connection refused")
+    urllib.request.urlopen = _down
+    try:
+        lp.gateway("x"); check("gateway down raises", False)
+    except RuntimeError as e:
+        check("gateway: unreachable names the launchd service", "com.aaka.agentapi" in str(e))
+    os.environ.pop("AAKA_LLM_GATEWAY_KEY")
+    try:
+        lp.gateway("x"); check("gateway no key raises", False)
+    except RuntimeError as e:
+        check("gateway: missing key tells how to register", "register_agent.py executor" in str(e))
+
+    # ── role default: executor → gateway, sensor → gemini, LLM_PROVIDER wins ──
+    os.environ.pop("LLM_PROVIDER", None)
+    os.environ["AAKA_ROLE"] = "executor"
+    check("provider_name: executor defaults to gateway", lp.provider_name() == "gateway")
+    os.environ["AAKA_ROLE"] = "home"
+    check("provider_name: 'home' is the same role", lp.provider_name() == "gateway")
+    os.environ["AAKA_ROLE"] = "sensor"
+    check("provider_name: sensor defaults to gemini", lp.provider_name() == "gemini")
+    os.environ["LLM_PROVIDER"] = "anthropic"
+    os.environ["AAKA_ROLE"] = "executor"
+    check("provider_name: LLM_PROVIDER overrides the role default", lp.provider_name() == "anthropic")
+    check("provider_name: explicit argument overrides everything", lp.provider_name("gemini") == "gemini")
+    os.environ.pop("LLM_PROVIDER"); os.environ.pop("AAKA_ROLE")
+    check("gateway never gets a local claude-cli 'rescue' (it already is the local claude)",
+          lp.local_fallback_provider("gateway") is None)
+
     urllib.request.urlopen = orig
     print()
     if _FAILURES:

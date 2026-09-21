@@ -11,15 +11,22 @@ cannot (a one-shot `-p` has no image input) and raises VisionUnsupported so the 
 never gets a text-only answer pretending it saw the picture.
 
 Providers (all direct API / local — no OpenClaw):
-  gemini      Google Gemini API      (GEMINI_API_KEY)      ← default, easy free on-ramp
+  gemini      Google Gemini API      (GEMINI_API_KEY)      ← default on the sensor, easy free on-ramp
   anthropic   Anthropic Messages API (ANTHROPIC_API_KEY)   ← first-class Claude
   claude-cli  local `claude` binary  (subscription CLI)    ← optional, for CLI users
+  gateway     aaka's own /v1/llm on the agent gateway      ← default on the executor (home):
+              one HTTP hop to localhost:18790, Haiku via the local `claude`, Gemini only
+              as the gateway's own last resort; every call lands in the gateway's usage log.
 
 Env:
-  LLM_PROVIDER      gemini | anthropic | claude-cli   (default: gemini)
+  LLM_PROVIDER      gemini | anthropic | claude-cli | gateway
+                    (default: gateway when AAKA_ROLE is home/executor, else gemini)
   GEMINI_API_KEY / GEMINI_MODEL
   ANTHROPIC_API_KEY / ANTHROPIC_MODEL
   AAKA_CLAUDE_MODEL (claude-cli model)
+  AAKA_LLM_GATEWAY_KEY   X-Agent-Key for the gateway provider (a registered agent, e.g. `executor`)
+  AAKA_LLM_GATEWAY_URL   default http://127.0.0.1:$AGENT_API_PORT/v1/llm
+  AAKA_LLM_GATEWAY_COMPLEXITY  low (haiku) | medium (sonnet) | high (opus) — default low
 """
 from __future__ import annotations
 
@@ -73,7 +80,16 @@ def _image_label(i: int, img: dict) -> str:
 
 
 def provider_name(explicit: "str | None" = None) -> str:
-    return explicit or os.environ.get("LLM_PROVIDER", DEFAULT_PROVIDER)
+    """Which provider a call uses: an explicit argument, else LLM_PROVIDER,
+    else the role default — the executor (home) always goes through aaka's
+    own gateway (Haiku), the sensor (away) talks to Gemini directly."""
+    if explicit:
+        return explicit
+    configured = os.environ.get("LLM_PROVIDER", "").strip()
+    if configured:
+        return configured
+    import aaka_config
+    return "gateway" if aaka_config.role() == "home" else DEFAULT_PROVIDER
 
 
 def complete(prompt: str, timeout: int = 60, provider: "str | None" = None,
@@ -249,10 +265,62 @@ def claude_cli(prompt: str, timeout: int = 60, images: Images = None) -> str:
         return result.stdout.strip()
 
 
+# ── aaka gateway (/v1/llm) ─────────────────────────────────────────────────
+
+def gateway_url() -> str:
+    return os.environ.get("AAKA_LLM_GATEWAY_URL") or \
+        f"http://127.0.0.1:{os.environ.get('AGENT_API_PORT', '18790')}/v1/llm"
+
+
+def gateway(prompt: str, timeout: int = 60, images: Images = None) -> str:
+    """aaka's own LLM endpoint (gateway/agent_api.py → POST /v1/llm).
+
+    The executor never talks to a model vendor itself: the gateway runs Haiku
+    through the local `claude` (complexity "low"), falls back to Gemini on its
+    own terms, and logs every call in one place. Needs AAKA_LLM_GATEWAY_KEY —
+    the X-Agent-Key of a registered agent (`admin/register_agent.py executor`).
+    Images are passed through; the gateway decides whether it can see them."""
+    key = os.environ.get("AAKA_LLM_GATEWAY_KEY", "").strip()
+    if not key:
+        raise RuntimeError("AAKA_LLM_GATEWAY_KEY not set — register an agent for the executor "
+                           "(admin/register_agent.py executor) and put its key in .env")
+    body: dict = {
+        "prompt": prompt,
+        "response_format": "text",
+        "complexity": os.environ.get("AAKA_LLM_GATEWAY_COMPLEXITY", "low"),
+    }
+    if images:
+        body["images"] = [{"data": img["data"], "media_type": img.get("media_type", "image/png"),
+                           "label": img.get("label", "")} for img in images]
+    req = urllib.request.Request(
+        gateway_url(), data=json.dumps(body).encode(), method="POST",
+        headers={"Content-Type": "application/json", "X-Agent-Key": key},
+    )
+    try:
+        # The gateway's own claude/gemini timeouts are 120–180 s; give it room.
+        with urllib.request.urlopen(req, timeout=max(timeout, 130)) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read()[:300].decode("utf-8", "replace")
+        if exc.code == 401:
+            raise RuntimeError("aaka gateway rejected AAKA_LLM_GATEWAY_KEY (401) — re-register the executor agent") from exc
+        if exc.code == 422 and "vision_unsupported" in detail:
+            raise VisionUnsupported("gateway") from exc
+        raise RuntimeError(f"aaka gateway /v1/llm HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"aaka gateway unreachable at {gateway_url()}: {exc.reason} "
+                           "(is com.aaka.agentapi running?)") from exc
+    text = data.get("text")
+    if not isinstance(text, str):
+        raise RuntimeError(f"aaka gateway returned no text: {str(data)[:200]}")
+    return text
+
+
 _PROVIDERS = {
     "gemini": gemini,
     "anthropic": anthropic,
     "claude-cli": claude_cli,
+    "gateway": gateway,
 }
 
 
@@ -263,12 +331,13 @@ def local_fallback_provider(failed: str, images: Images = None) -> "str | None":
     key that just ran dry, and it exists only where a `claude` binary is
     installed — so this is a no-op on a bare sensor and a real rescue on the
     executor. It cannot take images."""
-    if failed == "claude-cli" or images:
+    if failed in ("claude-cli", "gateway") or images:
+        # gateway: it already ran the local claude itself — nothing local left to try
         return None
     if os.environ.get("AAKA_LLM_LOCAL_FALLBACK", "1").strip().lower() in ("0", "false", "no", "off"):
         return None
     return "claude-cli" if find_claude() else None
-_VISION_PROVIDERS = {"gemini", "anthropic"}
+_VISION_PROVIDERS = {"gemini", "anthropic", "gateway"}  # gateway: it decides, raises VisionUnsupported itself
 
 
 if __name__ == "__main__":

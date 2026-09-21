@@ -77,6 +77,32 @@ if [ -f "$ENV_FILE" ]; then
 else
     fail ".env not found at $ENV_FILE"
 fi
+# Which LLM provider this side resolves to (role default: executor → gateway,
+# sensor → gemini) and, for the gateway, whether the key actually opens the door.
+_prov_py="$REPO_DIR/venv/bin/python3"; [ -x "$_prov_py" ] || _prov_py="python3"
+_prov=$(cd "$REPO_DIR" && "$_prov_py" -c "
+import sys; sys.path.insert(0, '.')
+from tools.load_env import load_env; load_env('.')
+from gateway.llm_providers import provider_name; print(provider_name())" 2>/dev/null)
+ok "LLM provider on this side: ${_prov:-?} (role $(cd "$REPO_DIR" && "$_prov_py" -c 'import sys; sys.path.insert(0,"."); import aaka_config; print(aaka_config.role())' 2>/dev/null))"
+if [ "$_prov" = "gateway" ]; then
+    _gw=$(cd "$REPO_DIR" && "$_prov_py" -c "
+import sys, json, urllib.request; sys.path.insert(0, '.')
+from tools.load_env import load_env; load_env('.')
+from gateway.llm_providers import gateway_url
+import os
+key = os.environ.get('AAKA_LLM_GATEWAY_KEY', '')
+if not key: print('nokey'); sys.exit()
+req = urllib.request.Request(gateway_url().rsplit('/v1/', 1)[0] + '/health')
+try:
+    urllib.request.urlopen(req, timeout=3).read(); print('up')
+except Exception as e: print('down:' + str(e)[:60])" 2>/dev/null)
+    case "$_gw" in
+        up)    ok "gateway provider: AAKA_LLM_GATEWAY_KEY set, agent gateway /health answers" ;;
+        nokey) fail "gateway provider: AAKA_LLM_GATEWAY_KEY missing in .env — every executor LLM call will fail (register: admin/register_agent.py executor)" ;;
+        *)     fail "gateway provider: agent gateway not reachable (${_gw#down:}) — launchctl kickstart -k gui/\$(id -u)/com.aaka.agentapi" ;;
+    esac
+fi
 # Executor side: a local `claude` is the rescue when the cloud provider hits
 # its spend cap (gateway/adapter → llm_providers.local_fallback_provider). The
 # queue worker runs under launchd with a bare PATH, so probe the way it does.

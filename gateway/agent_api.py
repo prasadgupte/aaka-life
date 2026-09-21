@@ -1316,7 +1316,8 @@ def _call_claude_cli(prompt: str, model_alias: str, timeout: int,
     the model read none of them, so the caller falls through to a provider that
     takes images natively rather than returning a text-only guess.
     """
-    claude_bin = shutil.which("claude")
+    from gateway.llm_providers import find_claude
+    claude_bin = find_claude()   # PATH, else the usual install dirs (launchd has a bare PATH)
     if not claude_bin:
         raise RuntimeError("claude not on PATH")
 
