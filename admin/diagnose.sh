@@ -77,6 +77,18 @@ if [ -f "$ENV_FILE" ]; then
 else
     fail ".env not found at $ENV_FILE"
 fi
+# Executor side: a local `claude` is the rescue when the cloud provider hits
+# its spend cap (gateway/adapter → llm_providers.local_fallback_provider). The
+# queue worker runs under launchd with a bare PATH, so probe the way it does.
+_LLM_PY="$REPO_DIR/venv/bin/python3"; [ -x "$_LLM_PY" ] || _LLM_PY="python3"
+_claude_path=$(cd "$REPO_DIR" && env -i PATH=/usr/bin:/bin HOME="$HOME" "$_LLM_PY" -c "
+import sys; sys.path.insert(0, '.')
+from gateway.llm_providers import find_claude; print(find_claude() or '')" 2>/dev/null)
+if [ -n "$_claude_path" ]; then
+    ok "LLM budget fallback: local claude found at $_claude_path (bare launchd PATH)"
+else
+    warn "LLM budget fallback: no local claude — a Gemini spend cap will fail /cal on this side too"
+fi
 
 # ── 5. Folder structure ──────────────────────────────────────────────────────
 header "5. Folder Structure"

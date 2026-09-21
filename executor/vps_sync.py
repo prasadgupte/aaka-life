@@ -180,11 +180,28 @@ def _pull_queue_rows(cfg: SyncConfig) -> int:
                     "UPDATE queue_items SET status = 'cancelled', updated_at = ? WHERE id = ?",
                     (row_updated, rid),
                 )
+            elif vps_status in ("confirmed", "done", "error") and local_status == "awaiting_confirm":
+                # An item this side put up for confirmation and the sender
+                # answered on the sensor: 'confirmed' → we execute it; 'done' /
+                # 'error' → the sensor executed it itself (VPS-direct calendar
+                # write) and our copy just mirrors the outcome instead of
+                # sitting in awaiting_confirm forever. Take the sensor's
+                # payload too — "yes 1 3" / "alone" edit it before confirming.
+                conn.execute(
+                    "UPDATE queue_items SET status = ?, payload = ?, updated_at = ? "
+                    "WHERE id = ?",
+                    (vps_status, row.get("payload") or existing_payload(conn, rid), row_updated, rid),
+                )
 
     conn.commit()
     if max_updated > hwm:
         _set_hwm("pull_hwm", max_updated)
     return inserted
+
+
+def existing_payload(conn, rid: str) -> str:
+    r = conn.execute("SELECT payload FROM queue_items WHERE id = ?", (rid,)).fetchone()
+    return r["payload"] if r else "{}"
 
 
 def _pull_files(cfg: SyncConfig) -> bool:
@@ -419,14 +436,18 @@ def _push_heartbeats(cfg: SyncConfig) -> int:
 
 
 def _push_status_updates(cfg: SyncConfig) -> int:
-    """Push locally-processed queue items (done/error) back to VPS."""
+    """Push locally-processed queue items (done/error) back to VPS — and items
+    the executor itself put up for confirmation (awaiting_confirm: the home
+    hand-off's add_event preview, agent_job / bday_wish approvals), so the
+    sender's "yes" on the sensor finds the row. Each row goes once (the HWM
+    is on updated_at), so a later sensor-side 'confirmed' is never overwritten."""
     from aaka_queue.queue import _connect
 
     hwm = _get_hwm("push_hwm")
     conn = _connect()
     rows = conn.execute(
         "SELECT * FROM queue_items "
-        "WHERE status IN ('done', 'error', 'cancelled') AND updated_at > ? "
+        "WHERE status IN ('done', 'error', 'cancelled', 'awaiting_confirm') AND updated_at > ? "
         "ORDER BY updated_at LIMIT 200",
         (hwm,),
     ).fetchall()

@@ -128,6 +128,15 @@ skills:
     enabled: true
     requires_confirmation: false
     entrypoint: null
+  add_event_home:
+    # /cal whose LLM extraction the sensor could not run (provider over budget):
+    # the executor extracts with its own provider and sends the preview back.
+    intent: add_event_home
+    type: native
+    runs_on: [executor]
+    enabled: true
+    requires_confirmation: false
+    entrypoint: null
   block_cal:
     intent: block_cal
     type: native

@@ -97,6 +97,7 @@ aaka-repo/                          ← repo root
 | `GEMINI_API_KEY` | — | Gemini API key (zeroclaw backend) |
 | `QUEUE_DB` | `$AAKA_CONFIG_DIR/data/queue/butler.db` | Queue DB path override |
 | `AGENT_API_PORT` | `18790` | Port for agent gateway (localhost only) |
+| `AAKA_LLM_LOCAL_FALLBACK` | `1` | When the configured LLM provider is out of budget (`LLMBudgetExceeded`), try a local `claude` binary (`claude-cli`) if one is installed — PATH or the usual install dirs. `0` disables. Never used for image prompts |
 | `ENABLED_CHANNELS` | `telegram` | Comma list of channels to run: `telegram,whatsapp,slack,signal` |
 | `SIGNAL_CLI_URL` | `http://127.0.0.1:18794` | signal-cli JSON-RPC daemon base URL (an SSH tunnel is fine) |
 | `SIGNAL_ACCOUNT` | — | aaka's own Signal number (+E.164). Use a **dedicated** number, not a linked personal account |
@@ -302,7 +303,8 @@ Register an agent: `python3 admin/register_agent.py <id> "<Display Name>"`
 | `drop_note` | /note \<topic\> \<text\> | `n \<t\> \<text\>` | append to topic log → vault: routed tags → `_context.md`, others → `04-Notes/`; `n [member] topic text` for cross-member (admin only); `!name` sets alias |
 | `drop_file` | /drop | `f` | Smart Drop: `f [member|@member] [route] [#tag] ["name"]. description` + attachment (admins file into another member's vault; `@` optional; an unknown `@name` is filed for `everyone?` = household vault, ack lists members) → auto-compress PDF 150dpi + downsize/recompress large images (JPG/PNG/HEIC/etc.) to ≤2400px JPEG q82 → member vault area; #tags auto-learned as routes; files.md per folder; audit log; reply shows rename + compression delta + tap-to-copy `keep #hash` to restore original; legacy: tag-route via references.yaml (0 tokens) |
 | `keep_original` | keep #hash | — | restore the uncompressed original of a compressed /drop from recycle_bin; swaps in for the compressed vault file (0 tokens, executor-side) |
-| `add_event` | /add, /cal | `c` | LLM extraction → VPS direct → Google Calendar |
+| `add_event` | /add, /cal | `c` | LLM extraction → VPS direct → Google Calendar. If the provider raises `LLMBudgetExceeded` (spend cap / daily quota) the sensor queues `add_event_home` instead of failing |
+| `add_event_home` | (internal — sensor hand-off) | — | executor re-runs the same extraction (`router_sensor.build_add_event_item`) with its own provider — `gateway/adapter` falls back to a local `claude` when Gemini is capped — writes the `add_event` item as `awaiting_confirm` and sends the 🏠 preview + Yes/Cancel; vps_sync ships item + pending_confirm, and adopts the sensor's `confirmed` (with edited payload) on the way back |
 | `fix_event` | /fix, c fix, c #fix | `c fix` | show issues / assign carrier / add #work (VPS direct) |
 | `add_task` | /addtask, add task | `t <text>` | LLM extraction → local JSON store (sensor-side) |
 | `complete_task` | /done N, /done 1 3 5, /done today | — | mark task(s) done; bulk; history view (0 tokens) |

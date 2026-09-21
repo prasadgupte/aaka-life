@@ -277,6 +277,66 @@ def _format_event_preview(payload: dict) -> str:
     return format_review(payload)
 
 
+class NoEventsParsed(ValueError):
+    """The LLM answered but found no event in the message."""
+
+
+def build_add_event_item(message: str, sender_id: str, sender_email: str = "", *,
+                         me_flag: bool = False, message_id="") -> "tuple[str, dict, str]":
+    """/cal extraction → (intent, payload, preview): the queue item the user
+    is asked to confirm. Shared by the sensor's /cal path and the executor's
+    home hand-off (`add_event_home`), so both sides build byte-identical items.
+    Raises NoEventsParsed when nothing could be extracted; lets LLM errors
+    (incl. llm_providers.LLMBudgetExceeded) propagate."""
+    sender_member = aaka_config.member_by_sender(sender_id)
+    sender_mid_id = sender_member["id"] if sender_member else ""
+    events = _extract_events_batch(message, sender_email=sender_email,
+                                   sender_member_id=sender_mid_id)
+    # Per-event conflict check
+    try:
+        from skills.calendar.availability import conflicts_in_window
+        for ev in events:
+            conflicts, checked_labels = conflicts_in_window(
+                ev.get("occurrences", []),
+                sender_mid_id,
+                extra_member_ids=ev.get("conflict_members", []),
+                blocker_members=[ev.get("attendee", ""), ev.get("carrier", "")],
+            )
+            ev["conflicts"] = conflicts
+            ev["checked_calendar_labels"] = checked_labels
+    except Exception:
+        pass
+    # #me flag: force attendee to the sender on all events
+    if me_flag and sender_mid_id:
+        sender_name = (sender_member or {}).get("name", sender_mid_id)
+        for ev in events:
+            ev["attendee"] = sender_name
+            ev["carrier"] = ""
+    if not events:
+        raise NoEventsParsed(message)
+    if len(events) == 1:
+        payload = events[0]
+        payload["message_id"] = message_id
+        return "add_event", payload, _format_event_preview(payload)
+    from skills.calendar.prepare_event import format_batch_review
+    payload = {"events": events, "message_id": message_id}
+    return "add_event_batch", payload, format_batch_review(events)
+
+
+def _handoff_add_event_home(message: str, sender_id: str, channel_id: str, source: str,
+                            message_id, sender_email: str, me_flag: bool) -> None:
+    """The sensor's LLM is out of budget: queue the raw /cal text for the home
+    executor, which extracts with its own provider and sends the same preview +
+    Yes/Cancel back through the outbox (see queue_worker._exec_add_event_home)."""
+    item_id = write_item(intent="add_event_home", raw_message=message, sender=sender_id,
+                         channel_id=channel_id or sender_id, source=source or "telegram",
+                         payload={"raw_message": message, "sender": sender_id,
+                                  "channel_id": channel_id or sender_id,
+                                  "source": source or "telegram", "message_id": message_id,
+                                  "sender_email": sender_email, "me_flag": bool(me_flag)})
+    update_status(item_id, "confirmed")   # executor consumes 'confirmed'
+
+
 def _extract_task(message: str, sender_member_id: str = "") -> dict:
     from skills.tasks.prepare_task import prepare_task
     text = re.sub(r'^/(addtask|task)\s*', '', message, flags=re.I).strip()
@@ -3786,44 +3846,11 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
     # Extract payload via LLM
     try:
         if intent == "add_event":
-            sender_member = aaka_config.member_by_sender(sender_id)
-            sender_mid_id = sender_member["id"] if sender_member else ""
-            events = _extract_events_batch(message, sender_email=sender_email,
-                                           sender_member_id=sender_mid_id)
-            # Per-event conflict check
             try:
-                from skills.calendar.availability import conflicts_in_window
-                for ev in events:
-                    conflicts, checked_labels = conflicts_in_window(
-                        ev.get("occurrences", []),
-                        sender_mid_id,
-                        extra_member_ids=ev.get("conflict_members", []),
-                        blocker_members=[ev.get("attendee", ""), ev.get("carrier", "")],
-                    )
-                    ev["conflicts"] = conflicts
-                    ev["checked_calendar_labels"] = checked_labels
-            except Exception:
-                pass
-            # #me flag: force attendee to the sender on all events
-            if _me_flag and sender_mid_id:
-                sender_name = (aaka_config.member_by_sender(sender_id) or {}).get("name", sender_mid_id)
-                for ev in events:
-                    ev["attendee"] = sender_name
-                    ev["carrier"] = ""
-            if not events:
+                intent, payload, preview = build_add_event_item(
+                    message, sender_id, sender_email, me_flag=_me_flag, message_id=message_id)
+            except NoEventsParsed:
                 return _reply(f"{REPLY_PREFIX}❌ Could not parse any events from that message. Try rephrasing or use a simpler format:\n`/cal Rumi Camp 10 July 2026`", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
-            if len(events) == 1:
-                # Single event — use existing single-event flow
-                intent = "add_event"
-                payload = events[0]
-                payload["message_id"] = message_id
-                preview = _format_event_preview(payload)
-            else:
-                # Batch — store as add_event_batch
-                intent = "add_event_batch"
-                from skills.calendar.prepare_event import format_batch_review
-                payload = {"events": events, "message_id": message_id}
-                preview = format_batch_review(events)
         elif intent == "block_cal":
             from skills.calendar.block import parse_block_args, build_blocks, format_block_preview
             from skills.calendar.availability import find_slots
@@ -3863,6 +3890,15 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
         else:
             return _reply(f"{REPLY_PREFIX}❓ Unhandled intent: {intent}", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
     except Exception as exc:
+        from gateway.llm_providers import LLMBudgetExceeded
+        if isinstance(exc, LLMBudgetExceeded) and intent == "add_event":
+            # Not a blip: the cloud model is over budget for the month/day.
+            # The home executor has its own provider (a local `claude`), so
+            # hand the raw text there instead of asking the user to retry.
+            if not dry_run:
+                _handoff_add_event_home(message, sender_id, channel_id, source, message_id,
+                                        sender_email, _me_flag)
+            return _reply(f"{REPLY_PREFIX}⏳ Cloud model is over budget ({exc.detail[:80]}) — handing this to the home machine; you'll get the preview to confirm from there.", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
         return _reply(f"{REPLY_PREFIX}⚠️ Extraction failed: {exc}", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
 
     if dry_run:

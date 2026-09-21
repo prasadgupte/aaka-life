@@ -3062,6 +3062,9 @@ check "reminders: event-conditional + weekday rules, unless, scoping, bad input"
 check "calendar scope: non-admin members see only their own events (sync files, pushes, task block)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' skills/calendar/test_scope.py"
 
+check "llm budget: spend-cap 429 fails fast, adapter falls back to local claude, /cal hands off home, sync round-trips the confirm" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_llm_budget_handoff.py"
+
 check "config getters survive empty/minimal config (no KeyError; read system.*)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"
 import aaka_config as c

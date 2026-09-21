@@ -375,6 +375,53 @@ def _exec_plan_slots(payload: dict) -> dict:
     return {"status": "ok", "message_id": payload.get("message_id")}
 
 
+def _exec_add_event_home(payload: dict) -> dict:
+    """The sensor's LLM was out of budget, so it handed the raw /cal text here.
+
+    Extract with this side's provider (gateway/adapter falls back to a local
+    `claude` when Gemini is capped), then do exactly what the sensor would have
+    done: write the add_event / add_event_batch item as awaiting_confirm, arm
+    pending_confirms for the sender, and send the preview with Yes/Cancel.
+    vps_sync pushes the item, the outbox row and the pending_confirm together;
+    the sender's "yes" then flows through the sensor's normal confirm path and
+    the executor writes the calendar. Replies to the user itself."""
+    from sensor.router_sensor import build_add_event_item, NoEventsParsed
+    from aaka_queue.queue import write_item, update_status, set_pending_confirm
+
+    raw = payload.get("raw_message", "")
+    sender = payload.get("sender", "")
+    channel = payload.get("channel_id", sender)
+    source = payload.get("source", "telegram")
+    message_id = payload.get("message_id")
+    try:
+        intent, item_payload, preview = build_add_event_item(
+            raw, sender, payload.get("sender_email", ""),
+            me_flag=bool(payload.get("me_flag")), message_id=message_id)
+    except NoEventsParsed:
+        write_outbox(channel_id=channel, sender=sender, source=source, reply_to_message_id=message_id,
+                     text=f"{REPLY_PREFIX}❌ Could not parse any events from that message (home machine). Try rephrasing.")
+        return {"ok": False, "error": "no_events", "silent": True}
+    except Exception as exc:
+        write_outbox(channel_id=channel, sender=sender, source=source, reply_to_message_id=message_id,
+                     text=f"{REPLY_PREFIX}⚠️ Extraction failed on the home machine too: {str(exc)[:200]}")
+        return {"ok": False, "error": str(exc)[:200], "silent": True}
+
+    item_id = write_item(intent=intent, raw_message=raw, sender=sender, channel_id=channel,
+                         source=source, payload=item_payload)
+    update_status(item_id, "awaiting_confirm")
+    markup = {"inline_keyboard": [[
+        {"text": "Yes ✅", "callback_data": "yes"},
+        {"text": "Cancel ❌", "callback_data": "cancel"},
+    ]]}
+    # reply_markup on the outbox row is what makes vps_sync ship the
+    # pending_confirm alongside it (see _push_outbox); Signal renders it as
+    # numbered options, WhatsApp ignores it.
+    write_outbox(channel_id=channel, sender=sender, source=source, reply_to_message_id=message_id,
+                 text=f"{REPLY_PREFIX}🏠 {preview}\n`#{item_id[:8]}`", reply_markup=markup)
+    set_pending_confirm(sender, item_id)
+    return {"ok": True, "item_id": item_id, "intent": intent, "silent": True}
+
+
 def _exec_day_schedule(payload: dict) -> dict:
     """Fetch all events for a given day and write reply to outbox."""
     import re
@@ -959,6 +1006,7 @@ _DISPATCHERS = {
     "add_event_batch": _exec_add_event_batch,
     "plan_slots":     _exec_plan_slots,
     "day_schedule":   _exec_day_schedule,
+    "add_event_home": _exec_add_event_home,
     "add_task":       _exec_add_task,
     "complete_task":  _exec_complete_task,
     "queue_test":     _exec_queue_test,
@@ -1065,7 +1113,7 @@ def _send_confirmation(item: dict, result: dict) -> None:
         elif intent in ("file_sync", "file_upsert"):
             # silent — background sync, no user notification
             return
-        elif intent in ("plan_slots", "day_schedule"):
+        elif intent in ("plan_slots", "day_schedule", "add_event_home"):
             # these send their reply directly; skip generic confirmation
             return
         elif intent == "executor_echo":

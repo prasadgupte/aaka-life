@@ -64,6 +64,15 @@ Confirm? Reply: yes / cancel
 
 Reply `yes` or 👍 to save, `cancel` or 👎 to discard.
 
+**When the cloud model is out of budget** (Gemini's monthly spend cap or daily
+quota — a `429` that no retry will clear), the sensor doesn't make you retry:
+it answers `⏳ Cloud model is over budget … handing this to the home machine`
+and queues the text for the home executor. The executor extracts with its own
+provider — it falls back to a local `claude` binary automatically when one is
+installed — and sends you the same preview, marked 🏠, with Yes/Cancel. Reply
+as usual; the event is written from home. Set `AAKA_LLM_LOCAL_FALLBACK=0` to
+disable the local fallback.
+
 ---
 
 ## Blocking time
