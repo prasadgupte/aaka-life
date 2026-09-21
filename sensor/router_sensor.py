@@ -40,6 +40,9 @@ from aaka_queue.queue import (
     set_pending_confirm,
     get_pending_confirm,
     clear_pending_confirm,
+    confirm_markup,
+    list_awaiting,
+    find_awaiting_by_prefix,
     update_status,
     update_payload,
     get_item,
@@ -176,6 +179,30 @@ def _is_confirm(m: str) -> bool:
 
 def _is_cancel(m: str) -> bool:
     return bool(re.match(r'^(cancel|no|abort|discard)\b', m)) or m.startswith('👎')
+
+
+def _msg_ref(message_id, message: str) -> str:
+    """` (msg 2757: “yes”)` — so a reply that didn't land can be matched to
+    the message it answers. Telegram/Signal pass the id; WhatsApp mostly not."""
+    text = (message or "").strip().replace("\n", " ")
+    if len(text) > 40:
+        text = text[:39] + "…"
+    ref = f"msg {message_id}: " if message_id else ""
+    return f" _({ref}“{text}”)_" if text else (f" _(msg {message_id})_" if message_id else "")
+
+
+def _awaiting_label(item: dict) -> str:
+    """One line naming an awaiting_confirm item for a 'which one?' list."""
+    try:
+        pl = json.loads(item.get("payload") or "{}")
+    except Exception:
+        pl = {}
+    intent = item.get("intent", "?")
+    if intent == "add_event":
+        return f"📅 {pl.get('title') or pl.get('summary') or item.get('raw_message', '')[:50]}"
+    if intent == "add_event_batch":
+        return f"📅 {len(pl.get('events', []))} events"
+    return f"{intent}: {item.get('raw_message', '')[:50]}"
 
 
 def _parse_confirm_modifiers(msg: str, payload: dict) -> "tuple[dict, str]":
@@ -2028,7 +2055,41 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
 
     # ── Pending-confirm state (queue-based) ───────────────────────────────────
     if not dry_run:
+        # Item-addressed answer: "yes #abc12345" / "cancel #abc12345". Every
+        # preview's buttons carry the item hash (confirm_markup), so a tap binds
+        # to ITS item even when the sender's single pending slot now points at
+        # a later preview or was already consumed by an earlier tap. Typed form
+        # picks between several open previews.
+        _addr = re.match(r'^\s*(\S+)\s*#([0-9a-f]{6,32})\s*$', message.strip(), re.I)
+        if _addr and (_is_confirm(_addr.group(1).lower()) or _is_cancel(_addr.group(1).lower())):
+            _target = find_awaiting_by_prefix(sender_id, _addr.group(2))
+            if not _target:
+                return _reply(f"{REPLY_PREFIX}⚠️ Nothing of yours is waiting under `#{_addr.group(2)[:8]}` — "
+                              f"it was already answered, expired, or cancelled.",
+                              channel_id=channel_id, sender=sender_id, message_id=message_id,
+                              dry_run=dry_run, source=source)
+            set_pending_confirm(sender_id, _target["id"])
+            message = _addr.group(1)
+            msg_lower = message.lower()
         pc = get_pending_confirm(sender_id)
+        if not pc and not message.lstrip().startswith("/") and (_is_confirm(msg_lower) or _is_cancel(msg_lower)):
+            # A bare yes/cancel with no slot: bind to the only open preview, or
+            # ask which one — never "Sorry, I didn't understand that".
+            _open = list_awaiting(sender_id)
+            if len(_open) == 1:
+                set_pending_confirm(sender_id, _open[0]["id"])
+                pc = get_pending_confirm(sender_id)
+            elif len(_open) > 1:
+                _lines = [f"• `#{it['id'][:8]}` {_awaiting_label(it)}" for it in _open[-8:]]
+                return _reply(f"{REPLY_PREFIX}Which one? {len(_open)} previews are waiting:\n" + "\n".join(_lines)
+                              + f"\nReply `{'yes' if _is_confirm(msg_lower) else 'cancel'} #<id>`.",
+                              channel_id=channel_id, sender=sender_id, message_id=message_id,
+                              dry_run=dry_run, source=source)
+            else:
+                return _reply(f"{REPLY_PREFIX}Nothing is waiting for a yes/cancel from you right now."
+                              + _msg_ref(message_id, message),
+                              channel_id=channel_id, sender=sender_id, message_id=message_id,
+                              dry_run=dry_run, source=source)
         if pc:
             item_id = pc["item_id"]
 
@@ -2524,7 +2585,8 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
         if is_group:
             _log.info("silent-drop group free-text sender=%s channel=%s", sender_id, channel_id)
             return ""
-        return _reply(f"{REPLY_PREFIX}Sorry, I didn't understand that. ↪ /menu", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
+        return _reply(f"{REPLY_PREFIX}Sorry, I didn't understand that. ↪ /menu" + _msg_ref(message_id, message),
+                      channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
 
     # Track engagement (silent — never raises)
     if not dry_run and sender_id:
@@ -3803,10 +3865,7 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
 
         preview = f"{preview}\n`#{item_id[:8]}`"
         if source == "telegram":
-            _markup = json.dumps({"inline_keyboard": [[
-                {"text": "Post ✅", "callback_data": "yes"},
-                {"text": "Cancel ❌", "callback_data": "cancel"},
-            ]]})
+            _markup = json.dumps(confirm_markup(item_id, "Post ✅"))
             preview = f"{preview}\n__MARKUP__:{_markup}"
         return _reply(f"{REPLY_PREFIX}{preview}", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
 
@@ -3924,10 +3983,7 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
 
     preview = f"{preview}\n`#{item_id[:8]}`"
     if source == "telegram":
-        _markup = json.dumps({"inline_keyboard": [[
-            {"text": "Yes ✅", "callback_data": "yes"},
-            {"text": "Cancel ❌", "callback_data": "cancel"},
-        ]]})
+        _markup = json.dumps(confirm_markup(item_id))
         preview = f"{preview}\n__MARKUP__:{_markup}"
     return _reply(f"{REPLY_PREFIX}{preview}", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
 

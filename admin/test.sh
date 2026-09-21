@@ -3065,6 +3065,9 @@ check "calendar scope: non-admin members see only their own events (sync files, 
 check "llm provider: executor resolves to aaka's gateway (Haiku), sensor to gemini, LLM_PROVIDER overrides; gateway provider request shape + errors" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' gateway/llm_providers_test.py"
 
+check "confirm by hash: buttons carry the item id, several previews stay confirmable, bare yes binds/asks, fallback names the message" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_confirm_by_hash.py"
+
 check "llm budget: spend-cap 429 fails fast, adapter falls back to local claude, /cal hands off home, sync round-trips the confirm" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_llm_budget_handoff.py"
 

@@ -471,11 +471,6 @@ def send_birthday_auto(dry_run: bool = False) -> None:
             f"Message: _{wish_msg}_\n\n"
             f"Approve to send?"
         )
-        markup = {"inline_keyboard": [[
-            {"text": "Send ✅", "callback_data": "yes"},
-            {"text": "Skip ❌", "callback_data": "cancel"},
-        ]]}
-
         if dry_run:
             print(f"[dry-run] bday_wish preview → {admin_channel}: {name} via {channel_label}")
             queued += 1
@@ -501,13 +496,14 @@ def send_birthday_auto(dry_run: bool = False) -> None:
             },
         )
         update_status(item_id, "awaiting_confirm")
+        from aaka_queue.queue import confirm_markup
         write_outbox(
             channel_id=admin_channel,
             sender="scheduled",
             text=preview,
             source="telegram",
             ttl_minutes=360,
-            reply_markup=markup,
+            reply_markup=confirm_markup(item_id, "Send ✅", "Skip ❌"),
         )
         set_pending_confirm(admin_channel, item_id)
         queued += 1
