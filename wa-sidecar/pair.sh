@@ -1,14 +1,14 @@
 #!/bin/bash
 # Interactive WhatsApp pairing for the aaka sidecar (pairing-code flow).
 #
-#   bash wa-sidecar/pair.sh <number-digits>      e.g. bash wa-sidecar/pair.sh 4915123146203
+#   bash wa-sidecar/pair.sh <number-digits>      e.g. bash wa-sidecar/pair.sh 491700000000
 #
 # Prints an 8-char code to type into WhatsApp → Settings → Linked Devices →
 # Link a device → Link with phone number. If WhatsApp is rate-limiting this
 # network, it says so — re-run over a different network (phone hotspot).
 set -u
 NUM="$(echo "${1:-}" | tr -cd '0-9')"
-[ -z "$NUM" ] && { echo "usage: bash wa-sidecar/pair.sh <number-digits, e.g. 4915123146203>"; exit 2; }
+[ -z "$NUM" ] && { echo "usage: bash wa-sidecar/pair.sh <number-digits, e.g. 491700000000>"; exit 2; }
 
 REPO="/Users/Shared/aaka-repo"
 CFG="${AAKA_CONFIG_DIR:-/Users/Shared/aaka-repo-config}"

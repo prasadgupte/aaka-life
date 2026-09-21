@@ -319,7 +319,7 @@ Enable it:
 **Capture who's allowed — do this during pairing, don't skip it.** aaka only replies
 to numbers listed as members. Right after pairing, **ask the user: "What WhatsApp
 number will you message aaka from?"** Confirm it's theirs, then add it to *their*
-member in `aaka.yaml` as `whatsapp: "+E.164"` (e.g. `+4915123146203`). Do the same
+member in `aaka.yaml` as `whatsapp: "+E.164"` (e.g. `+491700000000`). Do the same
 for any other family member who'll use WhatsApp. Without this, their messages are
 silently gated — the bot replies "I don't recognise this number, your number is
 `+…`, share it with whoever set me up" so it's never a black hole, but the admin

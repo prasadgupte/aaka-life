@@ -498,7 +498,7 @@ def member_by_sender(sender: str) -> dict | None:
     if not sender:
         return None
     s = sender.strip().lower()
-    # Normalise WhatsApp JIDs: "4915123146203@s.whatsapp.net" → "+4915123146203"
+    # Normalise WhatsApp JIDs: "491700000000@s.whatsapp.net" → "+491700000000"
     _wa_norm = s
     if s.endswith("@s.whatsapp.net"):
         _wa_norm = "+" + s.replace("@s.whatsapp.net", "")
