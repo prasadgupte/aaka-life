@@ -121,6 +121,21 @@ def main():
     check("_msg_ref truncates long text", rs._msg_ref("1", "x" * 80).count("x") == 39 and "…" in rs._msg_ref("1", "x" * 80))
     check("_msg_ref without an id still quotes the text", rs._msg_ref(None, "hi") == " _(“hi”)_")
 
+    # ── two agent approvals (the /v1/approvals keyboard) in flight ────────
+    def _approval(title, schedule_at=None):
+        iid = q.write_approval_item(intent="linkedin_post", raw_message=title, sender=tg, channel_id=tg,
+                           source="telegram", payload={"text": title}, approval_id=f"ap-{title}",
+                           schedule_at=schedule_at)
+        q.update_status(iid, "awaiting_confirm")
+        return iid
+    p1 = _approval("post one"); q.set_pending_confirm(tg, p1)
+    p2 = _approval("post two"); q.set_pending_confirm(tg, p2)
+    rs.route(_envelope(tg, f"yes #{p1[:8]}"))
+    check("agent approvals: yes #<first> confirms the first even though the slot is on the second",
+          q.get_item(p1)["status"] in ("confirmed", "done") and q.get_item(p2)["status"] == "awaiting_confirm")
+    rs.route(_envelope(tg, f"cancel #{p2[:8]}"))
+    check("agent approvals: cancel #<second> cancels only the second", q.get_item(p2)["status"] == "cancelled")
+
     # ── stale sweep ────────────────────────────────────────────────────────
     g = _event_item(tg, "Old")
     with q._connect() as conn:
@@ -129,6 +144,11 @@ def main():
     check("stale awaiting_confirm items are cancelled by the sweep",
           n >= 1 and q.get_item(g)["status"] == "cancelled")
     check("…fresh ones are not", q.get_item(f1)["status"] == "awaiting_confirm")
+    sch = _approval("later", schedule_at="2999-01-01T09:00:00Z")
+    with q._connect() as conn:
+        conn.execute("UPDATE queue_items SET created_at = '2000-01-01T00:00:00Z' WHERE id = ?", (sch,))
+    q.expire_stale_awaiting(hours=24)
+    check("…nor an approval scheduled for the future", q.get_item(sch)["status"] == "awaiting_confirm")
 
     print()
     if _FAILURES:

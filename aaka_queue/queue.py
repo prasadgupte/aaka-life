@@ -414,12 +414,17 @@ def find_awaiting_by_prefix(sender: str, prefix: str) -> dict | None:
 
 def expire_stale_awaiting(hours: int = 24) -> int:
     """Cancel awaiting_confirm items nobody answered within `hours`. Returns
-    the count. Replaces the old cancel-on-replace in set_pending_confirm."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    the count. Replaces the old cancel-on-replace in set_pending_confirm.
+    An agent approval scheduled for later (`schedule_at` still ahead) is left
+    alone — the answer isn't overdue until its slot is."""
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
     with _connect() as conn:
         cur = conn.execute(
             "UPDATE queue_items SET status = 'cancelled', updated_at = ? "
-            "WHERE status = 'awaiting_confirm' AND created_at < ?", (_now(), cutoff)
+            "WHERE status = 'awaiting_confirm' AND created_at < ? "
+            "AND (schedule_at IS NULL OR schedule_at = '' OR schedule_at < ?)",
+            (_now(), cutoff, now.strftime("%Y-%m-%dT%H:%M:%SZ"))
         )
         return cur.rowcount
 

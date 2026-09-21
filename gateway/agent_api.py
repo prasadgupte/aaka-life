@@ -1962,10 +1962,8 @@ def create_approval(body: ApprovalRequest, agent: dict = Depends(_require_agent)
     else:
         preview = f"🔔 *Action requires approval ({body.intent})*\n\nApprove?\n`#{item_id[:8]}`"
 
-    _markup = {"inline_keyboard": [[
-        {"text": "Post ✅", "callback_data": "yes"},
-        {"text": "Cancel ❌", "callback_data": "cancel"},
-    ]]}
+    from aaka_queue.queue import confirm_markup
+    _markup = confirm_markup(item_id, "Post ✅")   # "yes #<id>": binds the tap to THIS approval
     write_outbox(
         channel_id=channel_id, sender=sender,
         text=preview,
