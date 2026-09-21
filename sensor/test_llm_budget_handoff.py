@@ -31,6 +31,7 @@ os.environ["QUEUE_DB"] = str(Path(_TMP) / "butler.db")
 os.environ["SIGNAL_LINKED_MODE"] = "false"
 os.environ["GEMINI_API_KEY"] = "test-key"
 os.environ.pop("LLM_PROVIDER", None)
+os.environ["AAKA_ROLE"] = "sensor"   # the sensor's view: Gemini direct, no gateway, no local claude
 
 import aaka_config  # noqa: E402
 from gateway import llm_providers as lp  # noqa: E402
