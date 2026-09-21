@@ -121,6 +121,22 @@ class GatewayAdapter:
             text = llm_providers.complete(prompt, timeout, provider=name, images=images)
             self._log_llm_usage(name, "ok")
             return text
+        except llm_providers.LLMBudgetExceeded as exc:
+            self._log_llm_usage(name, "budget", error=str(exc)[:200])
+            # The configured provider is out of budget for the month/day. A local
+            # `claude` binary (the executor Mac, a dev laptop) is a different budget
+            # entirely — use it rather than fail. The sensor has no claude, so
+            # there the error stands and the intent is handed home instead.
+            alt = llm_providers.local_fallback_provider(name, images=images)
+            if alt is None:
+                raise
+            try:
+                text = llm_providers.complete(prompt, timeout, provider=alt, images=images)
+                self._log_llm_usage(alt, "ok", error=f"fallback from {name}: budget")
+                return text
+            except Exception as exc2:
+                self._log_llm_usage(alt, "error", error=str(exc2)[:200])
+                raise exc from exc2
         except Exception as exc:
             self._log_llm_usage(name, "error", error=str(exc)[:200])
             raise

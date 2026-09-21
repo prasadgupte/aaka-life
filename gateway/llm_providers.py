@@ -43,6 +43,22 @@ GEMINI_RETRY_BACKOFF_SECONDS = [2, 5]  # sleep before each retry pass (2 retries
 Images = "list[dict] | None"
 
 
+class LLMBudgetExceeded(RuntimeError):
+    """The provider refused for a reason that will not clear by retrying now:
+    a monthly spend cap or a daily quota. Callers that can hand the job to
+    another machine/provider should, instead of backing off."""
+
+    def __init__(self, provider: str, detail: str):
+        super().__init__(f"{provider} budget exhausted — {detail}")
+        self.provider = provider
+        self.detail = detail
+
+
+# Substrings of a Gemini 429 body that mean "come back tomorrow/next month",
+# not "try again in a few seconds". Matched case-insensitively.
+_GEMINI_BUDGET_MARKERS = ("spending cap", "spend cap", "perday", "per day", "daily")
+
+
 class VisionUnsupported(RuntimeError):
     """The selected provider cannot take images; raised before any call is made."""
 
@@ -116,12 +132,32 @@ def gemini(prompt: str, timeout: int = 60, images: Images = None) -> str:
                 return data["candidates"][0]["content"]["parts"][0]["text"]
             except urllib.error.HTTPError as exc:
                 if exc.code in (503, 429):
+                    detail = _gemini_error_message(exc)
+                    if exc.code == 429 and _is_budget_error(detail):
+                        # A spend cap / daily quota: every model and every pass
+                        # will say the same thing — don't burn 9 calls finding out.
+                        raise LLMBudgetExceeded("Gemini", detail) from exc
                     last_exc = RuntimeError(
                         f"Gemini overloaded (HTTP {exc.code}) on {model}"
                         f" (pass {attempt + 1}/{passes})")
                     continue  # try next model this pass
                 raise RuntimeError(f"Gemini error (HTTP {exc.code}): {exc.reason}") from exc
     raise last_exc
+
+
+def _gemini_error_message(exc: "urllib.error.HTTPError") -> str:
+    """The human message inside a Gemini error body ({"error": {"message": …}}),
+    or the HTTP reason if the body isn't the usual shape."""
+    try:
+        body = exc.read().decode("utf-8", "replace")
+        return (json.loads(body).get("error") or {}).get("message") or exc.reason or ""
+    except Exception:
+        return str(exc.reason or "")
+
+
+def _is_budget_error(detail: str) -> bool:
+    low = (detail or "").lower()
+    return any(m in low for m in _GEMINI_BUDGET_MARKERS)
 
 
 # ── Anthropic (Claude API) ──────────────────────────────────────────────────
@@ -173,10 +209,30 @@ def anthropic(prompt: str, timeout: int = 60, images: Images = None) -> str:
 
 # ── Local Claude CLI (optional, subscription) ───────────────────────────────
 
+# Where a `claude` binary lives when the process was started by launchd/cron
+# with the bare system PATH (the executor's queue worker, the tool runner).
+_CLAUDE_CANDIDATES = ("/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+                      "~/.local/bin/claude", "~/.claude/local/claude")
+
+
+def find_claude() -> "str | None":
+    """Path of a local `claude` binary — PATH first, then the usual install
+    spots — or None. The executor runs under launchd with a minimal PATH, so
+    `shutil.which` alone reported "claude not on PATH" on a Mac that has it."""
+    found = shutil.which("claude")
+    if found:
+        return found
+    for cand in _CLAUDE_CANDIDATES:
+        path = os.path.expanduser(cand)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
 def claude_cli(prompt: str, timeout: int = 60, images: Images = None) -> str:
     if images:
         raise VisionUnsupported("claude-cli")
-    claude_bin = shutil.which("claude")
+    claude_bin = find_claude()
     if not claude_bin:
         raise RuntimeError("claude not on PATH")
     model = os.environ.get("AAKA_CLAUDE_MODEL", "claude-haiku-4-5")
@@ -198,6 +254,20 @@ _PROVIDERS = {
     "anthropic": anthropic,
     "claude-cli": claude_cli,
 }
+
+
+def local_fallback_provider(failed: str, images: Images = None) -> "str | None":
+    """A provider that can stand in when `failed` is out of budget, or None.
+
+    Only `claude-cli` qualifies: it bills against a subscription, not the API
+    key that just ran dry, and it exists only where a `claude` binary is
+    installed — so this is a no-op on a bare sensor and a real rescue on the
+    executor. It cannot take images."""
+    if failed == "claude-cli" or images:
+        return None
+    if os.environ.get("AAKA_LLM_LOCAL_FALLBACK", "1").strip().lower() in ("0", "false", "no", "off"):
+        return None
+    return "claude-cli" if find_claude() else None
 _VISION_PROVIDERS = {"gemini", "anthropic"}
 
 
