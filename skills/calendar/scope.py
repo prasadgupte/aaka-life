@@ -24,7 +24,7 @@ import aaka_config
 def _mentions(text: str, name: str) -> bool:
     """Word-bounded, case-insensitive name match — the same rule
     `analyze_event_title` uses, so an event that renders *Ari* is one that
-    is scoped to him."""
+    is scoped to them."""
     if not name or not text:
         return False
     return re.search(rf"(?<!\w){re.escape(name)}(?!\w)", text, re.I) is not None
