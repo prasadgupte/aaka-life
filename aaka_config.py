@@ -635,6 +635,38 @@ def member_is_admin(member_id: str) -> bool:
     return bool(m.get("admin", False)) if m else False
 
 
+def member_calendar_scope(member_id: str) -> str:
+    """'all' → the member's views carry the whole family calendar; 'mine' →
+    only the events that concern them (see skills/calendar/sidecar_sync.py
+    `event_involves_member`). Explicit `calendar_scope:` in aaka.yaml wins;
+    otherwise admins see everything and every other human sees their own.
+    The household pseudo-member and the bot see everything (they *are* the
+    family view). Unknown ids → 'mine', the safe default."""
+    m = next((x for x in members() if x.get("id") == member_id), None)
+    if m is None:
+        return "mine"
+    explicit = str(m.get("calendar_scope") or "").strip().lower()
+    if explicit in ("all", "mine"):
+        return explicit
+    if m.get("admin") or m.get("role") in ("admin", "family", "bot"):
+        return "all"
+    return "mine"
+
+
+def member_calendar_file(kind: str, member_id: str):
+    """Path of a member's `today`/`weekly` markdown, or None if there is nothing
+    they may read. The per-member file (today_<id>.md) wins; the family-wide
+    file is a fallback for 'all'-scope members only — a scoped member must
+    never be handed the whole family's day because their own file is missing."""
+    per_member = CALENDAR_DIR / f"{kind}_{member_id}.md"
+    if per_member.exists():
+        return per_member
+    if member_calendar_scope(member_id) != "all":
+        return None
+    family = CALENDAR_DIR / f"{kind}.md"
+    return family if family.exists() else None
+
+
 def member_can_access_shared(member_id: str) -> bool:
     """Return True if member is allowed to access shared lists (default: True).
 

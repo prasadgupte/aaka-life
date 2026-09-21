@@ -16,6 +16,10 @@ members:
   # signal: E.164 format or a Signal uuid (optional — omit if Signal not used)
   #         (`signal_number:` is accepted as an alias)
   # role: "admin" gets all commands; "member" gets a filtered set
+  # calendar_scope: (optional) "all" | "mine" — which family-calendar events land
+  #   in this member's own views and pushes. Default: admins see everything,
+  #   everyone else only events that name them / list their email / address
+  #   the household. See docs/manual.md → "Who sees what".
   # namespace: short slug used for vault subdirs and log prefixes — lowercase, no spaces
   # email: used for OAuth token selection and email-based features (optional)
   #
@@ -47,6 +51,7 @@ members:
     # signal: "+491751234567"         # (optional)
     role: member
     namespace: bob
+    # calendar_scope: all            # (optional) let a non-admin see the whole family calendar
 
 calendar:
   # default_id: the calendar used for new events if not otherwise specified

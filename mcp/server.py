@@ -504,11 +504,10 @@ def preview_reminders(date: str = "", member: str = "") -> dict:
         when = _dt.date.fromisoformat(date) if date else _dt.date.today()
     except ValueError:
         return {"ok": False, "error": f"bad date {date!r}, expected YYYY-MM-DD"}
-    cal = _cfg.CALENDAR_DIR
-    path = cal / f"today_{member}.md" if member else cal / "today.md"
-    if not path.exists():
-        path = cal / "today.md"
-    raw = path.read_text() if path.exists() else ""
+    # A member's own file, with the family-wide fallback for admins only —
+    # the same rule the sensor applies (aaka_config.member_calendar_file).
+    path = _cfg.member_calendar_file("today", member) if member else _cfg.CALENDAR_DIR / "today.md"
+    raw = path.read_text() if path and path.exists() else ""
     return {"ok": True, "date": when.isoformat(), "member": member or "(all)",
             "would_fire": rules.due(raw, date=when, member=member),
             "calendar_available": bool(raw)}

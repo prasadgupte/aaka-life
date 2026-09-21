@@ -3059,6 +3059,9 @@ check "tool_runner: manifest → run → structured result → log → cron/plac
 check "reminders: event-conditional + weekday rules, unless, scoping, bad input" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' skills/reminders/test_rules.py"
 
+check "calendar scope: non-admin members see only their own events (sync files, pushes, task block)" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' skills/calendar/test_scope.py"
+
 check "config getters survive empty/minimal config (no KeyError; read system.*)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"
 import aaka_config as c

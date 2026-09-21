@@ -15,7 +15,7 @@ Public API:
   list_completed(since)       → list[dict]
   find_by_title(query)        → dict | None
   format_tasks(tasks, label)  → str
-  summary_for_push()          → str
+  summary_for_push(owner)     → str
   update_task_by_num(n, upd)  → dict
   delete_task_by_num(n)       → dict
   recreate_recurring(task)    → dict | None
@@ -434,13 +434,18 @@ def snooze_all(days: int, due_filter: str = "all") -> int:
     return count
 
 
-def summary_for_push() -> str:
-    """Compact task summary for the morning push — overdue + due today + stale undated (max 8 items)."""
+def summary_for_push(owner: str = "") -> str:
+    """Compact task summary for the morning push — overdue + due today + stale undated (max 8 items).
+
+    `owner` (a member id) narrows it to that member's tasks plus unowned ones —
+    the view a scoped member gets; the default is the whole family's list."""
     today = datetime.date.today()
     today_iso = today.isoformat()
     stale_cutoff = (today - datetime.timedelta(days=7)).isoformat()
     tasks = _load()
     visible = [t for t in tasks if _is_visible(t)]
+    if owner:
+        visible = [t for t in visible if not t.get("owner") or t.get("owner") == owner]
     overdue = [t for t in visible if t.get("due_date") and t["due_date"] < today_iso]
     due_today = [t for t in visible if t.get("due_date") == today_iso]
     stale_undated = [t for t in visible if not t.get("due_date") and (t.get("created_at") or today_iso) <= stale_cutoff]
