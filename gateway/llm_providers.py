@@ -296,9 +296,12 @@ def gateway(prompt: str, timeout: int = 60, images: Images = None) -> str:
         gateway_url(), data=json.dumps(body).encode(), method="POST",
         headers={"Content-Type": "application/json", "X-Agent-Key": key},
     )
+    # Outlast the endpoint's worst case (claude 120 s / 180 s with images, then
+    # its own 60 s Gemini rescue) so a slow run isn't cut off client-side while
+    # the gateway completes and logs "ok".
+    floor = 250 if images else 190
     try:
-        # The gateway's own claude/gemini timeouts are 120–180 s; give it room.
-        with urllib.request.urlopen(req, timeout=max(timeout, 130)) as resp:
+        with urllib.request.urlopen(req, timeout=max(timeout, floor)) as resp:
             data = json.loads(resp.read())
     except urllib.error.HTTPError as exc:
         detail = exc.read()[:300].decode("utf-8", "replace")

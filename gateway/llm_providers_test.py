@@ -205,10 +205,11 @@ def main():
     check("gateway: asks for text, complexity low (= Haiku)",
           cap["body"]["response_format"] == "text" and cap["body"]["complexity"] == "low")
     check("gateway: no images key when none given", "images" not in cap["body"])
-    check("gateway: waits at least as long as the endpoint's own claude timeout", cap["timeout"] >= 120)
+    check("gateway: outlasts the endpoint's claude (120 s) + Gemini rescue (60 s)", cap["timeout"] >= 190)
     lp.gateway("see", images=[{"data": "AAAA", "media_type": "image/jpeg", "label": "q"}])
     check("gateway: images pass through with media_type + label",
           cap["body"]["images"] == [{"data": "AAAA", "media_type": "image/jpeg", "label": "q"}])
+    check("gateway: with images, outlasts 180 s claude + 60 s rescue", cap["timeout"] >= 250)
     os.environ["AAKA_LLM_GATEWAY_URL"] = "http://10.0.0.5:1/v1/llm"
     lp.gateway("x")
     check("gateway: AAKA_LLM_GATEWAY_URL overrides", cap["url"] == "http://10.0.0.5:1/v1/llm")
