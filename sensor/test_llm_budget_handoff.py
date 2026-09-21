@@ -260,6 +260,18 @@ def test_sync_merge():
         check("sync: sensor 'confirmed' is adopted on a local awaiting_confirm item", got["status"] == "confirmed")
         check("sync: …together with the sensor-edited payload", "edited" in got["payload"])
         check("sync: it is now what the executor consumes", any(i["id"] == item_id for i in q.read_pending()))
+
+        # the sensor executed it itself (VPS-direct calendar write): mirror 'done'
+        item2 = q.write_item(intent="add_event", raw_message="/cal y", sender="101010001",
+                             channel_id="101010001", source="telegram", payload={"summary": "y"})
+        q.update_status(item2, "awaiting_confirm")
+        row2 = dict(conn.execute("SELECT * FROM queue_items WHERE id = ?", (item2,)).fetchone())
+        row2.update(status="done", updated_at="2999-01-02T00:00:00Z")
+        R.stdout = json.dumps([row2])
+        vs._pull_queue_rows(cfg)
+        got2 = conn.execute("SELECT status FROM queue_items WHERE id = ?", (item2,)).fetchone()
+        check("sync: a sensor-side 'done' is mirrored onto a local awaiting_confirm item (no ghost rows)",
+              got2["status"] == "done")
     finally:
         vs._push_to_vps, vs._ssh_run = real_push, real_ssh
 

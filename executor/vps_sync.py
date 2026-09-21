@@ -180,14 +180,17 @@ def _pull_queue_rows(cfg: SyncConfig) -> int:
                     "UPDATE queue_items SET status = 'cancelled', updated_at = ? WHERE id = ?",
                     (row_updated, rid),
                 )
-            elif vps_status == "confirmed" and local_status == "awaiting_confirm":
+            elif vps_status in ("confirmed", "done", "error") and local_status == "awaiting_confirm":
                 # An item this side put up for confirmation and the sender
-                # approved on the sensor. Take the sensor's payload too — a
-                # "yes 1 3" / "alone" reply edits it before confirming.
+                # answered on the sensor: 'confirmed' → we execute it; 'done' /
+                # 'error' → the sensor executed it itself (VPS-direct calendar
+                # write) and our copy just mirrors the outcome instead of
+                # sitting in awaiting_confirm forever. Take the sensor's
+                # payload too — "yes 1 3" / "alone" edit it before confirming.
                 conn.execute(
-                    "UPDATE queue_items SET status = 'confirmed', payload = ?, updated_at = ? "
+                    "UPDATE queue_items SET status = ?, payload = ?, updated_at = ? "
                     "WHERE id = ?",
-                    (row.get("payload", existing_payload(conn, rid)), row_updated, rid),
+                    (vps_status, row.get("payload") or existing_payload(conn, rid), row_updated, rid),
                 )
 
     conn.commit()
