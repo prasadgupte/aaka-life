@@ -409,10 +409,8 @@ def _exec_add_event_home(payload: dict) -> dict:
     item_id = write_item(intent=intent, raw_message=raw, sender=sender, channel_id=channel,
                          source=source, payload=item_payload)
     update_status(item_id, "awaiting_confirm")
-    markup = {"inline_keyboard": [[
-        {"text": "Yes ✅", "callback_data": "yes"},
-        {"text": "Cancel ❌", "callback_data": "cancel"},
-    ]]}
+    from aaka_queue.queue import confirm_markup
+    markup = confirm_markup(item_id)   # "yes #<id>" — binds the tap to THIS item
     # reply_markup on the outbox row is what makes vps_sync ship the
     # pending_confirm alongside it (see _push_outbox); Signal renders it as
     # numbered options, WhatsApp ignores it.
@@ -676,10 +674,8 @@ def _send_approval_request(item: dict) -> None:
             preview = f"🔔 *Approval required ({intent})*"
 
         preview = f"{preview}\n\nApprove?\n`#{item_id[:8]}`"
-        markup = {"inline_keyboard": [[
-            {"text": "Yes ✅", "callback_data": "yes"},
-            {"text": "Cancel ❌", "callback_data": "cancel"},
-        ]]}
+        from aaka_queue.queue import confirm_markup
+        markup = confirm_markup(item_id)
         write_outbox(channel_id=channel, sender=sender, text=preview,
                      source=source, reply_markup=markup)
         set_pending_confirm(sender, item_id)
@@ -728,10 +724,8 @@ def _exec_confirm_approval(payload: dict) -> dict:
     else:
         preview = f"🔔 *Approval required ({intent})*\n\nApprove?\n`#{item_id[:8]}`"
 
-    markup = {"inline_keyboard": [[
-        {"text": "Post ✅", "callback_data": "yes"},
-        {"text": "Cancel ❌", "callback_data": "cancel"},
-    ]]}
+    from aaka_queue.queue import confirm_markup
+    markup = confirm_markup(item_id, "Post ✅")
     write_outbox(channel_id=channel_id, sender=sender, text=preview, source="telegram", reply_markup=markup)
     set_pending_confirm(sender, item_id)
     return {"text": f"✅ Approval buttons re-sent for #{item_id[:8]}"}
@@ -1248,6 +1242,13 @@ def process_all() -> int:
     reset_count = reset_stuck_executing()
     if reset_count:
         print(f"[worker] reset {reset_count} stuck 'executing' item(s) → 'confirmed'")
+    try:
+        from aaka_queue.queue import expire_stale_awaiting
+        _stale = expire_stale_awaiting(hours=24)
+        if _stale:
+            print(f"[worker] cancelled {_stale} awaiting_confirm item(s) nobody answered in 24h")
+    except Exception as _e:
+        print(f"[warn] expire_stale_awaiting: {_e}", file=sys.stderr)
 
     # Promote scheduled items whose time has arrived to 'confirmed'
     from aaka_queue.queue import read_scheduled_ready

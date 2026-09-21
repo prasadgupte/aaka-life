@@ -360,24 +360,73 @@ def increment_retry(item_id: str) -> int:
 # ── Pending-confirm state ─────────────────────────────────────────────────────
 
 def set_pending_confirm(sender: str, item_id: str, expires_minutes: int = 30) -> None:
+    """Point the sender's ONE pending-confirm slot at `item_id` (a bare "yes"
+    binds to it). An item the slot previously pointed at stays awaiting_confirm:
+    it is still reachable by hash — the inline keyboards carry it
+    (`confirm_markup`), and a typed `yes #abc12345` works — so two previews in
+    flight no longer silently kill the first. Untouched items are swept by
+    `expire_stale_awaiting` after a day."""
     expires = (
         datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
     with _connect() as conn:
-        # Cancel any existing awaiting_confirm item for this sender before replacing
-        old = conn.execute(
-            "SELECT item_id FROM pending_confirms WHERE sender = ?", (sender,)
-        ).fetchone()
-        if old and old["item_id"] != item_id:
-            conn.execute(
-                "UPDATE queue_items SET status = 'cancelled', updated_at = ? "
-                "WHERE id = ? AND status = 'awaiting_confirm'",
-                (_now(), old["item_id"]),
-            )
         conn.execute(
             "INSERT OR REPLACE INTO pending_confirms (sender, item_id, expires_at) VALUES (?,?,?)",
             (sender, item_id, expires),
         )
+
+
+def confirm_markup(item_id: str, yes_label: str = "Yes ✅", no_label: str = "Cancel ❌") -> dict:
+    """Inline keyboard whose callback_data names the item (`yes #abc12345`), so a
+    tap confirms THAT item even if the sender's pending slot has moved on or
+    was consumed. Telegram renders buttons; Signal numbers them; WhatsApp
+    ignores them (the user types the same text)."""
+    h = item_id[:8]
+    return {"inline_keyboard": [[
+        {"text": yes_label, "callback_data": f"yes #{h}"},
+        {"text": no_label, "callback_data": f"cancel #{h}"},
+    ]]}
+
+
+def list_awaiting(sender: str) -> list[dict]:
+    """The sender's queue items still waiting for a yes/cancel, oldest first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM queue_items WHERE sender = ? AND status = 'awaiting_confirm' "
+            "ORDER BY created_at", (sender,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def find_awaiting_by_prefix(sender: str, prefix: str) -> dict | None:
+    """The sender's awaiting_confirm item whose id starts with `prefix` (the
+    `#abc12345` shown under every preview), or None."""
+    prefix = (prefix or "").strip().lstrip("#").lower()
+    if len(prefix) < 6:
+        return None
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM queue_items WHERE sender = ? AND status = 'awaiting_confirm' "
+            "AND id LIKE ? ORDER BY created_at DESC LIMIT 1", (sender, prefix + "%")
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def expire_stale_awaiting(hours: int = 24) -> int:
+    """Cancel awaiting_confirm items nobody answered within `hours`. Returns
+    the count. Replaces the old cancel-on-replace in set_pending_confirm.
+    An agent approval scheduled for later (`schedule_at` still ahead) is left
+    alone — the answer isn't overdue until its slot is."""
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE queue_items SET status = 'cancelled', updated_at = ? "
+            "WHERE status = 'awaiting_confirm' AND created_at < ? "
+            "AND (schedule_at IS NULL OR schedule_at = '' OR schedule_at < ?)",
+            (_now(), cutoff, now.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        )
+        return cur.rowcount
 
 
 def get_pending_confirm(sender: str) -> dict | None:

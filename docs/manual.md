@@ -64,6 +64,16 @@ Confirm? Reply: yes / cancel
 
 Reply `yes` or 👍 to save, `cancel` or 👎 to discard.
 
+Every preview ends with its id (`#d32ac322`) and its buttons carry it, so
+**several previews can be open at once** — tapping Yes on each confirms each.
+Typed replies work the same: `yes #d32ac322`, `cancel #d32ac322`. A bare `yes`
+binds to the only open preview, or asks *which one?* with the list. Previews
+nobody answers are cancelled after 24 h.
+
+If aaka can't place a reply — "Sorry, I didn't understand that" — the message
+now quotes what it received and its message id (`msg 2757: “yes”`), so you can
+tell which message didn't land.
+
 **When the cloud model is out of budget** (Gemini's monthly spend cap or daily
 quota — a `429` that no retry will clear), the sensor doesn't make you retry:
 it answers `⏳ Cloud model is over budget … handing this to the home machine`

@@ -179,7 +179,15 @@ draft = client.gmail_create_draft(
 | `post_linkedin(text, image_path, schedule_at, visibility)` | `dict` (approval) | No |
 | `get_approval_status(approval_id)` | `dict` (status) | No |
 
-### Scheduled outbound — email, Telegram, WhatsApp
+**Approval lifetime.**
+
+An approval request that nobody answers is **cancelled after 24 h** (`expire_stale_awaiting`,
+executor tick) — `GET /v1/approvals/{id}` then returns `cancelled`. One scheduled for later
+(`schedule_at` ahead) is left alone until its slot has passed. Several approvals can be open at
+once: the preview's buttons carry the item hash (`yes #d32ac322`), so each answer binds to its
+own item.
+
+## Scheduled outbound — email, Telegram, WhatsApp
 
 Send to any channel at a specific future time. Delivered by the always-on VPS sensor (`sensor/scheduled_sender.py`, every 60s) — fires even when Mac is asleep.
 
