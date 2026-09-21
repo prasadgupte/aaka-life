@@ -525,6 +525,22 @@ for fname in today.md weekly.md; do
         fi
     fi
 done
+# Scoped members (non-admin: kids, grandparents) read ONLY their own
+# today_<id>.md / weekly_<id>.md — there is no family-wide fallback for them,
+# so a missing per-member file means an empty brief, not a leaked one.
+_SCOPE_PY="$AAKA_BASE/venv/bin/python3"; [ -x "$_SCOPE_PY" ] || _SCOPE_PY="python3"
+_scoped=$(cd "$AAKA_BASE" && AAKA_CONFIG_DIR="$AAKA_CONFIG_DIR" "$_SCOPE_PY" -c "
+import aaka_config as c
+print(' '.join(m['id'] for m in c.members()
+      if m.get('role') not in ('bot','family') and c.member_calendar_scope(m['id']) == 'mine'))
+" 2>/dev/null)
+for mid in $_scoped; do
+    if [[ -f "$AAKA_CONFIG_DIR/data/calendar/today_$mid.md" && -f "$AAKA_CONFIG_DIR/data/calendar/weekly_$mid.md" ]]; then
+        ok "scoped member $mid has own today_/weekly_ files (no family-wide fallback)"
+    else
+        fail "scoped member $mid has NO per-member calendar file — their brief will be empty until the next sync"
+    fi
+done
 # launchd status (local only)
 if [ "$INSTANCE" = "local" ]; then
     result=$(launchctl list com.aaka.calendarsync 2>/dev/null || echo "NOT_LOADED")

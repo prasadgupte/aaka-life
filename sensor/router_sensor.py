@@ -959,12 +959,11 @@ def _build_today_schedule(mid: str, sender: str = "", *, include_tasks: bool = T
     schedule — keep them mutually exclusive to avoid duplication.
     """
     import urllib.parse
-    CALENDAR = aaka_config.CALENDAR_DIR
 
-    path = CALENDAR / f"today_{mid}.md"
-    if not path.exists():
-        path = CALENDAR / "today.md"
-    if not path.exists():
+    # Per-member file, or the family-wide one for admins only — a scoped
+    # member's view is what the sync wrote for them (skills/calendar/scope.py).
+    path = aaka_config.member_calendar_file("today", mid)
+    if path is None:
         return "📅 No calendar data. Sync pending."
 
     raw = path.read_text()

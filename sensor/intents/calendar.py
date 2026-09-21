@@ -7,7 +7,6 @@ HANDLES = frozenset({"today_schedule", "weekly_schedule"})
 
 
 def handle(intent: str, message: str, sender: str, channel_id: str, source: str) -> str:
-    CALENDAR = aaka_config.CALENDAR_DIR
 
     if intent in ("today_schedule", "weekly_schedule"):
         sender_member = aaka_config.member_by_sender(sender)
@@ -50,10 +49,8 @@ def handle(intent: str, message: str, sender: str, channel_id: str, source: str)
             issues = analyze_fix("week", member_id=member_arg)
             save_fix_list(sender, issues)
             return format_fix_list(issues)
-        path = CALENDAR / f"weekly_{mid}.md"
-        if not path.exists():
-            path = CALENDAR / "weekly.md"
-        if not path.exists():
+        path = aaka_config.member_calendar_file("weekly", mid)
+        if path is None:
             return "📅 No calendar data. Sync pending."
         raw = path.read_text()
         from skills.calendar.fix_analyzer import analyze_fix, merge_fixes_inline, save_fix_list

@@ -1,7 +1,7 @@
 """
 Aaka — Morning Brief Nudge
 
-Reads today_{member}.md (or today.md fallback) and sends a compact schedule
+Reads today_{member}.md (today.md fallback for admins only) and sends a compact schedule
 summary at 07:00–08:00 local time. Max 1 per day per member.
 """
 
@@ -36,11 +36,8 @@ def _reminders_block(raw: str, member_id: str) -> str:
 
 def build_morning_brief(member_id: str) -> str | None:
     """Return the morning brief message text, or None if nothing to send."""
-    CALENDAR = aaka_config.CALENDAR_DIR
-    path = CALENDAR / f"today_{member_id}.md"
-    if not path.exists():
-        path = CALENDAR / "today.md"
-    if not path.exists():
+    path = aaka_config.member_calendar_file("today", member_id)
+    if path is None:
         return None
 
     raw = path.read_text()

@@ -361,7 +361,11 @@ def _ev_time(ev: dict, key: str) -> str:
 
 
 def _build_cal_to_members() -> dict:
-    """Return {cal_id: [member_id, ...]} mapping."""
+    """Return {cal_id: [member_id, ...]} mapping — who a calendar *feeds*.
+
+    The family calendar feeds everyone, but that is the ceiling, not the view:
+    `_members_for_event` then keeps only the members allowed to see each event
+    (admins: all of it; a scoped member: the events that concern them)."""
     family_id = aaka_config.calendar_id()
     all_ids = [m["id"] for m in aaka_config.members()]
     cal_to_members: dict = {}
@@ -372,9 +376,31 @@ def _build_cal_to_members() -> dict:
     return cal_to_members
 
 
+def _build_own_cal_members() -> dict:
+    """{cal_id: [member_id, ...]} restricted to calendars configured *on* the
+    member (their personal/work/… blocks) — those are theirs unconditionally."""
+    own: dict = {}
+    for m in aaka_config.members():
+        for cal_id in aaka_config.member_calendar_ids(m["id"]):
+            own.setdefault(cal_id, []).append(m["id"])
+    return own
+
+
+def _members_for_event(ev: dict, cal_to_members: dict, own_cal_members: dict,
+                       roster: dict, household: str) -> list:
+    from skills.calendar.scope import members_for_event
+    cal_id = ev.get("_cal_id", "")
+    return members_for_event(ev, cal_to_members.get(cal_id, []),
+                             own_cal_members.get(cal_id, []),
+                             roster=roster, household_name=household)
+
+
 def write_member_events_cache(events: list):
     """Write member_events.json: {member_id: [event, ...]} for conflict detection."""
     cal_to_members = _build_cal_to_members()
+    own_cal_members = _build_own_cal_members()
+    roster = {m["id"]: m for m in aaka_config.members()}
+    household = aaka_config.group_name()
     index = {m["id"]: [] for m in aaka_config.members()}
     for ev in events:
         cal_id = ev.get("_cal_id", "")
@@ -389,20 +415,26 @@ def write_member_events_cache(events: list):
             "event_id":       ev.get("id", ""),
             "calendar_id":    ev.get("_cal_id", ""),
         }
-        for member_id in cal_to_members.get(cal_id, []):
+        for member_id in _members_for_event(ev, cal_to_members, own_cal_members, roster, household):
             if member_id in index:
                 index[member_id].append(entry)
     aaka_config.MEMBER_EVENTS_CACHE.write_text(json.dumps(index, ensure_ascii=False, indent=2))
 
 
 def write_member_md_files(events: list):
-    """Write today_<member>.md and weekly_<member>.md for each member."""
+    """Write today_<member>.md and weekly_<member>.md for each member.
+
+    A scoped member's files carry only their own events (see scope.py); the
+    files still exist for every member, so readers never fall back to the
+    family-wide today.md/weekly.md for them."""
     from collections import defaultdict
     cal_to_members = _build_cal_to_members()
+    own_cal_members = _build_own_cal_members()
+    roster = {m["id"]: m for m in aaka_config.members()}
+    household = aaka_config.group_name()
     member_events: dict = defaultdict(list)
     for ev in events:
-        cal_id = ev.get("_cal_id", "")
-        for member_id in cal_to_members.get(cal_id, []):
+        for member_id in _members_for_event(ev, cal_to_members, own_cal_members, roster, household):
             member_events[member_id].append(ev)
 
     today_cutoff = datetime.datetime.now(datetime.UTC).replace(

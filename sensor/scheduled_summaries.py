@@ -62,6 +62,18 @@ def _read_md(filename: str) -> str:
     return path.read_text().strip() if path.exists() else ""
 
 
+def _member_view(mid: str, member_text: str, group_text: str, empty_text: str) -> str:
+    """What a member's DM carries. The family-wide `group_text` is only a
+    fallback for members whose scope is 'all' (a missing per-member file
+    before the first sync); a scoped member never receives it — they get
+    their own text or an honest "nothing for you"."""
+    if member_text:
+        return member_text
+    if aaka_config.member_calendar_scope(mid) == "all":
+        return group_text
+    return empty_text
+
+
 def _format_tomorrow_events() -> str:
     """Build a summary of tomorrow's events from the weekly cache."""
     tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
@@ -197,7 +209,8 @@ def send_saturday_heads_up(dry_run: bool = False) -> None:
     # Per-member DM
     targets = _member_targets()
     for mid, (handle, channel) in targets.items():
-        member_content = _read_md(f"weekly_{mid}.md") or content
+        member_content = _member_view(mid, _read_md(f"weekly_{mid}.md"), content,
+                                      "Nothing on your calendar this week.")
         member_issues = analyze_fix("week", member_id=mid)
         member_merged = merge_fixes_inline(member_content, member_issues)
         member_text = f"{REPLY_PREFIX}📣 Your week ahead:\n\n{member_merged}"
@@ -252,10 +265,13 @@ def send_sunday_overview(dry_run: bool = False) -> None:
 
     targets = _member_targets()
     for mid, (handle, channel) in targets.items():
-        member_content = _read_md(f"weekly_{mid}.md") or content
+        member_content = _member_view(mid, _read_md(f"weekly_{mid}.md"), content,
+                                      "Nothing on your calendar this week.")
         member_issues = analyze_fix("week", member_id=mid)
         member_merged = merge_fixes_inline(member_content, member_issues)
-        member_text = f"{REPLY_PREFIX}📅 Your week:\n\n{member_merged}{completion_digest}"
+        # The completion digest is the family's task ledger — admins only.
+        digest = completion_digest if aaka_config.member_calendar_scope(mid) == "all" else ""
+        member_text = f"{REPLY_PREFIX}📅 Your week:\n\n{member_merged}{digest}"
         _send_to_outbox(handle, member_text, source=channel, dry_run=dry_run)
 
     print(f"[ok] Sunday overview queued (group={'yes' if group_id else 'no'}, members={len(targets)})")
@@ -348,12 +364,19 @@ def send_daily_morning(dry_run: bool = False) -> None:
     header = f"{REPLY_PREFIX}☀️ {date_header}"
 
     from skills.tasks.local_tasks import summary_for_push
-    task_block = summary_for_push()
+    family_task_block = summary_for_push()
 
     for mid, (handle, channel) in targets.items():
         schedule = _build_today_schedule(mid, sender=handle, include_tasks=False)
         calendar_part, bday_part = _split_birthdays(schedule)
         calendar_part = _flag_first_event(calendar_part)
+
+        # A scoped member gets only the tasks addressed to them (or to no one);
+        # the family-wide list is the admins' view.
+        if aaka_config.member_calendar_scope(mid) == "all":
+            task_block = family_task_block
+        else:
+            task_block = summary_for_push(owner=mid)
 
         text = header + "\n\n" + calendar_part
         if task_block:
@@ -511,7 +534,8 @@ def send_daily_tomorrow(dry_run: bool = False) -> None:
 
     targets = _member_targets()
     for mid, (handle, channel) in targets.items():
-        member_content = _format_member_tomorrow(mid) or content
+        member_content = _member_view(mid, _format_member_tomorrow(mid), content,
+                                      "Nothing on your calendar tomorrow.")
         member_text = f"{REPLY_PREFIX}📅 Your tomorrow:\n\n{member_content}"
         _send_to_outbox(handle, member_text, source=channel, dry_run=dry_run)
 

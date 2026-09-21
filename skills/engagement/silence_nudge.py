@@ -21,13 +21,10 @@ def build_silence_nudge(member_id: str) -> str | None:
     name = m_obj.get("name", member_id.capitalize())
 
     # Pick next notable event from weekly.md
-    CALENDAR = aaka_config.CALENDAR_DIR
-    path = CALENDAR / f"weekly_{member_id}.md"
-    if not path.exists():
-        path = CALENDAR / "weekly.md"
+    path = aaka_config.member_calendar_file("weekly", member_id)
 
     event_teaser = ""
-    if path.exists():
+    if path is not None:
         raw = path.read_text()
         # Find the next timed event with an emoji (more interesting events)
         for line in raw.splitlines():

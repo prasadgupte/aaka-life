@@ -17,6 +17,21 @@ what's on tonight?
 
 Response is instant (zero LLM tokens) — reads a local Markdown file.
 
+### Who sees what
+
+Admins (`admin: true` in `aaka.yaml`) see the whole family calendar. Every
+other member — a kid, a grandparent — sees **only what concerns them**: an
+event that names them in its title or description, lists their email as an
+attendee, or is addressed to the household (`<Household> @ …`), plus
+everything on their own calendars. That scope applies everywhere their view
+is built — `/today`, `/week`, the 07:00 brief, the 21:00 "Your tomorrow", the
+Saturday/Sunday week pushes — and the morning task block shrinks to their own
+(and unowned) tasks. An empty day says "Nothing on your calendar tomorrow."
+rather than showing the family's.
+
+Override per member with `calendar_scope: all` (a teen who runs the family
+logistics) or `calendar_scope: mine` (a parent who wants the quiet view).
+
 ---
 
 ## Day schedule
