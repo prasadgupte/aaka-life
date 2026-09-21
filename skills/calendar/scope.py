@@ -60,18 +60,28 @@ def event_involves_member(ev: dict, member: dict, *, household_name: str = "") -
     return False
 
 
+def member_scopes() -> dict[str, str]:
+    """{member_id: 'all'|'mine'} for the whole roster — compute once per sync
+    pass and hand it to `members_for_event`; `aaka_config.members()` re-reads
+    the dynamic roster from disk on every call."""
+    return {m["id"]: aaka_config.member_calendar_scope(m["id"]) for m in aaka_config.members()}
+
+
 def members_for_event(ev: dict, cal_members: list[str], own_cal_members: list[str],
                       *, roster: dict[str, dict] | None = None,
-                      household_name: str | None = None) -> list[str]:
+                      household_name: str | None = None,
+                      scopes: dict[str, str] | None = None) -> list[str]:
     """Filter the members a calendar feeds (`cal_members`) down to those who may
     see this particular event. Members in `own_cal_members` (the calendar is
     one of theirs) and members whose scope is 'all' always pass; the rest need
-    `event_involves_member`."""
+    `event_involves_member`. Pass `roster` and `scopes` (see `member_scopes`)
+    when calling per event."""
     roster = roster if roster is not None else {m["id"]: m for m in aaka_config.members()}
+    scopes = scopes if scopes is not None else member_scopes()
     household = aaka_config.group_name() if household_name is None else household_name
     out = []
     for mid in cal_members:
-        if mid in own_cal_members or aaka_config.member_calendar_scope(mid) == "all":
+        if mid in own_cal_members or scopes.get(mid, "mine") == "all":
             out.append(mid)
             continue
         m = roster.get(mid)

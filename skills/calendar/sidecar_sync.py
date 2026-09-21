@@ -386,22 +386,30 @@ def _build_own_cal_members() -> dict:
     return own
 
 
-def _members_for_event(ev: dict, cal_to_members: dict, own_cal_members: dict,
-                       roster: dict, household: str) -> list:
+def _scope_ctx() -> dict:
+    """Everything `_members_for_event` needs, computed once per sync pass
+    (the roster and each member's scope come from disk)."""
+    from skills.calendar.scope import member_scopes
+    return {"cal_to_members": _build_cal_to_members(),
+            "own_cal_members": _build_own_cal_members(),
+            "roster": {m["id"]: m for m in aaka_config.members()},
+            "scopes": member_scopes(),
+            "household": aaka_config.group_name()}
+
+
+def _members_for_event(ev: dict, ctx: dict) -> list:
     from skills.calendar.scope import members_for_event
     cal_id = ev.get("_cal_id", "")
-    return members_for_event(ev, cal_to_members.get(cal_id, []),
-                             own_cal_members.get(cal_id, []),
-                             roster=roster, household_name=household)
+    return members_for_event(ev, ctx["cal_to_members"].get(cal_id, []),
+                             ctx["own_cal_members"].get(cal_id, []),
+                             roster=ctx["roster"], household_name=ctx["household"],
+                             scopes=ctx["scopes"])
 
 
 def write_member_events_cache(events: list):
     """Write member_events.json: {member_id: [event, ...]} for conflict detection."""
-    cal_to_members = _build_cal_to_members()
-    own_cal_members = _build_own_cal_members()
-    roster = {m["id"]: m for m in aaka_config.members()}
-    household = aaka_config.group_name()
-    index = {m["id"]: [] for m in aaka_config.members()}
+    ctx = _scope_ctx()
+    index = {mid: [] for mid in ctx["roster"]}
     for ev in events:
         cal_id = ev.get("_cal_id", "")
         cal_type = aaka_config.calendar_type(cal_id)
@@ -415,7 +423,7 @@ def write_member_events_cache(events: list):
             "event_id":       ev.get("id", ""),
             "calendar_id":    ev.get("_cal_id", ""),
         }
-        for member_id in _members_for_event(ev, cal_to_members, own_cal_members, roster, household):
+        for member_id in _members_for_event(ev, ctx):
             if member_id in index:
                 index[member_id].append(entry)
     aaka_config.MEMBER_EVENTS_CACHE.write_text(json.dumps(index, ensure_ascii=False, indent=2))
@@ -428,13 +436,10 @@ def write_member_md_files(events: list):
     files still exist for every member, so readers never fall back to the
     family-wide today.md/weekly.md for them."""
     from collections import defaultdict
-    cal_to_members = _build_cal_to_members()
-    own_cal_members = _build_own_cal_members()
-    roster = {m["id"]: m for m in aaka_config.members()}
-    household = aaka_config.group_name()
+    ctx = _scope_ctx()
     member_events: dict = defaultdict(list)
     for ev in events:
-        for member_id in _members_for_event(ev, cal_to_members, own_cal_members, roster, household):
+        for member_id in _members_for_event(ev, ctx):
             member_events[member_id].append(ev)
 
     today_cutoff = datetime.datetime.now(datetime.UTC).replace(

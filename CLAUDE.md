@@ -292,8 +292,8 @@ Register an agent: `python3 admin/register_agent.py <id> "<Display Name>"`
 
 | Intent | Trigger | Shortcut | Handler |
 |---|---|---|---|
-| `today_schedule` | today, /today | `d` | reads `data/calendar/today.md` (0 tokens) |
-| `weekly_schedule` | week, /week | `w` | reads `data/calendar/weekly.md` (0 tokens) |
+| `today_schedule` | today, /today | `d` | reads the sender's `data/calendar/today_<id>.md` — scoped to their own events unless they are an admin (`calendar_scope`, `skills/calendar/scope.py`); family-wide `today.md` is the fallback for admins only (0 tokens) |
+| `weekly_schedule` | week, /week | `w` | reads `data/calendar/weekly_<id>.md`, same scoping; `weekly.md` fallback for admins only (0 tokens) |
 | `health_check` | status, /status | `s` | audit tail + file mtime (0 tokens) |
 | `buy_list` | /buy, b \<list\> ?, b \<list\> add N N | `b` | sensor-side lists in `data/lists/`; `?` shows ideas pool (history + `_seed/ideas.md` by category); `add N N` adds picks from ideas; `#clear` archives done items into `## archive` section so history survives (0 tokens) |
 | `read_note` | /notes, n \<topic\> | `n` | read topic log from `data/notes/`; resolves aliases (0 tokens) |
