@@ -61,3 +61,6 @@ INSIGHTS.md
 *.bak
 *.db-shm
 *.db-wal
+
+# a queue DB copied aside (butler.db.stray-<date>, *.db.bak…) holds real messages
+*.db.*

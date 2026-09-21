@@ -133,7 +133,7 @@ Examples:
   %(prog)s "Dinner at 7"
   %(prog)s --to family-group "Dinner at 7"
   %(prog)s --channel telegram --to YOUR_TELEGRAM_ID "Alert!"
-  %(prog)s --channel whatsapp --to +4915123146203 "Hello"
+  %(prog)s --channel whatsapp --to +491700000000 "Hello"
 """,
     )
     parser.add_argument("message", help="Message text to send")
