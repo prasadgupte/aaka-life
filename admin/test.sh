@@ -3065,6 +3065,9 @@ check "calendar scope: non-admin members see only their own events (sync files, 
 check "llm provider: executor resolves to aaka's gateway (Haiku), sensor to gemini, LLM_PROVIDER overrides; gateway provider request shape + errors" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' gateway/llm_providers_test.py"
 
+check "webuntis: day verdict + late start, exams above homework, ❗ only for genuinely new items" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' tools/webuntis/test_check.py"
+
 check "confirm by hash: buttons carry the item id, several previews stay confirmable, bare yes binds/asks, fallback names the message" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_confirm_by_hash.py"
 

@@ -197,6 +197,54 @@ def main():
         check("sync: admin's weekly file has all four",
               all(w in adm_md for w in ("Dentist", "Football", "Plumber", "Trip")))
 
+    # ── parents-only blocks in a member's brief ────────────────────────────
+    # A kid got the family's birthday list in their 07:00 push (2026-09-22).
+    # Birthdays + the fix-issue merge are admin work; a scoped member's brief
+    # is just their day.
+    import sensor.router_sensor as rs
+    real_dir2 = aaka_config.CALENDAR_DIR
+    with tempfile.TemporaryDirectory() as td:
+        aaka_config.CALENDAR_DIR = Path(td)
+        rs.aaka_config.CALENDAR_DIR = Path(td)
+        try:
+            for who in (admin["id"], kid["id"]):
+                (Path(td) / f"today_{who}.md").write_text(
+                    "# Today\n_Last synced: now_\n**Monday** 1 January 2026\n"
+                    "🏠**1730** Taekwondo (1h)")
+            calls = {"fix": [], "bday": []}
+
+            def fake_analyze_fix(period, member_id=None):
+                calls["fix"].append(member_id)
+                return [{"kind": "carrier", "title": "X", "date": "2026-01-01"}]
+            import skills.calendar.fix_analyzer as fx
+            real_fix = fx.analyze_fix
+            fx.analyze_fix = fake_analyze_fix
+
+            import skills.contacts.birthday_list as bl
+            real_window = bl._load_window
+
+            def fake_window():
+                calls["bday"].append(1)
+                return []
+            bl._load_window = fake_window
+            try:
+                admin_view = rs._build_today_schedule(admin["id"])
+                n_admin_fix, n_admin_bday = len(calls["fix"]), len(calls["bday"])
+                kid_view = rs._build_today_schedule(kid["id"])
+                check("brief: admin's view runs the fix analyzer", n_admin_fix == 1)
+                check("brief: admin's view reads the birthday book", n_admin_bday == 1)
+                check("brief: a scoped member's view never touches the fix analyzer",
+                      len(calls["fix"]) == n_admin_fix)
+                check("brief: …nor the birthday book", len(calls["bday"]) == n_admin_bday)
+                check("brief: the scoped member still gets their schedule",
+                      "Taekwondo" in kid_view and "Taekwondo" in admin_view)
+            finally:
+                fx.analyze_fix = real_fix
+                bl._load_window = real_window
+        finally:
+            aaka_config.CALENDAR_DIR = real_dir2
+            rs.aaka_config.CALENDAR_DIR = real_dir2
+
     if _FAILURES:
         print(f"\n{len(_FAILURES)} failure(s)")
         sys.exit(1)

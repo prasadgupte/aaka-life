@@ -52,8 +52,41 @@ venv/bin/python3 sensor/tool_runner.py homework
 # or in chat:  /tools run homework
 ```
 
-Expected: `📚 N open homework: • Subject (due dd.mm): text …` — delivered to
+Expected: tomorrow's lessons, then exams, then homework — delivered to
 `report_to`. On bad creds you get a `🔐 needs a re-auth` alert instead of silence.
+
+## What the digest says
+
+```
+📅 23.09
+*Wed 23.09*
+  🕘 09:50–14:45 — starts 2 periods late     ← the day's shape, first
+  09:50–11:20 E · 014
+  ❌ 11:50–12:35 Gewi · 014 — Vertretung     ← status LEADS the line
+  ...
+
+📝 1 exam coming up (1 new ❗):              ← above homework: you prepare for it
+❗ *Deutsch — Di 29.09, 08:00 (in 7 days)*
+
+📚 3 open homework (1 new ❗):
+❗ *Englisch (due 24.09): Copy the vocabulary …*
+• Mathematik (due 25.09): LB S. 53 Nr. 10
+```
+
+- **Day verdict first.** All lessons cancelled → `🎉 NO SCHOOL`; some → `⚠️ N of M lessons
+  cancelled`; an after-school club still running is listed under `still on:` (a club is not a
+  lesson, so "no school" stays true and gets said).
+- **Late start.** `🕘 <first>–<last>` always; `— starts N periods late` when lessons at the
+  front of the day are missing from the plan (cancelled, or simply not this student's),
+  measured against the school's own timegrid (`getTimegridUnits`).
+- **Exams** come from the timetable the web app loads
+  (`/api/public/timetable/weekly/data` → a period with `is.exam` + an `exam` object): the
+  student account has no rights on `/api/exams` or JSON-RPC `getExams` (403 / "no right for
+  getExams()"). One request per ISO week, 4 weeks ahead. `exams` is also a mode of its own.
+- **❗ = new since the last run**, for exams and homework alike (24 h window, state in
+  `$AAKA_CONFIG_DIR/data/webuntis/{hw,exam}_seen_<member>.json`). The very first run records
+  its items as already-aged, so the run after a fresh install doesn't announce the whole
+  backlog as new.
 
 ## Notes
 - The tool prints one JSON line `{ok, summary, details, error}`; `auth_required`

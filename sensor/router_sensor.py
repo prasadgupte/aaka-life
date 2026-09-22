@@ -1034,6 +1034,10 @@ def _format_fix_detail(item: dict) -> str:
 
 # ── Today schedule handler (extracted for reuse by scheduled_summaries) ──────
 
+class _SkipFix(Exception):
+    """Internal: this member's view doesn't carry that block (see scope.py)."""
+
+
 def _build_today_schedule(mid: str, sender: str = "", *, include_tasks: bool = True) -> str:
     """Build today's schedule for a member. Returns formatted text.
 
@@ -1056,12 +1060,19 @@ def _build_today_schedule(mid: str, sender: str = "", *, include_tasks: bool = T
     raw = path.read_text()
 
     # ── Inline fix merge (conflicts, carriers, unaccepted) ─────────────
+    # Parents-only: a carrier ❓ or a double-booking is an admin's job to fix,
+    # and /fix is admin-gated anyway — a kid's schedule stays a plain list.
+    _is_admin_view = aaka_config.member_calendar_scope(mid) == "all"
     try:
+        if not _is_admin_view:
+            raise _SkipFix
         from skills.calendar.fix_analyzer import analyze_fix, merge_fixes_inline, save_fix_list
         issues = analyze_fix("today", member_id=mid)
         raw = merge_fixes_inline(raw, issues)
         if sender and issues:
             save_fix_list(sender, issues)
+    except _SkipFix:
+        pass
     except Exception:
         pass
 
@@ -1097,7 +1108,12 @@ def _build_today_schedule(mid: str, sender: str = "", *, include_tasks: bool = T
             pass
 
     # ── Today's birthdays — same renderer as /bday ──────────────────────
+    # Parents only. The contacts book is the adults' (colleagues, relatives they
+    # message, wa.me links to send a wish); for a kid it is a wall of names he
+    # can do nothing with. Same rule as the calendar: `calendar_scope: all`.
     try:
+        if not _is_admin_view:
+            raise _SkipFix
         from skills.contacts.birthday_list import (
             query as _bday_query, _load_window, _load_full, _md_to_date,
         )
@@ -1116,6 +1132,8 @@ def _build_today_schedule(mid: str, sender: str = "", *, include_tasks: bool = T
         # Seed bday list for "bday N" resolution
         if sender:
             _bday_query("", sender_id=sender)
+    except _SkipFix:
+        pass
     except Exception:
         pass
 

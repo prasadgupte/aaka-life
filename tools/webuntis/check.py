@@ -63,18 +63,25 @@ def _hw_key(h: dict) -> str:
     return str(h.get("id") or f"{h.get('lessonId')}|{h.get('dueDate')}|{(h.get('text') or '')[:40]}")
 
 
-def _hw_seen_path(member: str) -> str:
+def _seen_path(member: str, kind: str = "hw") -> str:
     cfg = os.environ.get("AAKA_CONFIG_DIR", "")
     if not cfg:
         return ""
     slug = re.sub(r"[^A-Za-z0-9_-]", "", member or "")
-    return os.path.join(cfg, "data", "webuntis", f"hw_seen{('_' + slug) if slug else ''}.json")
+    return os.path.join(cfg, "data", "webuntis", f"{kind}_seen{('_' + slug) if slug else ''}.json")
 
 
-def _mark_new(open_hw: list, member: str = "", now: "dt.datetime | None" = None) -> set:
-    """Keys of the open assignments first seen within HW_NEW_HOURS; updates the seen-file.
-    Returns an empty set when there is no state dir or no earlier run."""
-    path = _hw_seen_path(member)
+def _hw_seen_path(member: str) -> str:
+    return _seen_path(member, "hw")
+
+
+def _mark_new_keys(keys: set, path: str, hours: int, now: "dt.datetime | None" = None) -> set:
+    """Which of `keys` were first seen within `hours`, against the JSON store at
+    `path` ({key: first-seen ISO}). Updates the store.
+
+    The very first run has nothing to compare against, so it records its items
+    as already-aged and marks none: otherwise the *next* run would announce the
+    entire backlog as "new" (the bootstrap items are all < `hours` old)."""
     if not path:
         return set()
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -86,16 +93,20 @@ def _mark_new(open_hw: list, member: str = "", now: "dt.datetime | None" = None)
             seen = {}
     except Exception:
         seen = {}
-    keys = {_hw_key(h) for h in open_hw}
-    new: set = set()
+    stamp = (now - dt.timedelta(hours=hours + 1) if first_run else now).isoformat(timespec="seconds")
+    new = set()
     for k in keys:
         if k not in seen:
-            seen[k] = now.isoformat(timespec="seconds")
+            seen[k] = stamp
+        if first_run:
+            continue
         try:
             first = dt.datetime.fromisoformat(seen[k])
         except (TypeError, ValueError):
-            first = now
-        if not first_run and (now - first) <= dt.timedelta(hours=HW_NEW_HOURS):
+            continue
+        if first.tzinfo is None:
+            first = first.replace(tzinfo=dt.timezone.utc)
+        if (now - first) <= dt.timedelta(hours=hours):
             new.add(k)
     cutoff = now - dt.timedelta(days=HW_SEEN_KEEP_DAYS)
 
@@ -103,7 +114,8 @@ def _mark_new(open_hw: list, member: str = "", now: "dt.datetime | None" = None)
         if k in keys:
             return True
         try:
-            return dt.datetime.fromisoformat(v) >= cutoff
+            ts = dt.datetime.fromisoformat(v)
+            return (ts if ts.tzinfo else ts.replace(tzinfo=dt.timezone.utc)) >= cutoff
         except (TypeError, ValueError):
             return False
     seen = {k: v for k, v in seen.items() if _keep(k, v)}
@@ -114,8 +126,13 @@ def _mark_new(open_hw: list, member: str = "", now: "dt.datetime | None" = None)
             json.dump(seen, f)
         os.replace(tmp, path)
     except OSError:
-        pass  # marking is best-effort; never fail the homework read over it
+        pass  # marking is best-effort; never fail the read over it
     return new
+
+
+def _mark_new(open_hw: list, member: str = "", now: "dt.datetime | None" = None) -> set:
+    """Keys of the open assignments first seen within HW_NEW_HOURS."""
+    return _mark_new_keys({_hw_key(h) for h in open_hw}, _hw_seen_path(member), HW_NEW_HOURS, now)
 
 
 def _hhmm(t) -> str:
@@ -146,6 +163,88 @@ def _map_names(lst, m) -> str:
             continue
         out.append(m.get(x.get("id")) or x.get("name") or "?")
     return ", ".join(out)
+
+
+# Optional/after-school items. They are NOT lessons, so "all lessons cancelled"
+# stays true (and gets said) even when a club still runs.
+_ACTIVITY_PREFIXES = ("AG-", "AG ", "Schulclub", "Ganztag", "Betreuung", "Mittag")
+
+
+def _is_activity(subj: str) -> bool:
+    x = (subj or "").strip()
+    return any(x.startswith(pfx) for pfx in _ACTIVITY_PREFIXES)
+
+
+def _timegrid_starts(s, base: str, school: str) -> dict:
+    """{weekday(1=Sun…7=Sat per WebUntis): [slot start ints]} — what a normal
+    school day looks like, so a late start can be named as one."""
+    try:
+        r = s.post(f"{base}/jsonrpc.do", params={"school": school}, timeout=15,
+                   json={"id": "aaka", "method": "getTimegridUnits", "jsonrpc": "2.0", "params": {}})
+        out = {}
+        for d in (r.json().get("result") or []):
+            units = sorted(int(u["startTime"]) for u in (d.get("timeUnits") or []) if u.get("startTime"))
+            if units:
+                out[d.get("day")] = units
+        return out
+    except Exception:
+        return {}
+
+
+def _slots_before(starts: list, first: int) -> int:
+    """How many normal slots are skipped before `first`."""
+    return sum(1 for t in (starts or []) if t < first)
+
+
+def _day_start_line(rows: list, starts: list) -> str:
+    """The one fact a parent reads first: when does school actually start today?
+    Named as a late start only when lessons before it are missing from the plan
+    (cancelled, or simply not his) — otherwise the times below say it already."""
+    live = [r for r in rows if r["code"] != "cancelled" and not _is_activity(r["subj"])]
+    if not live:
+        return ""
+    first = int(live[0]["t0"].replace(":", ""))
+    skipped = _slots_before(starts, first)
+    end = max(int(r["t1"].replace(":", "")) for r in live)
+    line = f"🕘 {live[0]['t0']}–{end // 100:02d}:{end % 100:02d}"
+    if skipped:
+        line += f" — starts {skipped} period{'s' if skipped > 1 else ''} late"
+    return line
+
+
+def _format_day(rows: list, head: str, reasons: list, rtxt: str, starts: list) -> list:
+    """Render one day. Pure — no I/O — so every branch is unit-testable.
+
+    The day-level verdict comes FIRST: a trailing ❌ per line is easy to skim
+    past, and "you start at 10:35" / "every lesson is cancelled" is what a
+    parent actually needs. Per-line status then LEADS the line."""
+    lessons = [r for r in rows if not _is_activity(r["subj"])]
+    acts = [r for r in rows if _is_activity(r["subj"])]
+    dead = [r for r in lessons if r["code"] == "cancelled"]
+    live_acts = [r for r in acts if r["code"] != "cancelled"]
+    out = []
+
+    if lessons and len(dead) == len(lessons):
+        if not live_acts:
+            return [f"{head}: 🎉 NO SCHOOL — all {len(lessons)} lessons cancelled{rtxt}"]
+        out.append(f"{head}: 🚫 ALL {len(lessons)} LESSONS CANCELLED{rtxt}")
+        out.append("  still on: " + ", ".join(f"{r['t0']}–{r['t1']} {r['subj']}" for r in live_acts))
+        return out
+
+    rsns = f"  _{', '.join(reasons)}_" if reasons else ""
+    if dead:
+        out.append(f"{head} — ⚠️ {len(dead)} of {len(lessons)} lessons cancelled{rsns}")
+    else:
+        out.append(head + rsns)
+    start_line = _day_start_line(rows, starts)
+    if start_line:
+        out.append("  " + start_line)
+    for r in rows:
+        mark = "❌ " if r["code"] == "cancelled" else ("⚠️ " if r["code"] == "irregular" else "")
+        rsn = f" — {r['reason']}" if r.get("reason") else ""
+        out.append(f"  {mark}{r['t0']}–{r['t1']} {r['subj']}"
+                   + (f" · {r['room']}" if r["room"] else "") + rsn)
+    return out
 
 
 def _timetable(s, base: str, school: str, me: dict, date_arg: str, days: int = 1) -> int:
@@ -181,6 +280,7 @@ def _timetable(s, base: str, school: str, me: dict, date_arg: str, days: int = 1
     for p in periods:
         by_day[p.get("date")].append(p)
 
+    grid = _timegrid_starts(s, base, school)
     out = []
     for ymd in sorted(by_day):
         dd = dt.datetime.strptime(str(ymd), "%Y%m%d").date()
@@ -189,17 +289,10 @@ def _timetable(s, base: str, school: str, me: dict, date_arg: str, days: int = 1
         reasons = sorted({(p.get("substText") or p.get("lstext") or "").strip()
                           for p in day} - {""})
         rtxt = f" — {', '.join(reasons)}" if reasons else ""
-        active = [p for p in day if p.get("code") != "cancelled"]
         head = f"*{dd.strftime('%a %d.%m')}*"
-        if not active:
-            out.append(f"{head}: ❌ all cancelled{rtxt}")
-            continue
-        out.append(head + (f"  _{', '.join(reasons)}_" if reasons else ""))
-        for p in _merge_day(day, subjects, rooms):
-            mark = " ❌" if p["code"] == "cancelled" else (" ⚠️" if p["code"] == "irregular" else "")
-            rsn = f" — {p['reason']}" if p.get("reason") else ""
-            out.append(f"  {p['t0']}–{p['t1']} {p['subj']}"
-                       + (f" · {p['room']}" if p["room"] else "") + mark + rsn)
+        # WebUntis weekdays are 1=Sun … 7=Sat; python's weekday() is 0=Mon.
+        starts = grid.get((dd.weekday() + 2) % 7 or 7) or (sorted(grid.values())[0] if grid else [])
+        out.extend(_format_day(_merge_day(day, subjects, rooms), head, reasons, rtxt, starts))
     summary = "📅 " + rng + "\n" + "\n".join(out)
     return _ok(summary, summary)
 
@@ -243,6 +336,76 @@ def _creds(member: str = "") -> dict:
             with open(p) as f:
                 return json.load(f)
     raise FileNotFoundError(candidates[0])
+
+
+# ── Exams ─────────────────────────────────────────────────────────────────────
+# The student account has no rights on /api/exams or JSON-RPC getExams (403 /
+# "no right for getExams()"), but the timetable the web app itself loads carries
+# them: a period with is.exam = true and an `exam` object {name, id, date}.
+# So exams are read from the weekly timetable, one request per ISO week.
+EXAM_FORWARD_DAYS = 28
+EXAM_NEW_HOURS = 24
+_WEEKDAY_DE = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
+
+
+def _exam_key(e: dict) -> str:
+    return str(e.get("id") or f"{e.get('date')}|{e.get('subject')}")
+
+
+def _week_periods(s, base: str, me: dict, day: "dt.date") -> list:
+    """Periods of the ISO week containing `day`, from the endpoint the web app
+    uses. Returns [] on any error — exams must never break the digest."""
+    try:
+        r = s.get(f"{base}/api/public/timetable/weekly/data", timeout=20,
+                  params={"elementType": me.get("personType"), "elementId": me.get("personId"),
+                          "date": day.isoformat(), "formatId": 1})
+        data = (r.json().get("data") or {}).get("result", {}).get("data", {})
+        return data.get("elementPeriods", {}).get(str(me.get("personId")), []) or []
+    except Exception:
+        return []
+
+
+def _exams(s, base: str, me: dict, member: str = "", days: int = EXAM_FORWARD_DAYS) -> dict:
+    """Upcoming exams in the next `days`, newest-first-seen marked ❗.
+    Returns {"ok", "summary", "count"} — never raises, never fails the digest."""
+    today = dt.date.today()
+    horizon = today + dt.timedelta(days=days)
+    found: dict = {}
+    day = today
+    while day <= horizon:                      # one call per ISO week
+        for p in _week_periods(s, base, me, day):
+            if not (p.get("is") or {}).get("exam"):
+                continue
+            ex = p.get("exam") or {}
+            try:
+                d = dt.datetime.strptime(str(p.get("date")), "%Y%m%d").date()
+            except ValueError:
+                continue
+            if not (today <= d <= horizon):
+                continue
+            key = str(ex.get("id") or f"{p.get('date')}|{ex.get('name')}")
+            prev = found.get(key)
+            start = int(p.get("startTime") or 0)
+            if prev is None or start < prev["start"]:
+                found[key] = {"id": ex.get("id"), "date": d, "start": start,
+                              "subject": (ex.get("name") or "").strip() or "?"}
+        day += dt.timedelta(days=7)
+    if not found:
+        return {"ok": True, "summary": "", "count": 0}
+    exams = sorted(found.values(), key=lambda e: (e["date"], e["start"]))
+    new = _mark_new_keys({_exam_key(e) for e in exams},
+                         _seen_path(member, "exam"), EXAM_NEW_HOURS)
+    lines = []
+    for e in exams:
+        when = f"{_WEEKDAY_DE[e['date'].weekday()]} {e['date'].strftime('%d.%m')}"
+        at = f", {_hhmm(e['start'])}" if e["start"] else ""
+        left = (e["date"] - today).days
+        in_days = "today" if left == 0 else ("tomorrow" if left == 1 else f"in {left} days")
+        line = f"{e['subject']} — {when}{at} ({in_days})"
+        lines.append(f"❗ *{line.replace('*', '∗')}*" if _exam_key(e) in new else f"• {line}")
+    n_new = f" ({len(new)} new ❗)" if new else ""
+    head = f"📝 {len(exams)} exam{'s' if len(exams) != 1 else ''} coming up{n_new}:"
+    return {"ok": True, "summary": head + "\n" + "\n".join(lines[:6]), "count": len(exams)}
 
 
 def _homework(s, base: str, school: str, me: dict, days: int, member: str = "") -> dict:
@@ -306,12 +469,13 @@ def main() -> int:
     ap.add_argument("--date", default="tomorrow")
     args = ap.parse_args()
 
-    modes = {"homework", "timetable", "digest"}
+    modes = {"homework", "timetable", "digest", "exams"}
     if any(t.lower() in ("help", "-h", "--help", "?") for t in args.tokens):
         return _emit(_ok(
             "🏫 *WebUntis* — school timetable & homework.\n"
             "Usage: `/tools/webuntis <kid> <what>`\n"
-            "• `digest` — tomorrow's lessons + homework (default)\n"
+            "• `digest` — tomorrow's lessons + exams + homework (default)\n"
+            "• `exams` — written tests in the next 4 weeks\n"
             "• `homework` — open homework (next 7 days)\n"
             "• `timetable` — tomorrow's lessons (add `week` for 7 days)\n"
             "`<kid>` picks whose school login to use (per-member creds).\n"
@@ -357,10 +521,19 @@ def main() -> int:
         r = _timetable(s, base, school, me, args.date, args.days)
     elif mode == "homework":
         r = _homework(s, base, school, me, args.days, member)
-    else:  # digest = tomorrow's timetable + homework, in one message
+    elif mode == "exams":
+        r = _exams(s, base, me, member, args.days if args.days > 7 else EXAM_FORWARD_DAYS)
+        if not r["count"]:
+            r = _ok(f"📝 No exams in the next {EXAM_FORWARD_DAYS} days.")
+        else:
+            r = _ok(r["summary"], r["summary"])
+    else:  # digest = tomorrow's timetable + exams + homework, in one message
         tt = _timetable(s, base, school, me, "tomorrow", 1)
+        ex = _exams(s, base, me, member)          # above homework: a date you prepare for
         hw = _homework(s, base, school, me, args.days, member)
         parts = [x["summary"] if x["ok"] else f"⚠️ {x['error']}: {x['summary']}" for x in (tt, hw)]
+        if ex["count"]:
+            parts.insert(1, ex["summary"])
         err = None if (tt["ok"] and hw["ok"]) else (tt.get("error") or hw.get("error"))
         r = _R(tt["ok"] or hw["ok"], "\n\n".join(parts), "\n\n".join(parts), err)
     return _emit(r)
