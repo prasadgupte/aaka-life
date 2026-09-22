@@ -290,6 +290,8 @@ def send_birthday_morning(dry_run: bool = False) -> None:
 
     sent = 0
     for mid, (handle, channel) in targets.items():
+        if aaka_config.member_calendar_scope(mid) != "all":
+            continue   # parents only — same rule as the birthday block in /t
         text = bday_query("", sender_id=handle)  # saves numbered list under the handle
         if "No birthdays" in text or "No birthday data" in text:
             continue

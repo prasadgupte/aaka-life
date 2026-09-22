@@ -29,6 +29,18 @@ Saturday/Sunday week pushes — and the morning task block shrinks to their own
 (and unowned) tasks. An empty day says "Nothing on your calendar tomorrow."
 rather than showing the family's.
 
+Two more blocks are **parents-only**, for the same reason — they are things only
+an admin can act on, and they make a kid's message long for nothing:
+
+| block | who sees it |
+|---|---|
+| 🎂 today's birthdays (+ the wish links) | admins |
+| ⚠️ calendar issues — missing carrier, double-booking (`/fix`) | admins |
+| 📋 the family task list in the morning push | admins (others: their own tasks) |
+
+A non-admin's brief is therefore just their day, their reminders, their tasks —
+plus whatever tools are addressed to them (school digest, …).
+
 Override per member with `calendar_scope: all` (a teen who runs the family
 logistics) or `calendar_scope: mine` (a parent who wants the quiet view).
 
