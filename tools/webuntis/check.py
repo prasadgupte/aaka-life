@@ -383,12 +383,12 @@ def _exams(s, base: str, me: dict, member: str = "", days: int = EXAM_FORWARD_DA
                 continue
             if not (today <= d <= horizon):
                 continue
-            key = str(ex.get("id") or f"{p.get('date')}|{ex.get('name')}")
+            entry = {"id": ex.get("id"), "date": d, "start": int(p.get("startTime") or 0),
+                     "subject": (ex.get("name") or "").strip() or "?"}
+            key = _exam_key(entry)          # one identity, in-run and in the seen-store
             prev = found.get(key)
-            start = int(p.get("startTime") or 0)
-            if prev is None or start < prev["start"]:
-                found[key] = {"id": ex.get("id"), "date": d, "start": start,
-                              "subject": (ex.get("name") or "").strip() or "?"}
+            if prev is None or entry["start"] < prev["start"]:
+                found[key] = entry
         day += dt.timedelta(days=7)
     if not found:
         return {"ok": True, "summary": "", "count": 0}
