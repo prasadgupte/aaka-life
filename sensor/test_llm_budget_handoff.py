@@ -312,6 +312,21 @@ def test_sensor_gemini_scope():
             check("sensor: an unscoped LLM call is refused", False)
         except llm_policy.GeminiNotAllowed:
             check("sensor: an unscoped LLM call is refused before any request", len(seen) == 1)
+
+        from sensor.intents.admin import handle as admin_handle
+        out = admin_handle("llm_call", "/llm say hi", "x", "x", "telegram")
+        check("sensor: /llm is off by default and says how to switch it on",
+              "AAKA_GEMINI_INTENTS" in out and len(seen) == 1)
+
+        # The operator adds a service: /task then goes to Gemini under its own scope.
+        os.environ["AAKA_GEMINI_INTENTS"] = "add_event,add_task"
+        try:
+            rs._extract_task("/task call the plumber friday")
+        except RuntimeError:
+            pass   # the fake provider is out of budget; reaching it is the point
+        check("sensor: AAKA_GEMINI_INTENTS=…,add_task lets /task call Gemini (scope add_task)",
+              seen[-1] == ("gemini", "add_task"))
+        os.environ.pop("AAKA_GEMINI_INTENTS", None)
     finally:
         lp.complete, lp.find_claude = real_complete, real_which
 

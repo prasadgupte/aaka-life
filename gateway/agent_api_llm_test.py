@@ -144,6 +144,16 @@ def policy_checks(fake, gemini_calls, fake_gemini, log):
     r = post()
     check("pause lifted → Claude answers again", r.status_code == 200 and r.json()["provider"] == "claude")
 
+    # ── which errors pause Claude ──
+    check("subscription limit messages pause Claude",
+          llm_policy.is_claude_limit("Claude AI usage limit reached|1760000000")
+          and llm_policy.is_claude_limit("5-hour limit reached ∙ resets 3pm")
+          and llm_policy.is_claude_limit("You've hit your limit · resets 5pm"))
+    check("a transient API rate limit does not pause Claude",
+          not llm_policy.is_claude_limit("API Error: 429 Rate limit reached for requests")
+          and not llm_policy.is_claude_limit('{"type":"rate_limit_error","message":"limit reached"}')
+          and not llm_policy.is_claude_limit("API Error: 529 overloaded"))
+
     # ── grant parsing ──
     check("grant: dict permissions", llm_policy.gemini_grant({"permissions": {"gemini": {"daily_max": 5}}}) == 5)
     check("grant: none / zero / junk → no grant",

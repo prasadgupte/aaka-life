@@ -16,7 +16,12 @@ each one has its own lock:
     no claude). They are allowed only inside `scope(<intent>)` for an intent listed
     in AAKA_GEMINI_INTENTS (comma list, default "add_event": the live /cal
     preview). Any other caller, or none, raises GeminiNotAllowed before a request
-    goes out.
+    goes out. The scoped call sites are add_event (/cal extraction and its "llm"
+    re-process), add_task (/task) and llm_call (/llm), so listing one of those
+    switches it on.
+
+The /status LLM check (skills/status/llm.py) only reads Gemini's model metadata
+to test the key. It generates nothing and costs nothing, so it stays outside the lock.
 
 When Claude reports its usage limit, the gateway pauses Claude for
 AAKA_CLAUDE_LIMIT_PAUSE_MIN minutes (default 30). During the pause it answers at
@@ -170,6 +175,8 @@ def first_alert_today(key: str) -> bool:
 
 def is_claude_limit(error: str) -> bool:
     low = (error or "").lower()
+    if "rate limit" in low or "rate_limit" in low:
+        return False   # "Rate limit reached" is a transient API 429, not the subscription
     return any(m in low for m in _CLAUDE_LIMIT_MARKERS)
 
 

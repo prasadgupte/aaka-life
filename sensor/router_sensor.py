@@ -369,9 +369,13 @@ def _handoff_add_event_home(message: str, sender_id: str, channel_id: str, sourc
 
 
 def _extract_task(message: str, sender_member_id: str = "") -> dict:
+    """LLM scope `add_task`: not in the default AAKA_GEMINI_INTENTS, so on the
+    sensor the task is saved as typed unless the operator adds it."""
+    from gateway import llm_policy
     from skills.tasks.prepare_task import prepare_task
     text = re.sub(r'^/(addtask|task)\s*', '', message, flags=re.I).strip()
-    return prepare_task(text, sender_member_id=sender_member_id)
+    with llm_policy.scope("add_task"):
+        return prepare_task(text, sender_member_id=sender_member_id)
 
 
 def _format_task_preview(payload: dict) -> str:
