@@ -31,7 +31,11 @@ def check(desc, cond):
         _FAILURES.append(desc)
 
 
-api.app.dependency_overrides[api._require_agent] = lambda: {"id": "test-agent"}
+# The image-contract cases below exercise the Gemini fallback, so the test agent
+# holds a grant; the policy section at the end swaps in agents without one.
+GRANTED = {"id": "test-agent", "permissions": json.dumps({"gemini": {"daily_max": 100}})}
+AGENT = dict(GRANTED)
+api.app.dependency_overrides[api._require_agent] = lambda: AGENT
 client = TestClient(api.app)
 HDR = {"X-Agent-Key": "x"}
 PNG = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64).decode()
@@ -70,11 +74,109 @@ class FakeRun:
     def __init__(self):
         self.calls = []
         self.stdout_for = lambda argv, kw: stream([])
+        self.returncode, self.stderr = 0, ""
 
     def __call__(self, argv, **kw):
         self.calls.append((argv, kw))
         out = self.stdout_for(argv, kw)
-        return subprocess.CompletedProcess(argv, 0, stdout=out, stderr="")
+        return subprocess.CompletedProcess(argv, self.returncode, stdout=out, stderr=self.stderr)
+
+
+def policy_checks(fake, gemini_calls, fake_gemini, log):
+    """Gemini is a per-agent grant with a daily cap; a Claude usage limit pauses Claude."""
+    from gateway import llm_policy
+    state = Path(os.environ["AAKA_CONFIG_DIR"]) / "data" / "llm_policy.json"
+    api._call_gemini_fallback = fake_gemini
+    state.unlink(missing_ok=True)
+
+    # ── no grant: a Claude error is a 503 that says why; Gemini is never called ──
+    AGENT.clear(); AGENT.update({"id": "batch-agent", "permissions": "{}"})
+    fake.returncode, fake.stderr = 1, ""
+    fake.stdout_for = lambda argv, kw: json.dumps({"type": "result", "is_error": True,
+                                                   "result": "API Error: 500 internal"})
+    before = len(gemini_calls)
+    r = post()
+    d = r.json().get("detail", {})
+    check("no grant + claude error → 503 claude_unavailable",
+          r.status_code == 503 and d.get("error") == "claude_unavailable" and d.get("reason") == "claude_error")
+    check("…the 503 carries claude's own reason (stdout result, stderr empty)", "API Error: 500" in d.get("detail", ""))
+    check("…and Gemini is not called", len(gemini_calls) == before)
+    rows = [json.loads(l) for l in log.read_text().splitlines()]
+    check("the claude failure is logged with its reason",
+          rows[-1]["provider"] == "claude" and rows[-1]["status"] == "error"
+          and "API Error: 500" in rows[-1].get("error", "") and rows[-1]["agent_id"] == "batch-agent")
+    check("a transient error does not pause Claude", llm_policy.claude_paused() is None)
+
+    # ── exit 0 but is_error → still a failure, never returned as the answer ──
+    fake.returncode = 0
+    r = post()
+    check("exit 0 with is_error=true → 503, not a 200 carrying the error text", r.status_code == 503)
+
+    # ── usage limit: pause Claude, answer at once until it lifts ──
+    fake.returncode = 1
+    fake.stdout_for = lambda argv, kw: json.dumps({"type": "result", "is_error": True,
+                                                   "result": "Claude AI usage limit reached|1760000000"})
+    r = post()
+    d = r.json().get("detail", {})
+    check("usage limit → 503 reason claude_limit with Retry-After",
+          r.status_code == 503 and d.get("reason") == "claude_limit" and int(r.headers.get("retry-after", 0)) > 0)
+    check("…and Claude is paused", llm_policy.claude_paused() is not None)
+    n = len(fake.calls)
+    r = post()
+    check("while paused no claude process is started", len(fake.calls) == n and r.status_code == 503)
+
+    # ── grant: Gemini during the pause, with the reason logged, up to the cap ──
+    AGENT.clear(); AGENT.update({"id": "bot", "permissions": json.dumps({"gemini": {"daily_max": 2}})})
+    r1, r2, r3 = post(), post(), post()
+    check("granted agent → Gemini while Claude is paused",
+          r1.status_code == 200 and r1.json()["provider"] == "gemini" and r2.status_code == 200)
+    check("…third call over daily_max 2 → 429 gemini_daily_cap",
+          r3.status_code == 429 and r3.json()["detail"].get("error") == "gemini_daily_cap"
+          and r3.json()["detail"].get("max") == 2)
+    rows = [json.loads(l) for l in log.read_text().splitlines()]
+    ok_gem = [x for x in rows if x.get("provider") == "gemini" and x["status"] == "ok" and x["agent_id"] == "bot"]
+    check("Gemini rows record the fallback_reason", ok_gem and "usage limit" in ok_gem[-1].get("fallback_reason", ""))
+    check("the day's count is kept per agent", llm_policy.gemini_used_today().get("bot") == 2)
+
+    # ── pause over → Claude again ──
+    state.unlink(missing_ok=True)
+    fake.returncode, fake.stdout_for = 0, (lambda argv, kw: json.dumps({"result": "back"}))
+    r = post()
+    check("pause lifted → Claude answers again", r.status_code == 200 and r.json()["provider"] == "claude")
+
+    # ── grant parsing ──
+    check("grant: dict permissions", llm_policy.gemini_grant({"permissions": {"gemini": {"daily_max": 5}}}) == 5)
+    check("grant: none / zero / junk → no grant",
+          llm_policy.gemini_grant({"permissions": "{}"}) is None
+          and llm_policy.gemini_grant({"permissions": json.dumps({"gemini": {"daily_max": 0}})}) is None
+          and llm_policy.gemini_grant({"permissions": "not json"}) is None
+          and llm_policy.gemini_grant({}) is None)
+
+    # ── direct calls: only inside an allowed scope ──
+    os.environ.pop("AAKA_GEMINI_INTENTS", None)
+    try:
+        llm_policy.check_direct_gemini()
+        check("direct Gemini with no scope is refused", False)
+    except llm_policy.GeminiNotAllowed:
+        check("direct Gemini with no scope is refused", True)
+    with llm_policy.scope("add_event"):
+        llm_policy.check_direct_gemini()
+        check("add_event (live /cal) may call Gemini directly by default", True)
+    with llm_policy.scope("add_task"):
+        try:
+            llm_policy.check_direct_gemini()
+            check("add_task is refused by default", False)
+        except llm_policy.GeminiNotAllowed:
+            check("add_task is refused by default", True)
+    os.environ["AAKA_GEMINI_INTENTS"] = "add_event, add_task"
+    with llm_policy.scope("add_task"):
+        llm_policy.check_direct_gemini()
+        check("AAKA_GEMINI_INTENTS adds services", True)
+    os.environ.pop("AAKA_GEMINI_INTENTS", None)
+    check("scope resets after the block", llm_policy.current_scope() is None)
+
+    AGENT.clear(); AGENT.update(GRANTED)
+    fake.returncode, fake.stderr = 0, ""
 
 
 def main():
@@ -180,6 +282,8 @@ def main():
     check("llm-usage.jsonl logs images + saw_images", ok_rows and ok_rows[0]["images"] == 2 and ok_rows[0]["saw_images"] == 2)
     check("llm-usage.jsonl omits image fields for text calls",
           rows[0]["status"] == "ok" and "images" not in rows[0] and "saw_images" not in rows[0])
+
+    policy_checks(fake, gemini_calls, fake_gemini, log)
 
     api.subprocess.run, api.shutil.which, api._call_gemini_fallback = orig_run, orig_which, orig_gemini
     api.shutil.rmtree(os.environ["AAKA_CONFIG_DIR"], ignore_errors=True)

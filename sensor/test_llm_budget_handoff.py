@@ -108,6 +108,9 @@ def test_adapter_fallback():
             return "from-claude"
         raise AssertionError(provider)
     lp.complete = complete
+    from gateway import llm_policy
+    live_cal = llm_policy.scope("add_event")   # the one intent allowed to call Gemini directly
+    live_cal.__enter__()
     try:
         lp.find_claude = lambda: "/opt/homebrew/bin/claude"
         check("adapter: budget error + local claude → claude-cli answers",
@@ -129,6 +132,7 @@ def test_adapter_fallback():
         check("images never fall back to claude-cli (no vision)",
               lp.local_fallback_provider("gemini", images=[{"data": "x"}]) is None)
     finally:
+        live_cal.__exit__(None, None, None)
         lp.complete, lp.find_claude = real_complete, real_which
 
 
@@ -277,9 +281,45 @@ def test_sync_merge():
         vs._push_to_vps, vs._ssh_run = real_push, real_ssh
 
 
+def test_sensor_gemini_scope():
+    """2026-10-05: on the sensor only the live /cal preview may call Gemini;
+    a task is saved as typed instead of costing a Gemini call."""
+    import sensor.router_sensor as rs
+    from gateway import llm_policy
+    from skills.tasks.prepare_task import prepare_task
+    os.environ.pop("AAKA_GEMINI_INTENTS", None)
+    real_complete, real_which = lp.complete, lp.find_claude
+    seen = []
+
+    def record(prompt, timeout, provider=None, images=None):
+        seen.append((provider, llm_policy.current_scope()))
+        raise lp.LLMBudgetExceeded("Gemini", "monthly spending cap")
+    lp.complete = record
+    lp.find_claude = lambda: None   # the VPS has no local claude to rescue with
+    try:
+        t = prepare_task("call the plumber #home")
+        check("sensor: /task makes no Gemini call", seen == [])
+        check("sensor: /task keeps the text as the title, minus #tags", t["title"] == "call the plumber")
+        check("sensor: /task is flagged no_llm (reply explains /edit due)", t.get("no_llm") is True)
+        try:
+            rs._extract_events_batch("/cal Alex @ Dentist 3 Oct 10:00")
+        except lp.LLMBudgetExceeded:
+            pass
+        check("sensor: /cal still reaches Gemini, inside the add_event scope",
+              seen and seen[-1] == ("gemini", "add_event"))
+        try:
+            GatewayAdapter().call_llm("hello")
+            check("sensor: an unscoped LLM call is refused", False)
+        except llm_policy.GeminiNotAllowed:
+            check("sensor: an unscoped LLM call is refused before any request", len(seen) == 1)
+    finally:
+        lp.complete, lp.find_claude = real_complete, real_which
+
+
 def main():
     test_provider()
     test_adapter_fallback()
+    test_sensor_gemini_scope()
     test_sensor_handoff()
     test_executor_handoff()
     test_sync_merge()

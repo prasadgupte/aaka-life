@@ -133,6 +133,11 @@ remind me to send invoice by end of week
 
 Tasks are stored locally on the sensor — no Google Tasks dependency.
 
+On the always-on server, a task is saved **as typed**: the server only uses a paid
+model for the live `/cal` preview (`AAKA_GEMINI_INTENTS`), so it does not read a due
+date out of the sentence. The reply says so. Add the date afterwards with
+`/edit N due friday`.
+
 ---
 
 ## Task management

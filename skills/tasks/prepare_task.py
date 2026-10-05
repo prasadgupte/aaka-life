@@ -193,8 +193,16 @@ def prepare_task(text: str, sender_member_id: str = "") -> dict:
 
     priority_icon = "🔴" if urgent else ("🟡" if starred else "")
 
+    from gateway.llm_policy import GeminiNotAllowed
+    no_llm = False
     try:
         extracted = _llm_extract(text)
+    except GeminiNotAllowed:
+        # On the sensor a task gets no Gemini (only the live /cal preview does):
+        # keep the text as the title, minus the #tags / @owner already read above.
+        no_llm = True
+        bare = re.sub(r"(?<!\w)[#@]\w+", "", text)
+        extracted = {"title": " ".join(bare.split()) or text, "due": None, "description": ""}
     except Exception as e:
         raise RuntimeError(f"LLM extraction failed: {e}") from e
 
@@ -234,6 +242,8 @@ def prepare_task(text: str, sender_member_id: str = "") -> dict:
         "initiated_by":  sender_member_id,
         "duration":      duration,
     }
+    if no_llm:
+        task["no_llm"] = True   # the sensor's reply tells the user how to add a due date
     task["display_string"] = _build_display_string(task)
     return task
 

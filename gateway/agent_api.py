@@ -1304,6 +1304,25 @@ def _parse_claude_stream(stdout: str, image_paths: set[str]) -> tuple[str, int]:
     return result_text.strip(), len(seen)
 
 
+def _cli_failure(result: "subprocess.CompletedProcess") -> str:
+    """Why a claude run failed: stderr, plus the `result` of the last JSON line on
+    stdout. A usage limit comes back as {"is_error": true, "result": "...limit..."}
+    with an empty stderr, which is why the log used to say only 'claude exited 1: '."""
+    parts = [(result.stderr or "").strip()]
+    out = (result.stdout or "").strip()
+    for line in reversed(out.splitlines()):
+        try:
+            ev = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(ev, dict) and ev.get("result"):
+            parts.append(str(ev["result"]))
+            break
+    else:
+        parts.append(out[-300:])
+    return " | ".join(p for p in parts if p)[:300] or "no output"
+
+
 def _call_claude_cli(prompt: str, model_alias: str, timeout: int,
                      images: "list[LlmImage] | None" = None,
                      image_bytes: "list[bytes] | None" = None) -> tuple[str, int]:
@@ -1330,12 +1349,16 @@ def _call_claude_cli(prompt: str, model_alias: str, timeout: int,
             capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[:300]}")
+            raise RuntimeError(f"claude exited {result.returncode}: {_cli_failure(result)}")
         try:
             data = json.loads(result.stdout)
-            return data.get("result", result.stdout).strip(), 0
         except (json.JSONDecodeError, TypeError):
             return result.stdout.strip(), 0
+        if not isinstance(data, dict):
+            return result.stdout.strip(), 0
+        if data.get("is_error"):
+            raise RuntimeError(f"claude reported an error: {str(data.get('result', ''))[:300]}")
+        return str(data.get("result", result.stdout)).strip(), 0
 
     tmp = _tempfile.mkdtemp(prefix="aaka-llm-")   # 0700
     try:
@@ -1363,7 +1386,7 @@ def _call_claude_cli(prompt: str, model_alias: str, timeout: int,
             stdin=subprocess.DEVNULL, cwd=tmp,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[:300]}")
+            raise RuntimeError(f"claude exited {result.returncode}: {_cli_failure(result)}")
         text, seen = _parse_claude_stream(result.stdout, set(paths))
         if seen == 0:
             raise RuntimeError(
@@ -1389,7 +1412,8 @@ def _call_gemini_fallback(prompt: str, timeout: int,
 
 def _log_llm_endpoint(model: str, provider: str, status: str,
                       duration_ms: int, agent_id: str, error: str = "",
-                      images: int = 0, saw_images: int = 0) -> None:
+                      images: int = 0, saw_images: int = 0,
+                      fallback_reason: str = "") -> None:
     config_dir = os.environ.get("AAKA_CONFIG_DIR", "/config")
     log_path = Path(config_dir) / "logs" / "llm-usage.jsonl"
     entry = {
@@ -1406,6 +1430,8 @@ def _log_llm_endpoint(model: str, provider: str, status: str,
         entry["saw_images"] = saw_images
     if error:
         entry["error"] = error
+    if fallback_reason:
+        entry["fallback_reason"] = fallback_reason
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "a") as fh:
@@ -1416,10 +1442,12 @@ def _log_llm_endpoint(model: str, provider: str, status: str,
 
 @app.post("/v1/llm", response_model=LlmResponse)
 def call_llm_endpoint(body: LlmRequest, agent: dict = Depends(_require_agent)):
-    """Call an LLM via Claude CLI (subscription, zero cost) with Gemini fallback.
+    """Call an LLM via Claude CLI (subscription, zero cost).
 
-    Uses the local Claude subscription on Mac. Falls back to Gemini API if
-    Claude CLI is unavailable or errors.
+    Uses the local Claude subscription on the Mac. When Claude fails or is paused
+    after a usage limit, only an agent with a Gemini grant falls back to Gemini,
+    within its daily cap (gateway/llm_policy.py). Everyone else gets
+    503 claude_unavailable with the reason; a capped agent gets 429 gemini_daily_cap.
     """
     model_alias = _CLAUDE_MODEL_MAP[body.complexity]
 
@@ -1441,13 +1469,53 @@ def call_llm_endpoint(body: LlmRequest, agent: dict = Depends(_require_agent)):
     model_used = model_alias
     saw_images = 0
 
-    try:
-        text, saw_images = _call_claude_cli(
-            effective_prompt, model_alias, timeout=180 if images else 120,
-            images=images, image_bytes=image_bytes)
-    except (RuntimeError, subprocess.TimeoutExpired):
-        # Fallback to Gemini — which takes images inline, so a Claude-CLI run
-        # that could not read them still ends in a vision-backed answer.
+    from gateway import llm_policy
+    paused = llm_policy.claude_paused()
+    claude_error = ""
+    if paused:
+        claude_error = f"claude paused until {paused['until']}: {paused['reason']}"
+    else:
+        try:
+            text, saw_images = _call_claude_cli(
+                effective_prompt, model_alias, timeout=180 if images else 120,
+                images=images, image_bytes=image_bytes)
+        except subprocess.TimeoutExpired:
+            claude_error = "claude timed out"
+        except RuntimeError as exc:
+            claude_error = str(exc)
+            if llm_policy.is_claude_limit(claude_error):
+                until = llm_policy.pause_claude(claude_error)
+                paused = llm_policy.claude_paused()
+                if llm_policy.first_alert_today("claude_paused"):
+                    _notify_agent_action(agent, (
+                        f"⏸ Claude hit its usage limit — /v1/llm paused until {until} UTC. "
+                        f"Gemini only for granted agents; everyone else gets 503.\n{claude_error[:200]}"))
+
+    if claude_error:
+        # Claude failed or is paused. Gemini is the exception: only for an agent
+        # with a grant, and only up to its daily cap (gateway/llm_policy.py).
+        _log_llm_endpoint(model_alias, "claude", "paused" if paused else "error",
+                          int((time.monotonic() - t0) * 1000), agent["id"],
+                          claude_error[:300], images=n_images)
+        retry = {"Retry-After": str(paused["retry_after"])} if paused else None
+        daily_max = llm_policy.gemini_grant(agent)
+        if daily_max is None:
+            raise HTTPException(status_code=503, headers=retry, detail={
+                "error": "claude_unavailable",
+                "reason": "claude_limit" if paused else "claude_error",
+                "detail": claude_error[:300],
+                "gemini": "not_granted"})
+        allowed, used = llm_policy.gemini_take(agent["id"], daily_max)
+        if not allowed:
+            if llm_policy.first_alert_today(f"gemini_cap:{agent['id']}"):
+                _notify_agent_action(agent, (
+                    f"🛑 {agent['id']} used its {daily_max} Gemini calls for today — "
+                    f"further fallbacks refused until tomorrow.\nClaude: {claude_error[:200]}"))
+            raise HTTPException(status_code=429, headers=retry, detail={
+                "error": "gemini_daily_cap", "used": used, "max": daily_max,
+                "detail": claude_error[:300]})
+        # Gemini takes images inline, so a Claude-CLI run that could not read
+        # them still ends in a vision-backed answer.
         provider = "gemini"
         try:
             text, model_used = _call_gemini_fallback(effective_prompt, timeout=60, images=images)
@@ -1464,7 +1532,8 @@ def call_llm_endpoint(body: LlmRequest, agent: dict = Depends(_require_agent)):
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     _log_llm_endpoint(model_used, provider, "ok", duration_ms, agent["id"],
-                      images=n_images, saw_images=saw_images)
+                      images=n_images, saw_images=saw_images,
+                      fallback_reason=claude_error[:300])
 
     return LlmResponse(
         text=text,

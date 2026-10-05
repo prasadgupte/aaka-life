@@ -121,6 +121,33 @@ if [ -n "$_claude_path" ]; then
 else
     warn "LLM budget fallback: no local claude — a Gemini spend cap will fail /cal on this side too"
 fi
+# Gemini is the exception (gateway/llm_policy.py): which direct intents may use it on this
+# side, which agents /v1/llm may fall back for (and how much of today's cap is used),
+# and whether a Claude usage limit has paused /v1/llm.
+_gem=$(cd "$REPO_DIR" && "$_LLM_PY" -c "
+import json, os, sys; sys.path.insert(0, '.')
+from tools.load_env import load_env; load_env('.')
+import aaka_config
+os.environ.setdefault('QUEUE_DB', str(aaka_config.QUEUE_DIR / 'butler.db'))
+from gateway import llm_policy
+used = llm_policy.gemini_used_today()
+grants = []
+try:
+    from aaka_queue.queue import _connect
+    with _connect() as c:
+        for r in c.execute('SELECT id, permissions FROM agent_registry WHERE active=1'):
+            n = llm_policy.gemini_grant(dict(r))
+            if n: grants.append(f'{r[\"id\"]} {used.get(r[\"id\"], 0)}/{n}')
+except Exception:
+    pass
+p = llm_policy.claude_paused()
+print('direct=' + ','.join(sorted(llm_policy.gemini_intents())) + ' | granted=' + (', '.join(grants) or 'none')
+      + (' | CLAUDE PAUSED until ' + p['until'] if p else ''))" 2>/dev/null)
+case "$_gem" in
+    *"CLAUDE PAUSED"*) warn "Gemini policy: $_gem" ;;
+    "")                warn "Gemini policy: could not read gateway/llm_policy state" ;;
+    *)                 ok "Gemini policy: $_gem" ;;
+esac
 
 # ── 5. Folder structure ──────────────────────────────────────────────────────
 header "5. Folder Structure"
