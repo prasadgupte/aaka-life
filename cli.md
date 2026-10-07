@@ -183,6 +183,12 @@ docker compose run --rm sensor \
 docker compose run --rm sensor \
   python3 sensor/router_sensor.py --dry-run "/mcp tools"
 
+# Run a local agent (admin) — r / /run / /ask; ! fire · ? hold · -o opus
+docker compose run --rm sensor \
+  python3 sensor/router_sensor.py --dry-run "/run"
+docker compose run --rm sensor \
+  python3 sensor/router_sensor.py --dry-run "/run fa? the trip packing list -o"
+
 # Notes — write (routed topics go to _context.md in vault)
 docker compose run --rm sensor \
   python3 sensor/router_sensor.py --dry-run "n ortho first visit"

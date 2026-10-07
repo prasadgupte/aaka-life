@@ -117,6 +117,13 @@ def _load() -> dict:
 
 # ── Public API (unchanged from family_config.py) ───────────────────────────
 
+def roster_members() -> list[dict]:
+    """Members written in aaka.yaml only — never the invite-created dynamic ones.
+    Use for trust decisions (who is an admin) that must not depend on data files
+    another machine can write."""
+    return list(_load().get("members") or [])
+
+
 def members() -> list[dict]:
     # aaka.yaml members + dynamic members created via onboarding (no yaml edits).
     base = _load().get("members") or []

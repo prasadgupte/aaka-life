@@ -3307,6 +3307,75 @@ elif which == "dispatch_permissions":
     import gateway.dispatch as d
     assert d._DEFAULT_AGENTS == {}, d._DEFAULT_AGENTS
 
+elif which == "run_parse_and_registry":
+    # r / /run: agents.yaml takes one-line and dict entries; unsupported values
+    # fall back to the safe default; the grammar keeps mid-prompt flags as text.
+    import gateway.dispatch as d
+    open(os.path.join(CFG, "config", "agents.yaml"), "w").write(
+        "fa: /tmp\n"
+        "ta:\n  dir: /tmp\n  desc: tax\n  mode: hold\n  model: haiku\n"
+        "  access: write\n  runner: bg\n")
+    s = d.agent_specs()
+    assert s["fa"] == {"dir": "/tmp", "desc": "", "mode": "fire", "model": "sonnet",
+                       "runner": "claude", "access": "read"}, s["fa"]
+    assert (s["ta"]["mode"], s["ta"]["model"], s["ta"]["access"], s["ta"]["runner"]) == \
+        ("hold", "haiku", "read", "claude"), s["ta"]
+    assert d.agents() == {"fa": "/tmp", "ta": "/tmp"}
+    p = d.parse_run("TA! check this -o")
+    assert (p["agent"], p["mode"], p["prompt"], p["model"]) == ("ta", "fire", "check this", "opus"), p
+    assert d.parse_run("fa? x")["mode"] == "hold"
+    assert d.parse_run("fa x")["mode"] is None
+    assert d.parse_run("fa the -o thing")["prompt"] == "the -o thing"
+    assert d.parse_run("fa x -w -b")["unsupported"] == ["background runs", "write access"]
+    assert d.parse_run("") == {} and d.parse_run("!x").get("error")
+
+elif which == "run_home_recheck":
+    # The executor trusts its own aaka.yaml, not the queue row: invite-made
+    # (dynamic) members never count as admins, and answers go to the admin only.
+    json.dump([{"id": "mallory", "name": "M", "admin": True, "whatsapp": "+4999"}],
+              open(os.path.join(CFG, "data", "members_dynamic.json"), "w"))
+    import executor.queue_worker as qw
+    t = qw._agent_reply_target
+    assert t({"sender": "+4999", "channel_id": "+4999", "source": "whatsapp"}) == ""
+    assert t({"sender": "", "channel_id": "+491700000000", "source": "whatsapp"}) == ""
+    admin = "+491700000000"
+    assert t({"sender": admin, "channel_id": admin, "source": "whatsapp"}) == admin
+    assert t({"sender": admin, "channel_id": "123@g.us", "source": "whatsapp"}) == admin
+    r = qw._exec_agent_dispatch({"agent": "fa", "request": "x", "sender": "+4999",
+                                 "channel_id": "+4999", "source": "whatsapp"})
+    assert r["status"] == "refused", r
+
+elif which == "run_fire_hold":
+    # Fire → 'confirmed' (the executor consumes it); hold → 'awaiting_confirm'
+    # with Fire/Drop buttons and NO pending slot (a bare yes can't fire it).
+    open(os.path.join(CFG, "config", "agents.yaml"), "w").write(
+        "fa: /tmp\nta: {dir: /tmp, mode: hold}\n")
+    import sensor.router_sensor as rs
+    from aaka_queue.queue import _connect
+    admin = "+491700000000"
+    def rows():
+        return [dict(x) for x in _connect().execute(
+            "SELECT status, payload, channel_id FROM queue_items "
+            "WHERE intent='agent_dispatch' ORDER BY created_at, rowid").fetchall()]
+    assert rs._handle_ask("/run", admin).startswith("🤖 *Agents*")
+    assert "`ta` — tmp · hold" in rs._handle_ask("/run", admin)
+    assert rs._handle_ask("/run fa! hi", "+4111").startswith("🔒")
+    assert "don't have an agent" in rs._handle_ask("/run nope hi", admin)
+    assert "Not available yet" in rs._handle_ask("/run fa hi -w", admin)
+    assert rows() == []
+    out = rs._handle_ask("/run fa hello there", admin, admin, "whatsapp", "7")
+    assert out.startswith("⏳"), out
+    r = rows()[-1]
+    assert r["status"] == "confirmed" and json.loads(r["payload"])["request"] == "hello there", r
+    out = rs._handle_ask("/ask ta draft it -o", admin, admin, "telegram", "8")
+    assert out.startswith("⏸") and "__MARKUP__" in out and "Fire" in out, out
+    r = rows()[-1]
+    assert r["status"] == "awaiting_confirm" and json.loads(r["payload"])["model"] == "opus", r
+    assert not _connect().execute(
+        "SELECT 1 FROM pending_confirms WHERE sender=?", (admin,)).fetchone()
+    assert rs._handle_ask("/run ta! now", admin, admin, "whatsapp").startswith("⏳")
+    assert rows()[-1]["status"] == "confirmed"
+
 elif which == "agent_job_cwd_allowlist":
     # SEC-5: queue_worker refuses a project_path outside agents.yaml.
     import executor.queue_worker as qw
@@ -3368,6 +3437,12 @@ check "invite codes are 8 chars, 24h TTL, one guess per message, throttled" \
   $PYTHON "$SEC_PY" invite_code_hardening
 check "/ask dispatch is permission-limited and ships no default agent dir" \
   $PYTHON "$SEC_PY" dispatch_permissions
+check "r/run: agents.yaml long form + safe defaults; grammar (! ? -o, mid-prompt flags stay text)" \
+  $PYTHON "$SEC_PY" run_parse_and_registry
+check "r/run: home re-checks the admin on its own roster and answers only that admin" \
+  $PYTHON "$SEC_PY" run_home_recheck
+check "r/run: fire queues 'confirmed', hold parks behind Fire/Drop with no pending slot" \
+  $PYTHON "$SEC_PY" run_fire_hold
 check "agent_job refuses a project_path outside the agents.yaml registry" \
   $PYTHON "$SEC_PY" agent_job_cwd_allowlist
 check "webui + console refuse an unauthenticated public bind" \

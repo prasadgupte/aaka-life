@@ -27,7 +27,16 @@ manual|dontAsk|plan>`. There is no read-only permission mode, hence the
 allowlist. Dispatch stays admin-only + dir-allowlisted regardless.
 
 The agent registry has NO built-in entries — dispatchable dirs come only from
-$AAKA_CONFIG_DIR/config/agents.yaml on the operator's own machine.
+$AAKA_CONFIG_DIR/config/agents.yaml on the operator's own machine. An entry is
+either one line (`fa: /path/to/dir`) or a dict:
+
+    fa:
+      dir: /path/to/dir
+      desc: family paperwork        # shown by a bare `r`
+      mode: fire                    # fire | hold — what `r fa <prompt>` does without ! or ?
+      model: sonnet                 # default model; `-o` switches one run to opus
+      access: read                  # only read for now
+      runner: claude                # only one-shot `claude -p` for now
 
 Usage: run_agent("fa", "the trip packing list, send the file", who="the admin")
 """
@@ -103,25 +112,93 @@ def _outbox_dir(aid: str) -> str:
     return tempfile.mkdtemp(prefix=f"aaka-dispatch-{aid}-")
 
 
-def agents() -> dict[str, str]:
-    out = dict(_DEFAULT_AGENTS)
+_MODES = ("fire", "hold")
+_RUNNERS = ("claude",)
+_ACCESS = ("read",)
+
+
+def _spec(raw) -> dict:
+    """One agents.yaml entry → a full spec with defaults. A value this version
+    can't honour falls back to the safe default (read, claude, fire)."""
+    v = raw if isinstance(raw, dict) else {"dir": raw}
+    mode = str(v.get("mode") or "fire").lower()
+    runner = str(v.get("runner") or "claude").lower()
+    access = str(v.get("access") or "read").lower()
+    return {
+        "dir": str(v.get("dir") or ""),
+        "desc": str(v.get("desc") or ""),
+        "mode": mode if mode in _MODES else "fire",
+        "model": str(v.get("model") or "sonnet"),
+        "runner": runner if runner in _RUNNERS else "claude",
+        "access": access if access in _ACCESS else "read",
+    }
+
+
+def agent_specs() -> dict[str, dict]:
+    """{id: spec} for every dispatchable agent (format: module docstring)."""
+    out = {k: _spec(v) for k, v in _DEFAULT_AGENTS.items()}
     try:
         import yaml
         p = Path(os.environ.get("AAKA_CONFIG_DIR", "")) / "config" / "agents.yaml"
         if p.exists():
             for k, v in (yaml.safe_load(p.read_text()) or {}).items():
-                out[k] = v.get("dir") if isinstance(v, dict) else v
+                out[str(k).lower()] = _spec(v)
     except Exception:
         pass
     return out
 
 
+def agents() -> dict[str, str]:
+    """{id: dir} — the allowlist view (SEC-5 checks dirs against this)."""
+    return {k: v["dir"] for k, v in agent_specs().items()}
+
+
+_FLAG = r"-[owb]"
+_LATER_FLAGS = {"-w": "write access", "-b": "background runs"}
+
+
+def parse_run(arg: str) -> dict:
+    """Parse the text after `r` / `/run` / `/ask`.
+
+    `<id>[!|?] [flags] <prompt> [flags]` → {agent, mode, prompt, model,
+    unsupported}. `!` = fire now, `?` = hold for review, neither = the agent's
+    own default (mode None). Flags count only right after the id or at the very
+    end, so a `-o` in the middle of the prompt stays text. Empty → {}."""
+    arg = (arg or "").strip()
+    if not arg:
+        return {}
+    m = re.match(r"^@?([A-Za-z0-9_-]+)([!?])?(?=\s|$)", arg)
+    if not m:
+        return {"error": "bad_agent"}
+    agent, sw = m.group(1).lower(), m.group(2)
+    rest = arg[m.end():]
+    flags: list[str] = []
+    lead = re.match(rf"^((?:\s+{_FLAG})+)(?=\s|$)", rest)
+    if lead:
+        flags += lead.group(1).split()
+        rest = rest[lead.end():]
+    trail = re.search(rf"((?:\s+{_FLAG})+)\s*$", rest)
+    if trail:
+        flags += trail.group(1).split()
+        rest = rest[:trail.start()]
+    return {
+        "agent": agent,
+        "mode": {"!": "fire", "?": "hold"}.get(sw or ""),
+        "prompt": rest.strip(),
+        "model": "opus" if "-o" in flags else None,
+        "unsupported": sorted({_LATER_FLAGS[f] for f in flags if f in _LATER_FLAGS}),
+    }
+
+
 def run_agent(agent_id: str, request: str, who: str = "the user",
-              timeout: int = 240, model: str = "sonnet") -> dict:
-    """Dispatch. Returns {ok, text, attachments[], error?, cost, session, duration_ms}."""
-    reg = agents()
+              timeout: int = 240, model: str | None = None) -> dict:
+    """Dispatch. Returns {ok, text, attachments[], error?, cost, session, duration_ms}.
+    `model` None → the agent's own `model:` (default sonnet)."""
+    specs = agent_specs()
+    reg = {k: v["dir"] for k, v in specs.items()}
     aid = (agent_id or "").lower().lstrip("@")
     d = reg.get(aid)
+    model = model or (specs.get(aid) or {}).get("model") or "sonnet"
     if not d or not Path(d).is_dir():
         return {"ok": False, "error": "unknown_agent",
                 "text": f"I don't have an agent '{agent_id}'. Known: {', '.join(sorted(reg))}.",
