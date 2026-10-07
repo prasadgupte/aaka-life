@@ -294,9 +294,13 @@ def _extract_event(message: str, sender_email: str = "", sender_member_id: str =
 
 
 def _extract_events_batch(message: str, sender_email: str = "", sender_member_id: str = "") -> "list[dict]":
-    """Extract one or more events from natural language. Always returns a list."""
+    """Extract one or more events from natural language. Always returns a list.
+    Runs in the `add_event` LLM scope: the live /cal preview is the sensor's one
+    allowed direct Gemini use (gateway/llm_policy.py, AAKA_GEMINI_INTENTS)."""
+    from gateway import llm_policy
     from skills.calendar.prepare_event import extract_batch
-    return extract_batch(message, sender_email=sender_email, sender_member_id=sender_member_id)
+    with llm_policy.scope("add_event"):
+        return extract_batch(message, sender_email=sender_email, sender_member_id=sender_member_id)
 
 
 def _format_event_preview(payload: dict) -> str:
@@ -365,9 +369,13 @@ def _handoff_add_event_home(message: str, sender_id: str, channel_id: str, sourc
 
 
 def _extract_task(message: str, sender_member_id: str = "") -> dict:
+    """LLM scope `add_task`: not in the default AAKA_GEMINI_INTENTS, so on the
+    sensor the task is saved as typed unless the operator adds it."""
+    from gateway import llm_policy
     from skills.tasks.prepare_task import prepare_task
     text = re.sub(r'^/(addtask|task)\s*', '', message, flags=re.I).strip()
-    return prepare_task(text, sender_member_id=sender_member_id)
+    with llm_policy.scope("add_task"):
+        return prepare_task(text, sender_member_id=sender_member_id)
 
 
 def _format_task_preview(payload: dict) -> str:
@@ -2276,10 +2284,12 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
                     from skills.calendar.add_event import build_title
                     sender_member = aaka_config.member_by_sender(sender_id)
                     sender_mid_id = sender_member["id"] if sender_member else ""
-                    new_payload = extract_events(
-                        item["raw_message"], sender_email=sender_email,
-                        force_llm=True, sender_member_id=sender_mid_id
-                    )
+                    from gateway import llm_policy
+                    with llm_policy.scope("add_event"):
+                        new_payload = extract_events(
+                            item["raw_message"], sender_email=sender_email,
+                            force_llm=True, sender_member_id=sender_mid_id
+                        )
                     try:
                         from skills.calendar.availability import conflicts_in_window
                         conflicts, checked_labels = conflicts_in_window(
@@ -3456,11 +3466,13 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
             print(f"[dry-run] intent=add_task  payload={json.dumps(payload, ensure_ascii=False)}")
             return ""
         from skills.tasks.local_tasks import add_task as _add_task
+        no_llm = payload.pop("no_llm", False)
         task = _add_task(payload)
         title = task["title"]
         due = task.get("due_date", "")
         due_str = f"  📅 {due}" if due else ""
-        return _reply(f"{REPLY_PREFIX}📝 Added: {title}{due_str}", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
+        hint = "\n_Saved as typed (no AI on the go) — add a date with /edit N due friday_" if no_llm else ""
+        return _reply(f"{REPLY_PREFIX}📝 Added: {title}{due_str}{hint}", channel_id=channel_id, sender=sender_id, message_id=message_id, dry_run=dry_run, source=source)
 
     # ── complete_task: direct local JSON write ────────────────────────────────
     if intent == "complete_task":

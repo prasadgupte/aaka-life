@@ -106,17 +106,26 @@ class GatewayAdapter:
 
     def call_llm(self, prompt: str, timeout: int = 60,
                  provider: "str | None" = None,
-                 images: "list[dict] | None" = None) -> str:
+                 images: "list[dict] | None" = None,
+                 _gateway_grant: bool = False) -> str:
         """
-        One-shot LLM call via the selected provider (LLM_PROVIDER, default: gemini).
+        One-shot LLM call via the selected provider (LLM_PROVIDER, else the role default).
 
         Providers are direct API / local — no OpenClaw. See gateway/llm_providers.py.
         `images` = optional list of {data (base64), media_type, label}; a provider
         without vision raises llm_providers.VisionUnsupported before calling out.
+        A direct Gemini call must run inside an allowed llm_policy.scope() — else
+        llm_policy.GeminiNotAllowed. `_gateway_grant` = /v1/llm already decided.
         Returns the text response. Raises RuntimeError on failure.
         """
-        from gateway import llm_providers
+        from gateway import llm_policy, llm_providers
         name = llm_providers.provider_name(provider)
+        if name == "gemini" and not _gateway_grant:
+            try:
+                llm_policy.check_direct_gemini()
+            except llm_policy.GeminiNotAllowed as exc:
+                self._log_llm_usage(name, "blocked", error=str(exc)[:200])
+                raise
         try:
             text = llm_providers.complete(prompt, timeout, provider=name, images=images)
             self._log_llm_usage(name, "ok")
@@ -127,7 +136,8 @@ class GatewayAdapter:
             # `claude` binary (the executor Mac, a dev laptop) is a different budget
             # entirely — use it rather than fail. The sensor has no claude, so
             # there the error stands and the intent is handed home instead.
-            alt = llm_providers.local_fallback_provider(name, images=images)
+            # Not for /v1/llm's own Gemini rescue: the gateway has just failed claude.
+            alt = None if _gateway_grant else llm_providers.local_fallback_provider(name, images=images)
             if alt is None:
                 raise
             try:
@@ -144,11 +154,11 @@ class GatewayAdapter:
     def _call_llm_fallback(self, prompt: str, timeout: int,
                            _gemini_only: bool = False,
                            images: "list[dict] | None" = None) -> str:
-        """Fallback LLM entry used by gateway.agent_api's /v1/llm route.
-        _gemini_only=True forces the Gemini provider."""
+        """Fallback LLM entry used by gateway.agent_api's /v1/llm route, after it has
+        checked the agent's Gemini grant. _gemini_only=True forces the Gemini provider."""
         return self.call_llm(prompt, timeout,
                              provider="gemini" if _gemini_only else None,
-                             images=images)
+                             images=images, _gateway_grant=True)
 
     def _log_llm_usage(self, model: str, status: str, *,
                        prompt_tokens: "int | None" = None,

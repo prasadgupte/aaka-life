@@ -95,24 +95,20 @@ def status_llm(ping: bool = True) -> str:
     elif not ping:
         lines.append("Heartbeat: skipped")
     else:
+        # Model metadata, not generateContent: checks the key and the network
+        # without generating a token, so /status never spends Gemini money
+        # (gateway/llm_policy.py). A spend cap only shows on a real call.
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model}:generateContent?key={api_key}"
+            f"{model}?key={api_key}"
         )
-        body = json.dumps({
-            "contents": [{"parts": [{"text": "ping"}]}],
-            "generationConfig": {"temperature": 0, "maxOutputTokens": 4},
-        }).encode()
-        req = urllib.request.Request(
-            url, data=body,
-            headers={"Content-Type": "application/json"}, method="POST",
-        )
+        req = urllib.request.Request(url, method="GET")
         t0 = time.monotonic()
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 resp.read()
             latency_ms = int((time.monotonic() - t0) * 1000)
-            lines.append(f"Heartbeat: ✅ {latency_ms}ms")
+            lines.append(f"Heartbeat: ✅ {latency_ms}ms (key valid, no tokens)")
         except Exception as exc:
             lines.append(f"Heartbeat: ❌ {exc}")
 

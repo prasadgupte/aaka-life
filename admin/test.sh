@@ -3071,8 +3071,11 @@ check "webuntis: day verdict + late start, exams above homework, ❗ only for ge
 check "confirm by hash: buttons carry the item id, several previews stay confirmable, bare yes binds/asks, fallback names the message" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_confirm_by_hash.py"
 
-check "llm budget: spend-cap 429 fails fast, adapter falls back to local claude, /cal hands off home, sync round-trips the confirm" \
+check "llm budget: spend-cap 429 fails fast, adapter falls back to local claude, /cal hands off home, sync round-trips the confirm; sensor Gemini only for live /cal, /task saved as typed" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_llm_budget_handoff.py"
+
+check "gemini lock: /v1/llm falls back to Gemini only for granted agents within daily_max, 503 with claude's reason otherwise, usage limit pauses claude" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' gateway/agent_api_llm_test.py"
 
 check "config getters survive empty/minimal config (no KeyError; read system.*)" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' -c \"

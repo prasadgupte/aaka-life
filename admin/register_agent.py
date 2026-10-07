@@ -8,6 +8,12 @@ Usage:
     python3 admin/register_agent.py <agent-id> "<Display Name>" --allow-dangerous
     python3 admin/register_agent.py --list
     python3 admin/register_agent.py --revoke <agent-id>
+    python3 admin/register_agent.py --grant-gemini <agent-id> --daily 20
+    python3 admin/register_agent.py --revoke-gemini <agent-id>
+
+Gemini is off for every agent by default: /v1/llm answers from the local Claude, and when
+Claude fails only an agent granted here falls back to Gemini, at most N times a day
+(gateway/llm_policy.py).
 
 The API key is printed once and NOT stored (only SHA-256 hash kept in DB).
 Re-registering an existing agent ID rotates the key and updates location/expiry.
@@ -45,7 +51,12 @@ def cmd_register(agent_id: str, display_name: str, location: str | None,
     import json as _json
     api_key = "aaka-" + secrets.token_urlsafe(32)
     key_expires_at = _expiry_ts(expires_days) if expires_days else None
-    permissions = _json.dumps({"allow_dangerous": True}) if allow_dangerous else "{}"
+    # Re-registering rotates the key; it must not drop a Gemini grant set earlier.
+    perms = _read_permissions(agent_id)
+    perms.pop("allow_dangerous", None)
+    if allow_dangerous:
+        perms["allow_dangerous"] = True
+    permissions = _json.dumps(perms)
 
     register_agent(
         agent_id,
@@ -76,23 +87,60 @@ def cmd_register(agent_id: str, display_name: str, location: str | None,
     print(f"Or in .env file:   AAKA_AGENT_KEY={api_key}\n")
 
 
+def _read_permissions(agent_id: str) -> dict:
+    import json as _json
+    with _connect() as conn:
+        row = conn.execute("SELECT permissions FROM agent_registry WHERE id=?", (agent_id,)).fetchone()
+    try:
+        perms = _json.loads((row["permissions"] if row else None) or "{}")
+    except _json.JSONDecodeError:
+        perms = {}
+    return perms if isinstance(perms, dict) else {}
+
+
+def cmd_gemini(agent_id: str, daily_max: "int | None") -> None:
+    """Grant (daily_max > 0) or revoke (None) the agent's Gemini fallback on /v1/llm."""
+    import json as _json
+    perms = _read_permissions(agent_id)
+    if daily_max:
+        perms["gemini"] = {"daily_max": daily_max}
+    else:
+        perms.pop("gemini", None)
+    with _connect() as conn:
+        cur = conn.execute("UPDATE agent_registry SET permissions=? WHERE id=?",
+                           (_json.dumps(perms), agent_id))
+    if not cur.rowcount:
+        print(f"Agent not found: {agent_id}", file=sys.stderr)
+        sys.exit(1)
+    if daily_max:
+        print(f"Gemini granted: {agent_id} — at most {daily_max} fallback call(s) a day")
+    else:
+        print(f"Gemini revoked: {agent_id} — Claude only (503 when Claude is unavailable)")
+
+
 def cmd_list() -> None:
+    import json as _json
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, display_name, active, created_at, last_used_at, location, key_expires_at "
+            "SELECT id, display_name, active, created_at, last_used_at, location, key_expires_at, permissions "
             "FROM agent_registry ORDER BY created_at"
         ).fetchall()
     if not rows:
         print("No agents registered.")
         return
-    print(f"\n{'ID':<24} {'Name':<26} {'Active':<8} {'Last Used':<22} {'Expires':<22} Location")
-    print("-" * 120)
+    print(f"\n{'ID':<24} {'Name':<26} {'Active':<8} {'Last Used':<22} {'Expires':<22} {'Gemini':<8} Location")
+    print("-" * 130)
     for r in rows:
         active = "yes" if r["active"] else "REVOKED"
         last = (r["last_used_at"] or "never")[:19]
         exp = (r["key_expires_at"] or "never")[:19]
         loc = r["location"] or "-"
-        print(f"{r['id']:<24} {r['display_name']:<26} {active:<8} {last:<22} {exp:<22} {loc}")
+        try:
+            grant = (_json.loads(r["permissions"] or "{}") or {}).get("gemini") or {}
+        except (_json.JSONDecodeError, AttributeError):
+            grant = {}
+        gem = f"{grant['daily_max']}/day" if grant.get("daily_max") else "-"
+        print(f"{r['id']:<24} {r['display_name']:<26} {active:<8} {last:<22} {exp:<22} {gem:<8} {loc}")
     print()
 
 
@@ -126,12 +174,24 @@ def main() -> None:
                         help="Grant agent permission to run Claude with --dangerously-skip-permissions")
     parser.add_argument("--rate-limit", metavar="MSGS_PER_HOUR", type=int, default=60,
                         help="Max messages per hour this agent may send (default: 60)")
+    parser.add_argument("--grant-gemini", metavar="AGENT_ID",
+                        help="Let this agent fall back to Gemini on /v1/llm when Claude fails (needs --daily)")
+    parser.add_argument("--daily", metavar="N", type=int,
+                        help="With --grant-gemini: max Gemini fallback calls per day")
+    parser.add_argument("--revoke-gemini", metavar="AGENT_ID",
+                        help="Remove the agent's Gemini fallback (Claude only)")
     args = parser.parse_args()
 
     if args.list:
         cmd_list()
     elif args.revoke:
         cmd_revoke(args.revoke)
+    elif args.grant_gemini:
+        if not args.daily or args.daily < 1:
+            parser.error("--grant-gemini needs --daily N (N ≥ 1)")
+        cmd_gemini(args.grant_gemini, args.daily)
+    elif args.revoke_gemini:
+        cmd_gemini(args.revoke_gemini, None)
     elif args.agent_id and args.display_name:
         expires_days = None if args.expires == 0 else args.expires
         cmd_register(args.agent_id, args.display_name, args.location, expires_days,

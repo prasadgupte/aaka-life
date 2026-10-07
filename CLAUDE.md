@@ -97,7 +97,9 @@ aaka-repo/                          ← repo root
 | `GEMINI_API_KEY` | — | Gemini API key (zeroclaw backend) |
 | `QUEUE_DB` | `$AAKA_CONFIG_DIR/data/queue/butler.db` | Queue DB path override |
 | `AGENT_API_PORT` | `18790` | Port for agent gateway (localhost only) |
-| `LLM_PROVIDER` | role default | `gemini` \| `anthropic` \| `claude-cli` \| `gateway`. Unset → **`gateway` on the executor (home)**, `gemini` on the sensor (away). The executor never calls a model vendor directly: every LLM call is one HTTP hop to aaka's own `/v1/llm` (Haiku via the local `claude`, Gemini only as the gateway's own last resort) and lands in the gateway's usage log |
+| `LLM_PROVIDER` | role default | `gemini` \| `anthropic` \| `claude-cli` \| `gateway`. Unset → **`gateway` on the executor (home)**, `gemini` on the sensor (away). The executor never calls a model vendor directly: every LLM call is one HTTP hop to aaka's own `/v1/llm` (Haiku via the local `claude`; Gemini only for agents granted it, within a daily cap — `gateway/llm_policy.py`) and lands in the gateway's usage log |
+| `AAKA_GEMINI_INTENTS` | `add_event` | Comma list of intents that may call Gemini **directly** (the sensor has no claude). Default = only the live `/cal` preview; any other direct call raises `GeminiNotAllowed` before a request goes out (`/task` on the sensor is then saved as typed, `/llm` says it is off). Scoped call sites: `add_event` (/cal + its "llm" re-process), `add_task` (/task), `llm_call` (/llm) — list one to switch it on |
+| `AAKA_CLAUDE_LIMIT_PAUSE_MIN` | `30` | When the `claude` CLI reports its usage limit, `/v1/llm` stops starting Claude for this many minutes: granted agents go to Gemini (capped), the rest get 503 + `Retry-After` |
 | `AAKA_LLM_GATEWAY_KEY` | — | `X-Agent-Key` the `gateway` provider sends — a registered agent's key (`python3 admin/register_agent.py executor "Aaka Executor"`), kept in the executor's `.env` |
 | `AAKA_LLM_GATEWAY_URL` | `http://127.0.0.1:$AGENT_API_PORT/v1/llm` | Endpoint the `gateway` provider posts to |
 | `AAKA_LLM_GATEWAY_COMPLEXITY` | `low` | `low` = Haiku, `medium` = Sonnet, `high` = Opus (`_CLAUDE_MODEL_MAP` in `gateway/agent_api.py`) |
@@ -316,7 +318,7 @@ Register an agent: `python3 admin/register_agent.py <id> "<Display Name>"`
 | `add_event` | /add, /cal | `c` | LLM extraction → VPS direct → Google Calendar. If the provider raises `LLMBudgetExceeded` (spend cap / daily quota) the sensor queues `add_event_home` instead of failing |
 | `add_event_home` | (internal — sensor hand-off) | — | executor re-runs the same extraction (`router_sensor.build_add_event_item`) with its own provider — `gateway/adapter` falls back to a local `claude` when Gemini is capped — writes the `add_event` item as `awaiting_confirm` and sends the 🏠 preview + Yes/Cancel; vps_sync ships item + pending_confirm, and adopts the sensor's `confirmed` (with edited payload) on the way back |
 | `fix_event` | /fix, c fix, c #fix | `c fix` | show issues / assign carrier / add #work (VPS direct) |
-| `add_task` | /addtask, add task | `t <text>` | LLM extraction → local JSON store (sensor-side) |
+| `add_task` | /addtask, add task | `t <text>` | LLM extraction → local JSON store (sensor-side). On the sensor the text is saved as typed (no Gemini: only `AAKA_GEMINI_INTENTS` may call it directly) and the reply points at `/edit N due …` (0 tokens there) |
 | `complete_task` | /done N, /done 1 3 5, /done today | — | mark task(s) done; bulk; history view (0 tokens) |
 | `snooze_task` | /snooze N 3d, /snooze all 1d | — | snooze task(s); bulk all/overdue (0 tokens) |
 | `list_tasks` | /tasks → this week+overdue; /tasks all → all open; /tasks inbox → no date; /tasks overdue\|today\|week\|#tag\|@owner; /tasks help | `t` | list/filter open tasks (0 tokens) |

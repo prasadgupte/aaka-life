@@ -135,9 +135,13 @@ def handle(intent: str, message: str, sender: str, channel_id: str, source: str)
         prompt = re.sub(r'^/llm\s*', '', message, flags=re.I).strip()
         if not prompt:
             return "Usage: /llm <your prompt>"
+        from gateway import llm_policy
         try:
-            reply = call_llm(prompt)
+            with llm_policy.scope("llm_call"):   # on the sensor: only if AAKA_GEMINI_INTENTS lists it
+                reply = call_llm(prompt)
             return f"🤖 {reply.strip()}"
+        except llm_policy.GeminiNotAllowed:
+            return "⚠️ /llm is off here: this side would have to pay for Gemini. Add llm_call to AAKA_GEMINI_INTENTS to allow it."
         except Exception as exc:
             return f"⚠️ LLM error: {exc}"
 

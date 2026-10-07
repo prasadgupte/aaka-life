@@ -85,7 +85,7 @@ Base URL: `http://localhost:18790`
 | `GET` | `/v1/jobs` | List agent's jobs | `X-Agent-Key` |
 | `PATCH` | `/v1/jobs/{id}` | Update schedule/payload/enabled | `X-Agent-Key` |
 | `DELETE` | `/v1/jobs/{id}` | Remove a job | `X-Agent-Key` |
-| `POST` | `/v1/llm` | One-shot LLM call (Claude CLI, Gemini fallback); optional images | `X-Agent-Key` |
+| `POST` | `/v1/llm` | One-shot LLM call (Claude CLI; Gemini fallback only for granted agents); optional images | `X-Agent-Key` |
 | `GET` | `/health` | Health check (no auth) | None |
 
 ### Starting the gateway
@@ -453,18 +453,42 @@ How images travel: on the Claude-CLI path each one is written to a private temp
 dir, the prompt gets a line per image (`Image 1 (the question): /…/1.png`), and
 `claude -p` runs with only the `Read` tool, allowed only inside that dir; the
 dir is deleted afterwards. `saw_images` counts the images the model actually
-read (a denied or failed Read does not count). If it read none, the call falls
-through to Gemini, which takes the images inline (`saw_images` = all). Nothing
-ever returns a text-only answer while claiming to have seen the picture.
+read (a denied or failed Read does not count). If it read none, that counts as a
+Claude failure: an agent with a Gemini grant falls through to Gemini, which takes
+the images inline (`saw_images` = all). Nothing ever returns a text-only answer
+while claiming to have seen the picture.
+
+**Gemini is a grant, not a default.** `/v1/llm` answers from the local Claude. When
+Claude fails, only an agent whose registry permissions carry
+`{"gemini": {"daily_max": N}}` falls back to Gemini, at most N times per local
+day. Every other agent gets a 503 that carries Claude's reason, so a batch job can
+back off instead of quietly spending money:
+
+```bash
+python3 admin/register_agent.py --grant-gemini <agent-id> --daily 20
+python3 admin/register_agent.py --revoke-gemini <agent-id>
+python3 admin/register_agent.py --list          # Gemini column shows each grant
+```
+
+When Claude reports its usage limit, `/v1/llm` pauses Claude for
+`AAKA_CLAUDE_LIMIT_PAUSE_MIN` minutes (default 30) and answers at once with
+`Retry-After` instead of starting a CLI run that will fail. The pause and the day's
+counts live in `data/llm_policy.json`, so they survive a restart. The admin gets
+one silent Telegram note per day when Claude is paused, and one when an agent uses
+up its cap.
 
 | Status | Body | When |
 |--------|------|------|
 | 413 | `{error: too_many_images \| image_too_large \| images_too_large, …}` | count or size cap hit |
 | 422 | `{error: bad_image, index, reason}` | base64 does not decode |
 | 422 | `{error: vision_unsupported, provider}` | the fallback provider cannot take images |
-| 502 | `LLM call failed: …` | both providers failed |
+| 503 | `{error: claude_unavailable, reason: claude_error \| claude_limit, detail, gemini: not_granted}` | Claude failed or is paused, and the agent has no Gemini grant (`Retry-After` while paused) |
+| 429 | `{error: gemini_daily_cap, used, max, detail}` | granted agent has used today's Gemini calls |
+| 502 | `LLM call failed: …` | Claude and the granted Gemini fallback both failed |
 
-Each call appends `{images, saw_images}` to `logs/llm-usage.jsonl` when images were sent.
+Each call appends a row to `logs/llm-usage.jsonl`: `{images, saw_images}` when
+images were sent, a `provider: claude, status: error | paused` row with Claude's
+reason when Claude failed, and `fallback_reason` on every Gemini answer.
 
 ### LinkedIn posts
 
