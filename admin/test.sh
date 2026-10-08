@@ -3071,6 +3071,9 @@ check "webuntis: day verdict + late start, exams above homework, ❗ only for ge
 check "confirm by hash: buttons carry the item id, several previews stay confirmable, bare yes binds/asks, fallback names the message" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_confirm_by_hash.py"
 
+check "r/run: admin alias, fire → confirmed, hold → Fire/Drop, a bare yes never fires a held prompt" \
+    bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_run_agent.py"
+
 check "llm budget: spend-cap 429 fails fast, adapter falls back to local claude, /cal hands off home, sync round-trips the confirm; sensor Gemini only for live /cal, /task saved as typed" \
     bash -c "cd '$REPO_DIR' && '$PYTHON' sensor/test_llm_budget_handoff.py"
 
@@ -3341,6 +3344,12 @@ elif which == "run_home_recheck":
     admin = "+491700000000"
     assert t({"sender": admin, "channel_id": admin, "source": "whatsapp"}) == admin
     assert t({"sender": admin, "channel_id": "123@g.us", "source": "whatsapp"}) == admin
+    # The WhatsApp sidecar sends phone JIDs, not +E.164 — same admin, same chat.
+    jid = "491700000000@s.whatsapp.net"
+    assert t({"sender": jid, "channel_id": jid, "source": "whatsapp"}) == jid
+    assert t({"sender": jid, "channel_id": "123@g.us", "source": "whatsapp"}) == admin
+    assert t({"sender": "4999@s.whatsapp.net", "channel_id": "4999@s.whatsapp.net",
+              "source": "whatsapp"}) == ""
     r = qw._exec_agent_dispatch({"agent": "fa", "request": "x", "sender": "+4999",
                                  "channel_id": "+4999", "source": "whatsapp"})
     assert r["status"] == "refused", r

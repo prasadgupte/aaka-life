@@ -1307,26 +1307,26 @@ def _handle_ask(message: str, sender_id: str, channel_id: str = "",
         return (f"⚠️ Not available yet: {', '.join(req['unsupported'])}. "
                 f"Nothing was sent — drop the flag and resend.")
     mode = req["mode"] or spec["mode"]
-    from aaka_queue.queue import write_item, update_status, confirm_markup
+    from aaka_queue.queue import write_item, confirm_markup
+    # Fire → 'confirmed' (the executor consumes it). Hold → 'awaiting_confirm'
+    # with no pending-confirm slot, and the bare-yes binder skips agent_dispatch:
+    # only the buttons / `yes #<id8>` fire it.
     item_id = write_item(
         intent="agent_dispatch", raw_message=message, sender=sender_id,
         channel_id=channel_id or sender_id, source=source or "telegram",
         payload={"agent": agent, "request": req["prompt"], "model": req["model"],
                  "who": requester.get("name", "the user"),
                  "sender": sender_id, "channel_id": channel_id or sender_id,
-                 "source": source or "telegram", "message_id": message_id})
+                 "source": source or "telegram", "message_id": message_id},
+        status="awaiting_confirm" if mode == "hold" else "confirmed")
     model = f" · {req['model']}" if req["model"] else ""
     if mode == "hold":
-        # No pending-confirm slot: a bare "yes" meant for something else must
-        # not fire a held prompt. Only the buttons / `yes #<id8>` do.
-        update_status(item_id, "awaiting_confirm")
         snippet = req["prompt"] if len(req["prompt"]) <= 300 else req["prompt"][:300] + "…"
         out = (f"⏸ Held for *{agent}*{model}:\n_{snippet}_\n"
                f"`#{item_id[:8]}` — Fire or Drop (or `yes #{item_id[:8]}`).")
         if (source or "telegram") == "telegram":
             out += "\n__MARKUP__:" + json.dumps(confirm_markup(item_id, "Fire ▶️", "Drop ✖️"))
         return out
-    update_status(item_id, "confirmed")   # executor consumes 'confirmed'
     return (f"⏳ Asking *{agent}*{model} on the home machine — I'll report back "
             f"(usually under a minute).\n`#{item_id[:8]}`")
 
@@ -2138,8 +2138,11 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
         pc = get_pending_confirm(sender_id)
         if not pc and not message.lstrip().startswith("/") and (_is_confirm(msg_lower) or _is_cancel(msg_lower)):
             # A bare yes/cancel with no slot: bind to the only open preview, or
-            # ask which one — never "Sorry, I didn't understand that".
-            _open = list_awaiting(sender_id)
+            # ask which one — never "Sorry, I didn't understand that". Held agent
+            # prompts (`r <agent>? …`) are left out: only their buttons or an
+            # explicit `yes #<id>` may fire them.
+            _open = [it for it in list_awaiting(sender_id)
+                     if it.get("intent") != "agent_dispatch"]
             if len(_open) == 1:
                 set_pending_confirm(sender_id, _open[0]["id"])
                 pc = get_pending_confirm(sender_id)

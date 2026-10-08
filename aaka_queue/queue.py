@@ -212,8 +212,11 @@ def write_item(
     channel_id: str,
     source: str,
     payload: dict,
+    status: str = "pending",
 ) -> str:
-    """Insert a new queue item. Returns the item_id (UUID4)."""
+    """Insert a new queue item. Returns the item_id (UUID4). Pass the final
+    `status` (e.g. 'confirmed') rather than updating right after: a sync pull
+    between the two writes could otherwise copy the row out as 'pending'."""
     item_id = str(uuid.uuid4())
     now = _now()
     ch = _content_hash(intent, raw_message, sender)
@@ -227,7 +230,7 @@ def write_item(
             """,
             (
                 item_id, now, now, source, sender, channel_id,
-                intent, raw_message, json.dumps(payload), "pending", ch,
+                intent, raw_message, json.dumps(payload), status, ch,
             ),
         )
     return item_id
