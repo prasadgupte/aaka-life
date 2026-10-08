@@ -1270,33 +1270,65 @@ def _handle_tools(message: str, sender_id: str, channel_id: str = "",
 
 def _handle_ask(message: str, sender_id: str, channel_id: str = "",
                 source: str = "", message_id: str = "") -> str:
-    """Admin-only: `/ask <agent> <request>` → page a local agent (headless Claude
-    Code session in its dir) and report back with any files it makes. Runs on the
-    executor (agent context + files live there), so hand off via the queue and ack
-    immediately — grounded agent runs take ~a minute. See gateway/dispatch.py."""
+    """Admin-only: `r <agent>[!|?] <prompt> [-o]` (also `/run`, `/ask`) → page a
+    local agent (headless Claude Code session in its dir) and report back with any
+    files it makes. Bare `r` lists the agents. Runs on the executor (agent context
+    + files live there), so it is handed off via the queue: `!` (or the agent's
+    `mode: fire`) queues it `confirmed` so home runs it as soon as it syncs; `?`
+    (or `mode: hold`) parks it `awaiting_confirm` behind [Fire] [Drop] buttons.
+    Grammar + registry: gateway/dispatch.py."""
     requester = aaka_config.member_by_sender(sender_id)
     if not requester or not aaka_config.member_is_admin(requester.get("id", "")):
         return "🔒 Only an admin can dispatch agents."
-    arg = re.sub(r"^/ask\b", "", message, flags=re.I).strip()
-    parts = arg.split(None, 1)
-    if len(parts) < 2:
-        try:
-            from gateway.dispatch import agents
-            known = ", ".join(sorted(agents()))
-        except Exception:
-            known = "fa"
-        return (f"Usage: `/ask <agent> <request>`\n"
-                f"e.g. `/ask fa the trip packing list, send me the file`\n"
-                f"Agents: {known}")
-    agent, request = parts[0], parts[1]
-    from aaka_queue.queue import write_item
-    write_item(intent="agent_dispatch", raw_message=message, sender=sender_id,
-               channel_id=channel_id or sender_id, source=source or "telegram",
-               payload={"agent": agent, "request": request,
-                        "who": requester.get("name", "the user"),
-                        "sender": sender_id, "channel_id": channel_id or sender_id,
-                        "source": source or "telegram", "message_id": message_id})
-    return f"⏳ Asking *{agent}* on the home machine — I'll report back (usually under a minute)."
+    from gateway.dispatch import agent_specs, parse_run
+    specs = agent_specs()
+    arg = re.sub(r"^/(?:ask|run)\b", "", message, flags=re.I).strip()
+    req = parse_run(arg)
+
+    def _listing(head: str = "") -> str:
+        lines = ([head, ""] if head else []) + ["🤖 *Agents* — `r <id> <prompt>`"]
+        for aid, s in sorted(specs.items()):
+            what = s["desc"] or os.path.basename(s["dir"].rstrip("/")) or "—"
+            lines.append(f"• `{aid}` — {what} · {s['mode']}")
+        if not specs:
+            lines.append("  (none — add `id: <dir>` to config/agents.yaml)")
+        lines.append("\n`!` fire now · `?` hold for review · `-o` opus\n"
+                     "e.g. `r fa? the trip packing list, send me the file`")
+        return "\n".join(lines)
+
+    if not req:
+        return _listing()
+    if req.get("error") or req["agent"] not in specs:
+        return _listing(f"I don't have an agent `{arg.split()[0]}`.")
+    agent, spec = req["agent"], specs[req["agent"]]
+    if not req["prompt"]:
+        return f"What should *{agent}* do? `r {agent} <prompt>`"
+    if req["unsupported"]:
+        return (f"⚠️ Not available yet: {', '.join(req['unsupported'])}. "
+                f"Nothing was sent — drop the flag and resend.")
+    mode = req["mode"] or spec["mode"]
+    from aaka_queue.queue import write_item, confirm_markup
+    # Fire → 'confirmed' (the executor consumes it). Hold → 'awaiting_confirm'
+    # with no pending-confirm slot, and the bare-yes binder skips agent_dispatch:
+    # only the buttons / `yes #<id8>` fire it.
+    item_id = write_item(
+        intent="agent_dispatch", raw_message=message, sender=sender_id,
+        channel_id=channel_id or sender_id, source=source or "telegram",
+        payload={"agent": agent, "request": req["prompt"], "model": req["model"],
+                 "who": requester.get("name", "the user"),
+                 "sender": sender_id, "channel_id": channel_id or sender_id,
+                 "source": source or "telegram", "message_id": message_id},
+        status="awaiting_confirm" if mode == "hold" else "confirmed")
+    model = f" · {req['model']}" if req["model"] else ""
+    if mode == "hold":
+        snippet = req["prompt"] if len(req["prompt"]) <= 300 else req["prompt"][:300] + "…"
+        out = (f"⏸ Held for *{agent}*{model}:\n_{snippet}_\n"
+               f"`#{item_id[:8]}` — Fire or Drop (or `yes #{item_id[:8]}`).")
+        if (source or "telegram") == "telegram":
+            out += "\n__MARKUP__:" + json.dumps(confirm_markup(item_id, "Fire ▶️", "Drop ✖️"))
+        return out
+    return (f"⏳ Asking *{agent}*{model} on the home machine — I'll report back "
+            f"(usually under a minute).\n`#{item_id[:8]}`")
 
 
 def _handle_mcp(message: str, sender_id: str) -> str:
@@ -1315,7 +1347,7 @@ def _handle_mcp(message: str, sender_id: str) -> str:
         return ("🔎 *Introspection*\n"
                 "• `/mcp members` — roster · roles · bound handles\n"
                 "• `/mcp members invite <name>` — mint a code + link to onboard someone\n"
-                "• `/mcp agents` — registered + dispatchable (`/ask`) agents\n"
+                "• `/mcp agents` — registered + dispatchable (`r` / `/run`) agents\n"
                 "• `/mcp tools` — registered tools · enabled · schedule\n"
                 "• `/mcp bot` · `/mcp setup`\n"
                 "When an invited person messages, I greet them by name + today's gist.")
@@ -1354,7 +1386,7 @@ def _handle_mcp(message: str, sender_id: str) -> str:
             lines.append(f"{recog} *{m.get('name', mid)}* `{mid}`{admin} · {m.get('role') or '—'} · {src}\n   📡 {htxt}")
         return "\n".join(lines)
     if sub == "agents":
-        # Dispatchable via /ask (runs locally) + push-registered (send you messages).
+        # Dispatchable via r / /run (runs locally) + push-registered (send you messages).
         try:
             from gateway.dispatch import agents as _disp
             disp = _disp()
@@ -1367,7 +1399,7 @@ def _handle_mcp(message: str, sender_id: str) -> str:
                 "SELECT id, display_name FROM agent_registry ORDER BY id").fetchall()
         except Exception:
             pass
-        lines = ["🤖 *Agents*", "\n*Dispatchable* — `/ask <id> …` (runs locally):"]
+        lines = ["🤖 *Agents*", "\n*Dispatchable* — `r <id> <prompt>` (runs locally):"]
         for aid, d in sorted(disp.items()):
             lines.append(f"  • `{aid}` → {d}")
         if not disp:
@@ -1945,6 +1977,12 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
             message = "/tasks " + rest
         else:
             message = "/addtask " + rest
+    # "r" → /run (page a local agent) — admins only. For everyone else "r" stays
+    # ordinary text ("r u coming?"), never a locked command.
+    if re.match(r'^[rR](\s|$)', message):
+        _r_member = aaka_config.member_by_sender(getattr(_parsed, "sender_id", "") or "")
+        if _r_member and aaka_config.member_is_admin(_r_member.get("id", "")):
+            message = "/run" + message[1:]
     # Normalize slash-less commands: "cal physio tomorrow" → "/cal physio tomorrow"
     _SLASH_COMMANDS = {"cal", "fix", "plan", "day", "block", "today", "week",
                        "addtask", "task", "tasks", "done", "complete", "edit", "del", "delete",
@@ -2100,8 +2138,11 @@ def _route_impl(raw_input: str, dry_run: bool = False) -> str:
         pc = get_pending_confirm(sender_id)
         if not pc and not message.lstrip().startswith("/") and (_is_confirm(msg_lower) or _is_cancel(msg_lower)):
             # A bare yes/cancel with no slot: bind to the only open preview, or
-            # ask which one — never "Sorry, I didn't understand that".
-            _open = list_awaiting(sender_id)
+            # ask which one — never "Sorry, I didn't understand that". Held agent
+            # prompts (`r <agent>? …`) are left out: only their buttons or an
+            # explicit `yes #<id>` may fire them.
+            _open = [it for it in list_awaiting(sender_id)
+                     if it.get("intent") != "agent_dispatch"]
             if len(_open) == 1:
                 set_pending_confirm(sender_id, _open[0]["id"])
                 pc = get_pending_confirm(sender_id)

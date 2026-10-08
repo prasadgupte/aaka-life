@@ -220,6 +220,48 @@ command; use whichever you like.
 members stays out of this read surface — that's admin-only via MCP (`register_tool`,
 `add_member`, …) or the dedicated commands. (0 tokens)
 
+## Run a local agent — `r` (admin only)
+
+Send a prompt to a Claude Code agent that lives on the home machine, from chat.
+The agent runs in its own folder (so its notes and files are its context), reads
+but does not change anything, and replies with a short summary plus any file it
+made for you.
+
+```
+r                                   — list the agents: id · what it is · default mode
+r fa the trip packing list          — use the agent's default (fire or hold)
+r fa! the trip packing list         — fire now: home runs it as soon as it picks the queue up
+r fa? draft the school form answers   — hold: shows the prompt with [Fire] [Drop] buttons
+r fa the packing list -o            — run this one on opus (default: the agent's model)
+```
+
+`/run` and `/ask` are the same command. Flags count only right after the agent id
+or at the very end, so a `-o` in the middle of your sentence stays text. `-w`
+(write access) and `-b` (background runs) are planned and refused for now —
+nothing is sent when you use them.
+
+**Fire vs hold.** A fired prompt waits in the queue until the home machine syncs,
+then runs (usually well under a minute). A held prompt does nothing until you tap
+**Fire** (or type `yes #<id>`); a bare "yes" never fires it. Held prompts are
+cancelled if nobody answers within a day.
+
+**Registry.** Agents come only from `config/agents.yaml` in your config dir —
+aaka ships none. One line per agent works; the long form adds the extras:
+
+```yaml
+fa: /path/to/paperwork-agent          # short form
+ta:
+  dir: /path/to/tax-agent
+  desc: tax paperwork
+  mode: hold                       # fire | hold (default fire)
+  model: sonnet                    # -o switches one run to opus
+```
+
+**Safety.** Only admins can use `r`. The home machine checks again on its own
+copy of the roster before it runs anything, and sends the answer only to that
+admin's own chat (a request from a group is answered privately). Costs: one
+headless Claude run per prompt on the home machine's Claude account.
+
 ## Error digest (admin only)
 
 Persistent store of sensor errors — survives across digest runs so nothing is lost before you act on it.
@@ -288,6 +330,7 @@ No need to type `/` — just use the letter:
 | `t` | `/tasks` (list) or `/addtask` (create) | `t` · `t call dentist by friday` |
 | `s` | `/status` | `s` |
 | `q` | queue status | `q` |
+| `r` | `/run` — admins only; for everyone else `r` is plain text | `r` · `r fa? the trip packing list` |
 
 ---
 

@@ -117,6 +117,13 @@ def _load() -> dict:
 
 # ── Public API (unchanged from family_config.py) ───────────────────────────
 
+def roster_members() -> list[dict]:
+    """Members written in aaka.yaml only — never the invite-created dynamic ones.
+    Use for trust decisions (who is an admin) that must not depend on data files
+    another machine can write."""
+    return list(_load().get("members") or [])
+
+
 def members() -> list[dict]:
     # aaka.yaml members + dynamic members created via onboarding (no yaml edits).
     base = _load().get("members") or []
@@ -492,18 +499,23 @@ def member_targets(enabled: "list | None" = None) -> dict:
     return out
 
 
+def normalize_sender(sender: str) -> str:
+    """The form roster handles are written in: lower-case, and a WhatsApp phone
+    JID ("491700000000@s.whatsapp.net") becomes "+491700000000". A device-linked
+    "@lid" JID has no E.164 equivalent and is returned as is."""
+    s = (sender or "").strip().lower()
+    if s.endswith("@s.whatsapp.net"):
+        return "+" + s[: -len("@s.whatsapp.net")]
+    return s
+
+
 def member_by_sender(sender: str) -> dict | None:
     """Resolve E.164 phone, WhatsApp JID, Signal number/uuid, email, or Telegram
     ID → member dict. Returns None if unrecognised."""
     if not sender:
         return None
     s = sender.strip().lower()
-    # Normalise WhatsApp JIDs: "491700000000@s.whatsapp.net" → "+491700000000"
-    _wa_norm = s
-    if s.endswith("@s.whatsapp.net"):
-        _wa_norm = "+" + s.replace("@s.whatsapp.net", "")
-    elif s.endswith("@lid"):
-        _wa_norm = s  # device-linked JID — no E.164 equivalent
+    _wa_norm = normalize_sender(s)
     for m in members():
         for channel in CHANNEL_FIELDS:
             # str() so an unquoted YAML int still matches a string ID.

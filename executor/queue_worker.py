@@ -770,17 +770,54 @@ def _exec_tool_run(payload: dict) -> dict:
     return {"status": "done", "tool": name, "ok": res.get("ok")}
 
 
+def _agent_reply_target(payload: dict) -> str:
+    """Home's own answer to "may this run, and where does the answer go?".
+
+    The sensor already checked the sender is an admin, but this side does not
+    take the queue row's word for it: the sender must be an admin in THIS
+    machine's aaka.yaml roster (invite-created members are never admins), and
+    the answer only ever goes to that admin's own handle on the channel, or the
+    chat it came from if that IS their handle. "" → refuse."""
+    import aaka_config as _cfg
+    raw = str(payload.get("sender") or "").strip().lower()
+    source = payload.get("source", "telegram")
+    if not raw:
+        return ""
+    senders = {raw, _cfg.normalize_sender(raw)}
+    for m in _cfg.roster_members():
+        if not m.get("admin"):
+            continue
+        handles = {str(_cfg.member_handle(m, ch)).strip().lower()
+                   for ch in _cfg.CHANNEL_FIELDS} - {""}
+        if not senders & handles:
+            continue
+        chat = str(payload.get("channel_id") or "").strip()
+        if chat.lower() in handles or _cfg.normalize_sender(chat) in handles:
+            return chat
+        return _cfg.member_handle(m, source)
+    return ""
+
+
 def _exec_agent_dispatch(payload: dict) -> dict:
     """Page an allowlisted local agent (headless Claude Code session) and deliver
-    its summary + any files it produced. Handed off from a sensor-side `/ask`.
-    Text + attachments are sent directly (egress) so they arrive in order."""
+    its summary + any files it produced. Handed off from a sensor-side `r` /
+    `/run` / `/ask`. Text + attachments are sent directly (egress) so they
+    arrive in order — only to the admin who asked (`_agent_reply_target`)."""
     import os as _os
     from gateway import dispatch, egress
-    channel_id = payload.get("channel_id", payload.get("sender", ""))
-    source = payload.get("source", "telegram")
+    channel_id = _agent_reply_target(payload)
     agent = payload.get("agent", "")
+    if not channel_id:
+        print(f"[worker] REFUSED agent_dispatch {agent!r}: sender is not an admin "
+              f"in this machine's roster (or has no handle on the channel)")
+        return {"status": "refused", "agent": agent, "reason": "not_home_admin"}
+    source = payload.get("source", "telegram")
+    # A reply-to id only makes sense in the chat the request came from.
+    same_chat = channel_id == str(payload.get("channel_id") or "")
+    reply_to = payload.get("message_id") if same_chat else None
     res = dispatch.run_agent(agent, payload.get("request", ""),
-                             who=payload.get("who", "the user"))
+                             who=payload.get("who", "the user"),
+                             model=payload.get("model") or None)
     text = (res.get("text") or res.get("error") or "(no response)").strip()
     n = len(res.get("attachments") or [])
     head = "📎" if n else ("⚠️" if not res.get("ok") else "✅")
@@ -788,13 +825,11 @@ def _exec_agent_dispatch(payload: dict) -> dict:
     def _send_text(t: str) -> None:
         try:
             egress.send(egress.text(recipient=channel_id, channel=source, content=t,
-                                    source="agent_dispatch",
-                                    reply_to=payload.get("message_id")))
+                                    source="agent_dispatch", reply_to=reply_to))
         except Exception:
             from aaka_queue.queue import write_outbox
             write_outbox(channel_id=channel_id, sender=payload.get("sender", ""),
-                         text=t, source=source,
-                         reply_to_message_id=payload.get("message_id"))
+                         text=t, source=source, reply_to_message_id=reply_to)
 
     _send_text(REPLY_PREFIX + f"{head} *{agent}*:\n{text}")
     if n and source == "telegram":
@@ -1107,7 +1142,7 @@ def _send_confirmation(item: dict, result: dict) -> None:
         elif intent in ("file_sync", "file_upsert"):
             # silent — background sync, no user notification
             return
-        elif intent in ("plan_slots", "day_schedule", "add_event_home"):
+        elif intent in ("plan_slots", "day_schedule", "add_event_home", "agent_dispatch"):
             # these send their reply directly; skip generic confirmation
             return
         elif intent == "executor_echo":
@@ -1294,6 +1329,14 @@ def process_all() -> int:
             # Pass legacy dispatcher as fallback for skills with no entrypoint
             fallback = _DISPATCHERS.get(intent)
             result = loader.execute(skill, payload, dispatcher_fn=fallback if not skill.get("entrypoint") else None)
+
+            if isinstance(result, dict) and result.get("status") == "refused":
+                # A handler declined on home's own checks: record it, tell nobody
+                # (the sender may be forged), never report it as "Done".
+                update_status(item_id, "error", result=result,
+                              error_msg=f"refused: {result.get('reason', '')}")
+                print(f"[worker] {item_id[:8]}  ⛔ refused  result={result}")
+                continue
 
             update_status(item_id, "done", result=result)
             _send_confirmation(item, result)
